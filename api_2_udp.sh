@@ -1,81 +1,124 @@
 #!/bin/bash
+
+# 1. Load Configuration & Common Functions
 source ./api_util/api_common.sh
 
 echo "=========================================="
-echo " STEP 2: UDPIPE PROCESSING"
+echo " STEP 2: UDPIPE PROCESSING (CSV SOURCE)"
 echo " Model: $MODEL_UDPIPE"
 echo "=========================================="
 
+# 2. Setup Directories
 mkdir -p "$WORK_DIR/UDPIPE" "$WORK_DIR/CHUNKS"
 MANIFEST="$WORK_DIR/manifest.tsv"
 
+# 3. Check Manifest (Dependence Maintained)
 if [ ! -f "$MANIFEST" ]; then
-    echo "Error: Manifest not found. Please run ./api_1_manifest.sh first."
+    echo "Error: Manifest not found at $MANIFEST"
+    echo "Please run the previous step (api_1_manifest.sh) to generate the manifest."
     exit 1
 fi
 
 log "Starting UDPipe processing..."
 
-prev_doc_id=""
-current_temp_file=""
-skipping_current=false
+# ------------------------------------------------------------------
+# Helper: Python script to parse CSV, sort by Page/Line, and extract text
+# ------------------------------------------------------------------
+extract_sorted_text() {
+    python3 -c "
+import sys, csv
+
+input_file = '$1'
+output_file = '$2'
+
+try:
+    # Use utf-8-sig to handle potential BOM from Excel-saved CSVs
+    with open(input_file, 'r', encoding='utf-8-sig') as f:
+        reader = csv.DictReader(f)
+        data = []
+        for row in reader:
+            # Extract page and line numbers, defaulting to 0 if missing/invalid
+            try:
+                p = int(row.get('page_num', 0))
+            except ValueError:
+                p = 0
+            try:
+                l = int(row.get('line_num', 0))
+            except ValueError:
+                l = 0
+
+            # Only collect rows that have actual text
+            text_content = row.get('text', '')
+            if text_content and text_content.strip():
+                data.append({'p': p, 'l': l, 'text': text_content.strip()})
+
+    # SORTING: Primary key = Page, Secondary key = Line
+    # This reconstructs the document flow from the scattered CSV lines
+    data.sort(key=lambda x: (x['p'], x['l']))
+
+    with open(output_file, 'w', encoding='utf-8') as out:
+        for item in data:
+            out.write(item['text'] + '\n')
+
+except Exception as e:
+    sys.stderr.write(f'Error parsing CSV {input_file}: {str(e)}\n')
+    sys.exit(1)
+"
+}
+
 doc_count=0
 
-# Loop through manifest
-while IFS=$'\t' read -r doc_id page_num file_path; do
+# Loop through all CSV files in the input directory
+# (We filter by extension to ensure we only process the source files)
+find "$INPUT_DIR" -name "*.csv" | sort | while read csv_file; do
 
-    if [ "$doc_id" != "$prev_doc_id" ]; then
-        # 1. Finalize Previous Document
-        if [ -n "$prev_doc_id" ] && [ "$prev_doc_id" != "__END__" ] && [ "$skipping_current" = false ]; then
-            final_target="${current_temp_file%.tmp}"
-            if [ -s "$current_temp_file" ]; then
-                mv "$current_temp_file" "$final_target"
-                log " [Saved] $(basename "$final_target")"
-                ((doc_count++))
-            else
-                rm -f "$current_temp_file"
-            fi
-        fi
+    # Extract ID (filename without extension, e.g., CTX193202973)
+    doc_id=$(basename "$csv_file" .csv)
+    final_conllu="$OUTPUT_DIR/${doc_id}.conllu"
 
-        if [ "$doc_id" == "__END__" ]; then break; fi
-
-        # 2. Setup New Document
-        safe_doc_id=$(basename "$doc_id")
-        final_conllu="$WORK_DIR/UDPIPE/${safe_doc_id}.conllu"
-        current_temp_file="${final_conllu}.tmp"
-
-        if [ -s "$final_conllu" ]; then
-            skipping_current=true
-        else
-            skipping_current=false
-            log " -> Processing Doc: $safe_doc_id"
-            : > "$current_temp_file"
-        fi
-        prev_doc_id="$doc_id"
+    # Skip if output already exists and is not empty (Resume capability)
+    if [ -s "$final_conllu" ]; then
+        # log " -> Skipping $doc_id (already exists)"
+        continue
     fi
 
-    if [ "$skipping_current" = true ]; then continue; fi
+    log " -> Processing Doc: $doc_id"
 
-    # 3. Process Page Chunks
-    page_chunk_dir="$WORK_DIR/CHUNKS/$(basename "$doc_id")_${page_num}"
-    rm -rf "$page_chunk_dir" && mkdir -p "$page_chunk_dir"
+    # 1. Extract and Sort Text from CSV
+    raw_text_file="$TEMP_TXT_DIR/${doc_id}.txt"
 
-    # Split text into chunks
-    python3 api_util/chunk.py "$file_path" "$page_chunk_dir" "$WORD_CHUNK_LIMIT"
+    # Ensure temp dir exists
+    mkdir -p "$TEMP_TXT_DIR"
 
-    # Flag to identify the very first chunk of the document
-    # If the file is empty (newly created), this is the first chunk.
-    if [ ! -s "$current_temp_file" ]; then
-        is_first_chunk=true
-    else
-        is_first_chunk=false
+    extract_sorted_text "$csv_file" "$raw_text_file"
+
+    if [ ! -s "$raw_text_file" ]; then
+        log "   [Warning] No valid text content found in $doc_id. Skipping."
+        rm -f "$raw_text_file"
+        continue
     fi
 
-    for chunk_file in "$page_chunk_dir"/*.txt; do
+    # 2. Prepare Temp Output
+    current_temp_file="${final_conllu}.tmp"
+    : > "$current_temp_file"
+
+    # 3. Split Text into Chunks
+    doc_chunk_dir="$CHUNK_DIR/${doc_id}"
+    rm -rf "$doc_chunk_dir" && mkdir -p "$doc_chunk_dir"
+
+    # Call the python chunker
+    python3 api_util/chunk.py "$raw_text_file" "$doc_chunk_dir" "$WORD_CHUNK_LIMIT"
+
+    # 4. Process Chunks with UDPipe
+    is_first_chunk=true
+
+    # Iterate over chunk files sorted by name (chunk_0.txt, chunk_1.txt...)
+    # using sort -V for version sort handles chunk_1 vs chunk_10 correctly
+    for chunk_file in $(ls "$doc_chunk_dir"/*.txt | sort -V); do
         [ -e "$chunk_file" ] || continue
         resp_file="${chunk_file}.json"
 
-        # Call UDPipe
+        # Call API with Retry Logic
         if api_call_with_retry "UDPipe" "$UDPIPE_URL" "$resp_file" \
             -F "data=@${chunk_file}" \
             -F "model=${MODEL_UDPIPE}" \
@@ -83,33 +126,45 @@ while IFS=$'\t' read -r doc_id page_num file_path; do
             -F "tagger=" \
             -F "parser="; then
 
-            # Parse JSON to get CoNLL-U content
-            # We capture it in a variable first
             raw_conllu=$(parse_json_result "$resp_file")
 
             if [ "$is_first_chunk" = true ]; then
-                # First chunk: Write everything (including headers)
                 echo "$raw_conllu" >> "$current_temp_file"
                 is_first_chunk=false
             else
-                # Subsequent chunks: Strip metadata headers to keep file valid
-                # Removes lines starting with # newdoc, # newpar, # generator, # udpipe
+                # Strip global headers (# newdoc, # generator) from subsequent chunks
+                # so the combined file is a valid single CoNLL-U document
                 echo "$raw_conllu" | grep -vE "^# (newdoc|newpar|generator|udpipe)" >> "$current_temp_file"
             fi
 
-            # Ensure exactly one newline between chunks (CoNLL-U requirement)
-            # We check if the last line of the file is already empty
-            last_line=$(tail -n 1 "$current_temp_file")
-            if [ -n "$last_line" ]; then
+            # Ensure newline separator between chunks
+            if [ -n "$(tail -n 1 "$current_temp_file")" ]; then
                 echo "" >> "$current_temp_file"
             fi
+        else
+            log "   [Error] Failed to process chunk $(basename "$chunk_file") for $doc_id"
         fi
+
+        # Respect API Rate Limits
         rate_limit
     done
-    rm -rf "$page_chunk_dir"
 
-done < <(cat "$MANIFEST" <(echo -e "__END__\t0\t__END__"))
+    # 5. Finalize
+    if [ -s "$current_temp_file" ]; then
+        mv "$current_temp_file" "$final_conllu"
+        log "   [Saved] $(basename "$final_conllu")"
+        ((doc_count++))
+    else
+        rm -f "$current_temp_file"
+        log "   [Error] Output empty or failed for $doc_id"
+    fi
+
+    # Cleanup temp files for this doc
+    rm -f "$raw_text_file"
+    rm -rf "$doc_chunk_dir"
+
+done
 
 echo "------------------------------------------"
-echo "Done. Processed $doc_count documents."
+echo "Done. Processed $doc_count new documents."
 echo "Please run ./api_3_nt.sh next."
