@@ -1,9 +1,8 @@
 # 📦 ALTO XML Files Postprocessing Pipeline - NLP Enrichment
 
-This project provides a workflow for processing ALTO XML files with NLP services. It takes raw ALTO 
-XMLs and transforms them into structured statistics tables and extracts high-level linguistic features like 
-Named Entities (NER) with tags and CONLL-U files with lemmas & part-of-sentence tags, and extraction of 
-keywords (KER) per document.
+This project provides a workflow for processing text stored in CSV with NLP services. It takes ordered text 
+and extracts high-level linguistic features like Named Entities (NER) with tags and CONLL-U files with 
+lemmas & part-of-sentence tags, and keywords (KER) per page/document.
 
 ---
 
@@ -23,8 +22,7 @@ You are now ready to start the workflow.
 
 ## Workflow Stages
 
-The process is divided into sequential steps, starting from raw ALTO files and ending 
-with extracted linguistic and statistic data.
+The process is divided into sequential steps, each responsible for a specific part of the NLP enrichment pipeline.
 
 ### ▶ Step 1: Prepare CSVs with texts from Page-Specific ALTOs
 
@@ -39,7 +37,7 @@ for each page with a line number column for the proper ordering (`page_num` and 
 
 ```
 CSVS_with_TEXT/
-├── docname1.csv
+├── document1.csv
 ├── document2.csv
 └── ...
 ```
@@ -305,10 +303,14 @@ TF-IDF values computed inside the system.
 - **Developed by** UFAL [^7] 👥
 - **Funded by** ATRIUM [^4]  💰
 - **Shared by** ATRIUM [^4] & UFAL [^7] 🔗
+- **Frameworks used**: 
+  - Lindat/CLARIAH-CZ **NameTag 3** API [^6] 🏷
+  - Lindat/CLARIAH-CZ **UDPipe 2** API [^5] 🏷
+  - local **KER** (Keyword Extraction and Ranking) [^1] 🏷
 
-**©️ 2025 UFAL & ATRIUM**
+**©️ 2026 UFAL & ATRIUM**
 
-[^1]: https://github.com/cneud/alto-tools
+[^1]: https://github.com/ufal/ker
 [^2]: https://github.com/K4TEL/atrium-alto-postprocess
 [^3]: https://ufal.mff.cuni.cz/~strakova/cnec2.0/ne-type-hierarchy.pdf
 [^4]: https://atrium-research.eu/
