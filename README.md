@@ -1,10 +1,31 @@
-# 📦 ALTO XML Files Postprocessing Pipeline - NLP Enrichment
+# 📦 ALTO XML Files Postprocessing Pipeline - NLP Enrichment of text
 
 This project provides a workflow for processing text stored in CSV with NLP services. It takes ordered text 
 and extracts high-level linguistic features like Named Entities (NER) with tags and CONLL-U files with 
 lemmas & part-of-sentence tags, and keywords (KER) per page/document.
 
 ---
+
+> [!CAUTION]
+> This repository is a follow-up to main ALTO XML postprocessing [GitHub repository](https://github.com/K4TEL/atrium-alto-postprocess.git), 
+> a part of ATRIUM project dedicated to ALTO-2-TXT workflow and collection of statistics and from text content
+> of the documents (text and bounding boxes ordered by LayoutReader) recorder in CSV tables as a `text` column [^2].
+
+## Table of contents
+
+- [ ⚙️ Setup](#-setup)
+- [Workflow Stages](#workflow-stages)
+  - [Step 1: Prepare CSVs with texts from Page-Specific ALTOs](#-step-1-prepare-csvs-with-texts-from-page-specific-altos)
+  - [Step 2: Extract NER and CONLL-U](#-step-2-extract-ner-and-conll-u)
+    - [Configuration ⚙️](#configuration-)
+    - [Execution Pipeline](#execution-pipeline)
+      - [Generate Manifest](#1-generate-manifest)
+      - [UDPipe Processing (Morphology & Syntax)](#2-udpipe-processing-morphology--syntax)
+      - [NameTag Processing (NER tags)](#3-nametag-processing-ner-tags)
+      - [Generate Statistics](#4-generate-statistics)
+- [Output Structure](#output-structure)
+- [EXTRA: Extract Keywords (KER)](#extra-extract-keywords-ker-based-on-tf-idf)
+- [Acknowledgements](#acknowledgements-)
 
 ## ⚙️ Setup
 
@@ -53,10 +74,6 @@ Where `split_ws` and `split_we` are the start and end character offsets of the w
 The `lang` and `lang_score` columns indicate the detected language and its confidence score,
 while `perplex` and `categ` provide additional metadata about the text classification.
 
-> [!TIP]
-> More about this step ypu can find in [GitHub repository](https://github.com/K4TEL/atrium-alto-postprocess.git) 
-> of ATRIUM project dedicated to ALTO XML processing into TXT and collection of statistics and keywords 
-> from these files [^2].
 
 ### ▶ Step 2: Extract NER and CONLL-U
 
@@ -254,10 +271,10 @@ contents ordered by page and line numbers.
 
 where short flag meanings are (listed in the same order as used above):
 
--   `--input_dir`: Input directory (e.g., text files from Step 3).
--   `--lang`: Language for KER (`cs` for Czech or `en` for English).
--   `--max-words`: Number words per keyword entry.
--   `--num_keywords`: Number of keywords to extract.
+-  `--input_dir`: Input directory (e.g., text files from Step 3).
+-  `--lang`: Language for KER (`cs` for Czech or `en` for English).
+-  `--max-words`: Number words per keyword entry.
+-  `--num_keywords`: Number of keywords to extract.
 -  `--per_doc_out_dir`: Output directory for per-document CSV files (default: `KW_PER_DOC`).
 -  `--output_file`: Output CSV file for the master keywords table (default: `keywords_master.csv`).
 
