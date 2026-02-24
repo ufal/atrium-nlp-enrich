@@ -4,7 +4,6 @@ import argparse
 from pathlib import Path
 import csv
 import re
-import glob
 
 # Increase CSV field size limit just in case
 csv.field_size_limit(sys.maxsize)
@@ -128,7 +127,7 @@ def parse_misc(misc_str):
     return misc
 
 
-def write_page_csv(rows, output_dir, page_id, file_counter):
+def write_document_csv(rows, out_path):
     if not rows: return
 
     feature_keys = set()
@@ -143,23 +142,18 @@ def write_page_csv(rows, output_dir, page_id, file_counter):
     header = ['page_id', 'token', 'lemma', 'position', 'nameTag'] + \
              sorted(list(feature_keys)) + sorted(list(misc_keys))
 
-    doc_name = os.path.basename(output_dir)
-    safe_id = sanitize_filename(str(page_id))
-    filename = f"{doc_name}-{safe_id}.csv"
-
-    out_path = os.path.join(output_dir, filename)
-
     try:
         with open(out_path, 'w', encoding='utf-8', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=header)
+            # Added aggressive quoting to ensure proper formatting of stray hyphens etc.
+            writer = csv.DictWriter(f, fieldnames=header, quoting=csv.QUOTE_ALL, quotechar='"')
             writer.writeheader()
             writer.writerows(rows)
     except Exception as e:
-        print(f"  [Error] writing {filename}: {e}", file=sys.stderr)
+        print(f"  [Error] writing {out_path}: {e}", file=sys.stderr)
 
 
-def process_merged_file_into_pages(merged_filepath, output_subdir):
-    current_rows = []
+def process_merged_file(merged_filepath, output_csv_path):
+    all_rows = []
     page_counter = 0
 
     with open(merged_filepath, 'r', encoding='utf-8') as f:
@@ -169,9 +163,6 @@ def process_merged_file_into_pages(merged_filepath, output_subdir):
             if line.startswith('# sent_id'):
                 parts = line.split('=', 1)
                 if len(parts) > 1 and parts[1].strip() == '1':
-                    if current_rows:
-                        write_page_csv(current_rows, output_subdir, page_counter, page_counter)
-                        current_rows = []
                     page_counter += 1
 
             if line.startswith('#') or not line:
@@ -197,10 +188,10 @@ def process_merged_file_into_pages(merged_filepath, output_subdir):
             for k, v in misc.items():
                 if k != 'NER': row[f'udpipe.misc.{k}'] = v
 
-            current_rows.append(row)
+            all_rows.append(row)
 
-    if current_rows:
-        write_page_csv(current_rows, output_subdir, page_counter, page_counter)
+    if all_rows:
+        write_document_csv(all_rows, output_csv_path)
 
 
 def process_pipeline(conllu_dir, tsv_root, output_root):
@@ -221,29 +212,17 @@ def process_pipeline(conllu_dir, tsv_root, output_root):
         doc_name = conllu_file.stem
 
         # 1. Define paths
-        doc_out_dir = output_root_obj / doc_name
         doc_tsv_dir = tsv_root_obj / doc_name
+        doc_out_csv = output_root_obj / f"{doc_name}.csv"
 
         if not doc_tsv_dir.exists() or not doc_tsv_dir.is_dir():
             print(f"[Skip] No TSV directory found for: {doc_name} (checked {doc_tsv_dir})")
             continue
 
-        # 2. Count Input vs Output to determine skip
-        # We need to know how many pages exist in the input to compare with output
-        input_tsvs = list(doc_tsv_dir.glob("*.tsv"))
-        count_input = len(input_tsvs)
-
-        if doc_out_dir.exists():
-            output_csvs = list(doc_out_dir.glob("*.csv"))
-            count_output = len(output_csvs)
-
-            # --- STRICT SKIP LOGIC ---
-            # Only skip if the output count exactly matches input count
-            if count_input > 0 and count_input == count_output:
-                print(f"[Skip] {doc_name}: Output complete ({count_output} CSVs match {count_input} TSVs).")
-                continue
-            elif count_output > 0:
-                print(f"[Reprocess] {doc_name}: Count mismatch (Input: {count_input} vs Output: {count_output}).")
+        # 2. Check if output file already exists to skip
+        if doc_out_csv.exists():
+            print(f"[Skip] {doc_name}: Output complete ({doc_out_csv.name} already exists).")
+            continue
 
         print(f"[Processing] {doc_name}...")
 
@@ -253,14 +232,11 @@ def process_pipeline(conllu_dir, tsv_root, output_root):
             print(f"  [Warn] No valid TSV data found in {doc_tsv_dir}")
             continue
 
-        # 4. Create output folder
-        doc_out_dir.mkdir(exist_ok=True)
-
-        # 5. Merge
-        merged_file_path = doc_out_dir / f"{doc_name}_merged.tmp"
+        # 4. Merge
+        merged_file_path = output_root_obj / f"{doc_name}_merged.tmp"
         if merge_and_write(conllu_file, tsv_data, merged_file_path):
-            # 6. Generate CSVs
-            process_merged_file_into_pages(merged_file_path, doc_out_dir)
+            # 5. Generate single consolidated CSV
+            process_merged_file(merged_file_path, doc_out_csv)
             # Cleanup temp file
             try:
                 os.remove(merged_file_path)

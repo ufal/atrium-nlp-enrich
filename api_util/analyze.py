@@ -9,16 +9,12 @@ from collections import Counter
 csv.field_size_limit(sys.maxsize)
 
 # --- CNEC 2.0 Type Hierarchy Mapping ---
-# Based on: https://ufal.mff.cuni.cz/~strakova/cnec2.0/ne-type-hierarchy.pdf
 CNEC_TYPE_MAP = {
-    # a: Numbers, addresses, time
     "a": "Address/Number/Time (General)",
     "A": "Complex Address/Number/Time",
     "ah": "Street address",
     "at": "Phone/Fax number",
     "az": "Zip code",
-
-    # g: Geographical names
     "g": "Geographical name (General)",
     "G": "Geographical name (General)",
     "g_": "Geographical name (General)",
@@ -30,8 +26,6 @@ CNEC_TYPE_MAP = {
     "gc": "States/Provinces/Regions",
     "gt": "Continents",
     "gh": "Hydronym (Bodies of water)",
-
-    # i: Institutions
     "i": "Institution name (General)",
     "i_": "Institution name (General)",
     "I": "Institution name (General)",
@@ -39,14 +33,10 @@ CNEC_TYPE_MAP = {
     "if": "Company/Firm",
     "io": "Organization/Society",
     "ic": "Cult/Educational institution",
-
-    # m: Media names
     "m": "Media name (General)",
     "mn": "Periodical name (Newspaper/Magazine)",
     "ms": "Radio/TV station",
     "mi": "Internet links",
-
-    # o: Artifact names
     "o": "Artifact name (General)",
     "o_": "Artifact name (General)",
     "oa": "Cultural artifact (Book/Painting)",
@@ -54,8 +44,6 @@ CNEC_TYPE_MAP = {
     "om": "Currency",
     "or": "Directives, norms",
     "op": "Product (General)",
-
-    # p: Personal names
     "p": "Personal name (General)",
     "p_": "Personal name (General)",
     "P": "Complex personal names",
@@ -67,8 +55,6 @@ CNEC_TYPE_MAP = {
     "pd": "Academic titles",
     "pp": "Relig./myth persons",
     "me": "Email address",
-
-    # t: Time expressions
     "t": "Time expression (General)",
     "T": "Complex time expressions",
     "td": "Day",
@@ -77,8 +63,6 @@ CNEC_TYPE_MAP = {
     "ty": "Year",
     "tf": "Holiday/Feast",
     "tt": "Time block",
-
-    # n: Number expressions
     "n": "Number expression (General)",
     "N": "Complex number expressions",
     "n_": "Number expression (General)",
@@ -88,8 +72,6 @@ CNEC_TYPE_MAP = {
     "ni": "Itemizer (1.)",
     "no": "Ordinal number",
     "ns": "Sport score",
-
-    # General / Fallback
     "unk": "Unknown Type",
     "O": "None",
     "C": "Complex bibliographic expression",
@@ -97,19 +79,12 @@ CNEC_TYPE_MAP = {
 
 
 def parse_tag_and_type_tsv(raw_tag):
-    """
-    Parses a raw BIO tag (e.g., "B-p", "I-p", "O").
-    Returns (BIO_Tag, Full_Type_Name).
-    """
     if raw_tag == "O" or not raw_tag:
         return "O", None
 
-    # Handle B-type / I-type
     if raw_tag.startswith("B-") or raw_tag.startswith("I-"):
-        # Strip prefix to get the short code (e.g., "p" from "B-p")
-        # Handle cases like "B-P|B-pf" by taking the first one
         primary = raw_tag.split('|')[0]
-        prefix = primary[:2]  # B- or I-
+        prefix = primary[:2]
         short_code = primary[2:]
 
         full_type_name = CNEC_TYPE_MAP.get(short_code, f"Unknown Code ({short_code})")
@@ -119,22 +94,15 @@ def parse_tag_and_type_tsv(raw_tag):
 
 
 def get_entities_from_tsv(tsv_path):
-    """
-    Parses a NameTag TSV file (Header + Word\tTag\tNE).
-    Returns a list of (Entity_Text, Entity_Full_Type_Name).
-    """
     entities = []
     curr_toks = []
     curr_type = None
 
     try:
         with open(tsv_path, 'r', encoding='utf-8') as f:
-            # Skip header if present
             first_line = next(f, "").strip()
-            # If the file is empty or just header
             if not first_line: return []
 
-            # Reset pointer if it wasn't a header (unlikely given nametag.py, but safe)
             if not first_line.startswith("Word"):
                 f.seek(0)
 
@@ -146,30 +114,25 @@ def get_entities_from_tsv(tsv_path):
                 if len(parts) < 2: continue
 
                 tok = parts[0]
-                tag_raw = parts[1]  # "B-per"
+                tag_raw = parts[1]
 
-                # Use our parser
                 bio_tag, full_etype = parse_tag_and_type_tsv(tag_raw)
 
-                # --- BIO LOGIC ---
                 if bio_tag.startswith('B') or (bio_tag != 'O' and not curr_toks):
-                    # Close previous
                     if curr_toks:
                         entities.append((" ".join(curr_toks), curr_type))
-                    # Start new
                     curr_toks = [tok]
                     curr_type = full_etype
 
                 elif bio_tag.startswith('I') and curr_toks:
                     curr_toks.append(tok)
 
-                else:  # O
+                else:
                     if curr_toks:
                         entities.append((" ".join(curr_toks), curr_type))
                         curr_toks = []
                         curr_type = None
 
-            # Flush end
             if curr_toks:
                 entities.append((" ".join(curr_toks), curr_type))
 
@@ -180,7 +143,6 @@ def get_entities_from_tsv(tsv_path):
 
 
 def extract_page_number(filename):
-    """Extracts '1' from 'docname-1.tsv'."""
     match = re.search(r'-(\d+)\.tsv$', filename)
     if match:
         return int(match.group(1))
@@ -200,21 +162,17 @@ def main():
     print(f"[Stats] Scanning entities in: {input_root_dir}")
 
     with open(stats_file, 'w', newline='', encoding='utf-8-sig') as f:
-        w = csv.writer(f)
+        # Added QUOTE_ALL to prevent parsing errors due to special characters like hyphens
+        w = csv.writer(f, quoting=csv.QUOTE_ALL, quotechar='"')
         header = ["file", "page"] + [x for i in range(1, top_n + 1) for x in (f"ne{i}", f"type{i}", f"cnt-{i}")]
         w.writerow(header)
 
-        # Iterate over document directories in NE/
         if os.path.exists(input_root_dir):
-            # Get list of subdirectories
             doc_dirs = sorted([d for d in os.listdir(input_root_dir) if os.path.isdir(os.path.join(input_root_dir, d))])
-
             count_processed = 0
 
             for doc_name in doc_dirs:
                 doc_path = os.path.join(input_root_dir, doc_name)
-
-                # Find all TSV files for this document
                 tsv_files = sorted([f for f in os.listdir(doc_path) if f.endswith(".tsv")])
 
                 if not tsv_files:
@@ -223,21 +181,17 @@ def main():
                 for tsv_file in tsv_files:
                     full_path = os.path.join(doc_path, tsv_file)
                     page_num = extract_page_number(tsv_file)
-
-                    # Extract entities for this specific page
                     entities = get_entities_from_tsv(full_path)
 
                     if not entities:
                         continue
 
-                    # Count unique (Text, Type) pairs
                     c = Counter(entities).most_common(top_n)
 
                     row = [doc_name, page_num]
                     for (ne_text, ne_type), cnt in c:
                         row.extend([ne_text, ne_type, cnt])
 
-                    # Padding
                     missing = top_n - len(c)
                     if missing > 0:
                         row.extend(["", "", 0] * missing)
