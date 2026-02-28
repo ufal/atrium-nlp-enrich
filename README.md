@@ -85,7 +85,7 @@ processing, text chunking, and API rate limiting.
 
 #### Configuration ⚙️
 
-Before running the pipeline, review the [api_config.env](config_api.env) 📎 file. This file controls 
+Before running the pipeline, review the [api_config.txt](config_api.txt) 📎 file. This file controls 
 directory paths, API endpoints, and model selection.
 
 ```bash

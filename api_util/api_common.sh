@@ -5,17 +5,17 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 PROJECT_ROOT="$SCRIPT_DIR/.."
 
-if [ -f "$PROJECT_ROOT/config_api.env" ]; then
-    source "$PROJECT_ROOT/config_api.env"
+if [ -f "$PROJECT_ROOT/config_api.txt" ]; then
+    source "$PROJECT_ROOT/config_api.txt"
 else
-    echo "Error: config_api.env not found in $PROJECT_ROOT"
+    echo "Error: config_api.txt not found in $PROJECT_ROOT"
     exit 1
 fi
 
 # 2. Validation
 if [ ! -d "$INPUT_DIR" ]; then
     echo "Error: Input directory '$INPUT_DIR' does not exist."
-    echo "Please update INPUT_DIR in config_api.env"
+    echo "Please update INPUT_DIR in config_api.txt"
     exit 1
 fi
 
