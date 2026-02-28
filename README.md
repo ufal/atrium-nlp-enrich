@@ -91,6 +91,7 @@ directory paths, API endpoints, and model selection.
 ```bash
 # Example settings in config_api.env
 INPUT_DIR="../OUT/CSVS_with_TEXT"        # Source of text files (from Step 3.1)
+ALTO_DIR="../ALTO"        # Source of ALTO XML files (from Step 1) - for TEITOK conversion
 OUTPUT_DIR="../OUT"        # Destination for results
 WORK_DIR="./TEMP"              # Working directory for intermediate files
 
@@ -106,6 +107,10 @@ MODEL_NAMETAG="nametag3-czech-cnec2.0-240830"
 WORD_CHUNK_LIMIT=900           # Word limit per API call
 TIMEOUT=60                     # API call timeout in seconds
 MAX_RETRIES=5                  # Number of retries for failed API calls
+
+SAVE_CONLLU_NE=true   # keep merged CoNLL-U with NER in MISC
+SAVE_CSV=true         # write token-level summary CSV
+SAVE_TEITOK=true      # write TEITOK-style TEI XML (flexiconv-compatible)
 ```
 
 #### Execution Pipeline
@@ -186,19 +191,40 @@ Example output directory [NE](data_samples%2FNE) 📁 contains per-page TSV file
 
 ##### 4. Generate Statistics
 
-Aggregates the entity counts from the final CoNLL-U files into a summary CSV. It utilizes 
-[analyze.py](api_util/analyze.py) 📎 to map complex CNEC 2.0 tags (e.g., `g`, `pf`, `if`) 
+This stage consolidates the linguistic data from UDPipe (CoNLL-U) and 
+the NER data from NameTag (TSV) into final per-document formats. It also 
+generates a master summary of entity counts across the entire collection 
+and can optionally produce TEITOK-compatible XML files that merge linguistic 
+tokens with original ALTO layout coordinates. 
+
+The process utilizes [summarize_nt_udp.py](api_util/summarize_nt_udp.py) 📎 to merge these layers and [analyze.py](api_util/analyze.py) 📎 to map 
+complex CNEC 2.0 tags into human-readable categories (e.g., `g`, `pf`, `if`) 
 into human-readable categories (e.g., "Geographical name", "First name", "Company/Firm").
 
 ```bash
 ./api_4_stats.sh
 ```
 
-* **Input 1:** `OUTPUT_DIR/NE/*/*.tsv` (NE annotated per-page files).
-* **Input 2:** `OUTPUT_DIR/UDP/*.conllu` (Intermediate per-document CoNLL-U files).
-* **Output 1:** `OUTPUT_DIR/summary_ne_counts.csv`.
-* **Output 2:** `OUTPUT_DIR/UDP_NE/*.csv` (per-document CSV files with NE and UDPipe features).
-* **Output 3:** `OUTPUT_DIR/UDP_NE/*.conllu` (per-document CoNLL-U files with NE).
+#### Inputs and Outputs
+
+* **Input 1:** `OUTPUT_DIR/UDP/*.conllu` — Per-document CoNLL-U files containing morphology and syntax.
+* **Input 2:** `OUTPUT_DIR/NE/*/*.tsv` — Per-page TSV files containing Named Entity annotations.
+* **Input 3 (Optional):** `ALTO_DIR/*.alto.xml` — Source ALTO XML files used during TEITOK conversion to provide coordinate mapping (`frame` attributes).
+
+
+* **Output 1:** `OUTPUT_DIR/summary_ne_counts.csv**` — Global table of aggregated Named Entity statistics across all documents.
+* **Output 2:** `OUTPUT_DIR/UDP_NE/<doc_id>.csv**` — Per-document CSV tables with tokens, lemmas, and human-readable NE explanations.
+* **Output 3 (Optional):** `OUTPUT_DIR/UDP_NE/<doc_id>.conllu**` — Final CoNLL-U files with NER tags enriched in the `MISC` column.
+* **Output 4 (Optional):** `OUTPUT_DIR/UDP_NE/<doc_id>.teitok.xml**` — **New:** TEITOK-style TEI XML files. These merge UD attributes and NER with ALTO spatial coordinates, making them ready for the **flexiconv** converter and facsimile viewing.
+
+The behavior of this step is controlled by boolean flags in your [config_api.txt](config_api.txt):
+
+| Variable         | Description                                                    | Default |
+|------------------|----------------------------------------------------------------|---------|
+| `SAVE_CONLLU_NE` | Keep the enriched CoNLL-U with NER in the `MISC` field.        | `true`  |
+| `SAVE_CSV`       | Write the token-level summary CSV per document.                | `true`  |
+| `SAVE_TEITOK`    | Write TEITOK-style TEI XML (merges ALTO coordinates if found). | `true`  |
+`
 
 Run the following command to see how many documents have been processed into CSV files:
 

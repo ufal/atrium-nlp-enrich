@@ -5,7 +5,7 @@ from pathlib import Path
 import csv
 import re
 from xml.sax.saxutils import escape
-
+import xml.etree.ElementTree as ET
 
 # Increase CSV field size limit just in case
 csv.field_size_limit(sys.maxsize)
@@ -81,132 +81,123 @@ CNEC_TYPE_MAP = {
 
 
 
-def write_teitok_from_conllu(conllu_path, teitok_path, doc_id=None):
-    """
-    Produce TEITOK-style TEI XML from a CoNLL-U file (flexiconv-compatible).
-    Structure: <s xml:id="..."> containing <tok> elements per token with full UD
-    attributes. Heads reference the token's unique xml:id rather than ordinal
-    position. SpaceAfter=No in MISC collapses whitespace between tokens.
-    NER tag from MISC is written as the 'ne' attribute.
-    """
-    from xml.sax.saxutils import escape
 
-    # --- parse sentences from CoNLL-U ---
+def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
+    """
+    Produces TEITOK XML by merging CoNLL-U (linguistics/NER) and ALTO (coordinates).
+    If alto_path is provided, it adds 'frame' and 'corresp' attributes to tokens.
+    """
+    # 1. Map ALTO coordinates if file exists
+    alto_coords = {}
+    if alto_path and Path(alto_path).exists():
+        try:
+            # Handle ALTO namespaces (v2, v3, or v4)
+            ns = {'a': 'http://www.loc.gov/standards/alto/ns-v3#'}
+            tree = ET.parse(alto_path)
+            root = tree.getroot()
+            for string in root.findall('.//a:String', ns):
+                s_id = string.get('ID')
+                if s_id:
+                    alto_coords[s_id] = {
+                        'h': string.get('HPOS'),
+                        'v': string.get('VPOS'),
+                        'w': string.get('WIDTH'),
+                        'l': string.get('HEIGHT')
+                    }
+        except Exception as e:
+            print(f"  [Warn] Failed to parse ALTO coordinates: {e}", file=sys.stderr)
+
+    # 2. Parse CoNLL-U sentences
     sentences = []
     current_sent = []
-    sent_id = None
-    sent_text = None
+    sent_id, sent_text = None, None
 
     try:
         with open(conllu_path, 'r', encoding='utf-8') as f:
             for raw in f:
                 line = raw.rstrip('\n')
-                stripped = line.strip()
-
-                if stripped.startswith('# sent_id'):
-                    sent_id = stripped.split('=', 1)[1].strip() if '=' in stripped else None
+                if line.startswith('# sent_id'):
+                    sent_id = line.split('=', 1)[1].strip() if '=' in line else None
                     continue
-                if stripped.startswith('# text'):
-                    sent_text = stripped.split('=', 1)[1].strip() if '=' in stripped else None
+                if line.startswith('# text'):
+                    sent_text = line.split('=', 1)[1].strip() if '=' in line else None
                     continue
-                if stripped.startswith('#') or not stripped:
-                    if not stripped and current_sent:
+                if not line.strip() or line.startswith('#'):
+                    if not line.strip() and current_sent:
                         sentences.append({'id': sent_id, 'text': sent_text, 'tokens': current_sent})
                         current_sent = []
-                        sent_id = None
-                        sent_text = None
                     continue
 
-                cols = stripped.split('\t')
-                # skip multiword / empty nodes
+                cols = line.split('\t')
                 if len(cols) < 10 or '-' in cols[0] or '.' in cols[0]:
                     continue
 
                 misc = parse_misc(cols[9])
-                tok = {
-                    'id':       cols[0],
-                    'form':     cols[1],
-                    'lemma':    cols[2],
-                    'upos':     cols[3],
-                    'xpos':     cols[4],
-                    'feats':    cols[5],
-                    'head':     cols[6],
-                    'deprel':   cols[7],
-                    'deps':     cols[8],
+                current_sent.append({
+                    'id': cols[0],
+                    'form': cols[1],
+                    'lemma': cols[2],
+                    'upos': cols[3],
+                    'xpos': cols[4],
+                    'feats': cols[5],
+                    'head': cols[6],
+                    'deprel': cols[7],
                     'space_after': misc.get('SpaceAfter', 'Yes') != 'No',
-                    'ner':      misc.get('NER', ''),
-                }
-                current_sent.append(tok)
-
-        # flush last sentence if file doesn't end with blank line
+                    'ner': misc.get('NER', ''),
+                    'alto_id': misc.get('ID', '')  # Looks for ID=... in MISC
+                })
         if current_sent:
             sentences.append({'id': sent_id, 'text': sent_text, 'tokens': current_sent})
-
     except Exception as e:
-        print(f"  [Error] reading for TEITOK conversion {conllu_path}: {e}", file=sys.stderr)
+        print(f"  [Error] Reading CoNLL-U: {e}", file=sys.stderr)
         return False
 
+    # 3. Write TEITOK XML
     doc_id_safe = escape(doc_id or Path(teitok_path).stem)
-
     try:
         with open(teitok_path, 'w', encoding='utf-8') as out:
             out.write('<?xml version="1.0" encoding="utf-8"?>\n')
-            out.write(
-                f'<TEI xmlns="http://www.tei-c.org/ns/1.0" xml:lang="cs">\n'
-                f'  <teiHeader/>\n'
-                f'  <text>\n'
-                f'    <body>\n'
-                f'      <div type="document" xml:id="{doc_id_safe}">\n'
-            )
+            out.write(f'<TEI xmlns="http://www.tei-c.org/ns/1.0" xml:lang="cs">\n')
+            out.write('  <teiHeader/>\n  <text>\n    <body>\n')
+            out.write(f'      <div type="document" xml:id="{doc_id_safe}">\n')
 
             for s_idx, sent in enumerate(sentences, start=1):
-                raw_sid = sent['id'] or f"{doc_id_safe}.s{s_idx}"
-                # make the sentence id safe and scoped under doc
-                sid = escape(raw_sid if raw_sid.startswith(doc_id_safe) else f"{doc_id_safe}.{raw_sid}")
-                text_attr = f' text="{escape(sent["text"])}"' if sent.get('text') else ''
-                out.write(f'        <s xml:id="{sid}"{text_attr}>\n')
+                sid = escape(f"{doc_id_safe}.s{s_idx}")
+                out.write(f'        <s xml:id="{sid}">\n')
 
-                # build mapping ordinal → xml:id for head resolution
-                tok_xmlid = {}
-                for tok in sent['tokens']:
-                    tok_xmlid[tok['id']] = f"{sid}.w{tok['id']}"
+                # Pre-map IDs for head resolution
+                id_map = {t['id']: f"{sid}.w{t['id']}" for t in sent['tokens']}
 
                 for tok in sent['tokens']:
-                    wid = escape(tok_xmlid[tok['id']])
+                    wid = id_map[tok['id']]
+                    head_ref = id_map.get(tok['head'], '0') if tok['head'] != '0' else '0'
 
-                    # resolve head to unique xml:id (or '0' for root)
-                    head_val = tok['head']
-                    if head_val == '0':
-                        head_ref = '0'
-                    else:
-                        head_ref = escape(tok_xmlid.get(head_val, head_val))
+                    # Core Attributes
+                    attr_str = (f' xml:id="{wid}" lemma="{escape(tok["lemma"])}"'
+                                f' upos="{escape(tok["upos"])}" head="{head_ref}"'
+                                f' deprel="{escape(tok["deprel"])}"')
 
-                    attrs = (
-                        f' xml:id="{wid}"'
-                        f' lemma="{escape(tok["lemma"])}"'
-                        f' upos="{escape(tok["upos"])}"'
-                        f' xpos="{escape(tok["xpos"])}"'
-                    )
-                    if tok['feats'] and tok['feats'] != '_':
-                        attrs += f' feats="{escape(tok["feats"])}"'
-                    attrs += f' head="{head_ref}" deprel="{escape(tok["deprel"])}"'
-                    if tok['deps'] and tok['deps'] != '_':
-                        attrs += f' deps="{escape(tok["deps"])}"'
-                    if tok['ner'] and tok['ner'] not in ('O', '_', ''):
-                        attrs += f' ne="{escape(tok["ner"])}"'
-                    # SpaceAfter=No → join flag for downstream tools
+                    if tok['ner'] and tok['ner'] not in ('O', '_'):
+                        attr_str += f' ne="{escape(tok["ner"])}"'
+
                     if not tok['space_after']:
-                        attrs += ' join="right"'
+                        attr_str += ' join="right"'
 
-                    out.write(f'          <tok{attrs}>{escape(tok["form"])}</tok>\n')
+                    # Spatial/ALTO Integration
+                    a_id = tok['alto_id']
+                    if a_id in alto_coords:
+                        c = alto_coords[a_id]
+                        # TEITOK uses 'frame' for Bounding Box (HPOS,VPOS,WIDTH,HEIGHT)
+                        attr_str += f' frame="{c["h"]},{c["v"]},{c["w"]},{c["l"]}"'
+                        attr_str += f' corresp="alto:{escape(a_id)}"'
+
+                    out.write(f'          <tok{attr_str}>{escape(tok["form"])}</tok>\n')
 
                 out.write('        </s>\n')
-
             out.write('      </div>\n    </body>\n  </text>\n</TEI>\n')
         return True
-
     except Exception as e:
-        print(f"  [Error] writing TEITOK {teitok_path}: {e}", file=sys.stderr)
+        print(f"  [Error] Writing TEITOK: {e}", file=sys.stderr)
         return False
 
 # === New helper: parse boolean-like env/arg values ===
@@ -219,7 +210,7 @@ def bool_from_str(s, default=False):
     return s in ('1', 'true', 'yes', 'y', 'on')
 
 
-def process_pipeline(conllu_dir, tsv_root, output_root, save_conllu=True, save_csv=True, save_teitok=False):
+def process_pipeline(conllu_dir, tsv_root, output_root, alto_root, save_conllu=True, save_csv=True, save_teitok=False):
     conllu_path_obj = Path(conllu_dir)
     tsv_root_obj = Path(tsv_root)
     output_root_obj = Path(output_root)
@@ -243,6 +234,7 @@ def process_pipeline(conllu_dir, tsv_root, output_root, save_conllu=True, save_c
         doc_out_conllu = doc_out_dir / f"{doc_name}.conllu"
         doc_out_csv    = doc_out_dir / f"{doc_name}.csv"
         doc_out_teitok = doc_out_dir / f"{doc_name}.teitok.xml"
+        doc_in_alto    = alto_root / f"{doc_name}.alto.xml"
 
         required_paths = []
         if save_conllu:  required_paths.append(doc_out_conllu)
@@ -274,7 +266,7 @@ def process_pipeline(conllu_dir, tsv_root, output_root, save_conllu=True, save_c
             process_merged_file(doc_out_conllu, doc_out_csv)
 
         if save_teitok:
-            write_teitok_from_conllu(doc_out_conllu, doc_out_teitok, doc_id=doc_name)
+            write_teitok_merged(doc_out_conllu, doc_out_teitok, doc_in_alto, doc_id=doc_name)
 
         if not save_conllu:
             try:
@@ -503,6 +495,7 @@ def main():
     parser.add_argument('--conllu-dir', default=os.getenv('CONLLU_INPUT_DIR'))
     parser.add_argument('--tsv-dir', default=os.getenv('TSV_INPUT_DIR'))
     parser.add_argument('--out-dir', default=os.getenv('SUMMARY_OUTPUT_DIR'))
+    parser.add_argument('--alto-dir', default=os.getenv('ALTO_DIR'))
 
     # format flags: can be provided on CLI or via environment variables (SAVE_CONLLU_NE, SAVE_CSV, SAVE_TEITOK)
     parser.add_argument('--save-conllu-ne', default=os.getenv('SAVE_CONLLU_NE', '1'),
@@ -518,11 +511,16 @@ def main():
         print("Missing arguments. Check config or flags.")
         sys.exit(1)
 
+
     save_conllu = bool_from_str(args.save_conllu_ne, default=True)
     save_csv = bool_from_str(args.save_csv, default=True)
     save_teitok = bool_from_str(args.save_teitok, default=False)
 
-    process_pipeline(args.conllu_dir, args.tsv_dir, args.out_dir,
+    if save_teitok and not args.alto_dir:
+        print(f"ALTO XML directory is required for complete TEITOK XML generation.")
+        sys.exit(1)
+
+    process_pipeline(args.conllu_dir, args.tsv_dir, args.out_dir, args.alto_dir,
                      save_conllu=save_conllu, save_csv=save_csv, save_teitok=save_teitok)
 
 
