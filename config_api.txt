@@ -23,3 +23,7 @@ TIMEOUT=60
 MAX_RETRIES=5
 BACKOFF_FACTOR=1.5
 WORD_CHUNK_LIMIT=900
+
+SAVE_CONLLU_NE="1"   # keep merged CoNLL-U with NER in MISC
+SAVE_CSV="1"         # write token-level summary CSV
+SAVE_TEITOK="0"      # write TEITOK-style TEI XML (flexiconv-compatible)

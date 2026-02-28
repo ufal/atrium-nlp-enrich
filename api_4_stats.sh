@@ -19,8 +19,11 @@ log "Input TSV Root: $INPUT_TSV_DIR"
 
 python3 api_util/summarize_nt_udp.py \
     --conllu-dir "$INPUT_UDP_DIR" \
-    --tsv-dir "$INPUT_TSV_DIR" \
-    --out-dir "$SUMMARY_OUT_DIR"
+    --tsv-dir    "$INPUT_TSV_DIR" \
+    --out-dir    "$SUMMARY_OUT_DIR" \
+    --save-conllu-ne "${SAVE_CONLLU_NE:-1}" \
+    --save-csv       "${SAVE_CSV:-1}" \
+    --save-teitok    "${SAVE_TEITOK:-0}"
 
 if [ $? -eq 0 ]; then
     log "Summarization process finished (checked new/existing files)."

@@ -4,6 +4,8 @@ import argparse
 from pathlib import Path
 import csv
 import re
+from xml.sax.saxutils import escape
+
 
 # Increase CSV field size limit just in case
 csv.field_size_limit(sys.maxsize)
@@ -76,6 +78,214 @@ CNEC_TYPE_MAP = {
     "O": "None",
     "C": "Complex bibliographic expression",
 }
+
+
+
+def write_teitok_from_conllu(conllu_path, teitok_path, doc_id=None):
+    """
+    Produce TEITOK-style TEI XML from a CoNLL-U file (flexiconv-compatible).
+    Structure: <s xml:id="..."> containing <tok> elements per token with full UD
+    attributes. Heads reference the token's unique xml:id rather than ordinal
+    position. SpaceAfter=No in MISC collapses whitespace between tokens.
+    NER tag from MISC is written as the 'ne' attribute.
+    """
+    from xml.sax.saxutils import escape
+
+    # --- parse sentences from CoNLL-U ---
+    sentences = []
+    current_sent = []
+    sent_id = None
+    sent_text = None
+
+    try:
+        with open(conllu_path, 'r', encoding='utf-8') as f:
+            for raw in f:
+                line = raw.rstrip('\n')
+                stripped = line.strip()
+
+                if stripped.startswith('# sent_id'):
+                    sent_id = stripped.split('=', 1)[1].strip() if '=' in stripped else None
+                    continue
+                if stripped.startswith('# text'):
+                    sent_text = stripped.split('=', 1)[1].strip() if '=' in stripped else None
+                    continue
+                if stripped.startswith('#') or not stripped:
+                    if not stripped and current_sent:
+                        sentences.append({'id': sent_id, 'text': sent_text, 'tokens': current_sent})
+                        current_sent = []
+                        sent_id = None
+                        sent_text = None
+                    continue
+
+                cols = stripped.split('\t')
+                # skip multiword / empty nodes
+                if len(cols) < 10 or '-' in cols[0] or '.' in cols[0]:
+                    continue
+
+                misc = parse_misc(cols[9])
+                tok = {
+                    'id':       cols[0],
+                    'form':     cols[1],
+                    'lemma':    cols[2],
+                    'upos':     cols[3],
+                    'xpos':     cols[4],
+                    'feats':    cols[5],
+                    'head':     cols[6],
+                    'deprel':   cols[7],
+                    'deps':     cols[8],
+                    'space_after': misc.get('SpaceAfter', 'Yes') != 'No',
+                    'ner':      misc.get('NER', ''),
+                }
+                current_sent.append(tok)
+
+        # flush last sentence if file doesn't end with blank line
+        if current_sent:
+            sentences.append({'id': sent_id, 'text': sent_text, 'tokens': current_sent})
+
+    except Exception as e:
+        print(f"  [Error] reading for TEITOK conversion {conllu_path}: {e}", file=sys.stderr)
+        return False
+
+    doc_id_safe = escape(doc_id or Path(teitok_path).stem)
+
+    try:
+        with open(teitok_path, 'w', encoding='utf-8') as out:
+            out.write('<?xml version="1.0" encoding="utf-8"?>\n')
+            out.write(
+                f'<TEI xmlns="http://www.tei-c.org/ns/1.0" xml:lang="cs">\n'
+                f'  <teiHeader/>\n'
+                f'  <text>\n'
+                f'    <body>\n'
+                f'      <div type="document" xml:id="{doc_id_safe}">\n'
+            )
+
+            for s_idx, sent in enumerate(sentences, start=1):
+                raw_sid = sent['id'] or f"{doc_id_safe}.s{s_idx}"
+                # make the sentence id safe and scoped under doc
+                sid = escape(raw_sid if raw_sid.startswith(doc_id_safe) else f"{doc_id_safe}.{raw_sid}")
+                text_attr = f' text="{escape(sent["text"])}"' if sent.get('text') else ''
+                out.write(f'        <s xml:id="{sid}"{text_attr}>\n')
+
+                # build mapping ordinal → xml:id for head resolution
+                tok_xmlid = {}
+                for tok in sent['tokens']:
+                    tok_xmlid[tok['id']] = f"{sid}.w{tok['id']}"
+
+                for tok in sent['tokens']:
+                    wid = escape(tok_xmlid[tok['id']])
+
+                    # resolve head to unique xml:id (or '0' for root)
+                    head_val = tok['head']
+                    if head_val == '0':
+                        head_ref = '0'
+                    else:
+                        head_ref = escape(tok_xmlid.get(head_val, head_val))
+
+                    attrs = (
+                        f' xml:id="{wid}"'
+                        f' lemma="{escape(tok["lemma"])}"'
+                        f' upos="{escape(tok["upos"])}"'
+                        f' xpos="{escape(tok["xpos"])}"'
+                    )
+                    if tok['feats'] and tok['feats'] != '_':
+                        attrs += f' feats="{escape(tok["feats"])}"'
+                    attrs += f' head="{head_ref}" deprel="{escape(tok["deprel"])}"'
+                    if tok['deps'] and tok['deps'] != '_':
+                        attrs += f' deps="{escape(tok["deps"])}"'
+                    if tok['ner'] and tok['ner'] not in ('O', '_', ''):
+                        attrs += f' ne="{escape(tok["ner"])}"'
+                    # SpaceAfter=No → join flag for downstream tools
+                    if not tok['space_after']:
+                        attrs += ' join="right"'
+
+                    out.write(f'          <tok{attrs}>{escape(tok["form"])}</tok>\n')
+
+                out.write('        </s>\n')
+
+            out.write('      </div>\n    </body>\n  </text>\n</TEI>\n')
+        return True
+
+    except Exception as e:
+        print(f"  [Error] writing TEITOK {teitok_path}: {e}", file=sys.stderr)
+        return False
+
+# === New helper: parse boolean-like env/arg values ===
+def bool_from_str(s, default=False):
+    if s is None:
+        return default
+    if isinstance(s, bool):
+        return s
+    s = str(s).strip().lower()
+    return s in ('1', 'true', 'yes', 'y', 'on')
+
+
+def process_pipeline(conllu_dir, tsv_root, output_root, save_conllu=True, save_csv=True, save_teitok=False):
+    conllu_path_obj = Path(conllu_dir)
+    tsv_root_obj = Path(tsv_root)
+    output_root_obj = Path(output_root)
+
+    if not conllu_path_obj.exists():
+        print(f"Error: CoNLL-U dir not found: {conllu_dir}")
+        sys.exit(1)
+
+    conllu_files = sorted(list(conllu_path_obj.glob('*.conllu')))
+    print(f"Found {len(conllu_files)} documents to process.")
+
+    output_root_obj.mkdir(parents=True, exist_ok=True)
+
+    for conllu_file in conllu_files:
+        doc_name = conllu_file.stem
+
+        # per-document output folder: <output_root>/<doc_name>/
+        doc_out_dir = output_root_obj / doc_name
+        doc_out_dir.mkdir(parents=True, exist_ok=True)
+
+        doc_out_conllu = doc_out_dir / f"{doc_name}.conllu"
+        doc_out_csv    = doc_out_dir / f"{doc_name}.csv"
+        doc_out_teitok = doc_out_dir / f"{doc_name}.teitok.xml"
+
+        required_paths = []
+        if save_conllu:  required_paths.append(doc_out_conllu)
+        if save_csv:     required_paths.append(doc_out_csv)
+        if save_teitok:  required_paths.append(doc_out_teitok)
+
+        if required_paths and all(p.exists() for p in required_paths):
+            print(f"[Skip] {doc_name}: all requested outputs already exist.")
+            continue
+
+        doc_tsv_dir = tsv_root_obj / doc_name
+        if not doc_tsv_dir.exists() or not doc_tsv_dir.is_dir():
+            print(f"[Skip] No TSV directory found for: {doc_name} (checked {doc_tsv_dir})")
+            continue
+
+        print(f"[Processing] {doc_name}...")
+
+        tsv_data = get_sorted_tsv_content(doc_tsv_dir)
+        if not tsv_data:
+            print(f"  [Warn] No valid TSV data found in {doc_tsv_dir}")
+            continue
+
+        merged_written = merge_and_write(conllu_file, tsv_data, doc_out_conllu)
+        if not merged_written:
+            print(f"  [Error] failed to create merged conllu for {doc_name}, skipping.")
+            continue
+
+        if save_csv:
+            process_merged_file(doc_out_conllu, doc_out_csv)
+
+        if save_teitok:
+            write_teitok_from_conllu(doc_out_conllu, doc_out_teitok, doc_id=doc_name)
+
+        if not save_conllu:
+            try:
+                if doc_out_conllu.exists():
+                    doc_out_conllu.unlink()
+            except Exception as e:
+                print(f"  [Warn] unable to remove intermediate conllu {doc_out_conllu}: {e}", file=sys.stderr)
+
+    print("\nPipeline Complete.")
+
+
 
 
 def load_config(config_path="api_config.env"):
@@ -282,51 +492,9 @@ def process_merged_file(merged_filepath, output_csv_path):
         write_document_csv(all_rows, output_csv_path)
 
 
-def process_pipeline(conllu_dir, tsv_root, output_root):
-    conllu_path_obj = Path(conllu_dir)
-    tsv_root_obj = Path(tsv_root)
-    output_root_obj = Path(output_root)
 
-    if not conllu_path_obj.exists():
-        print(f"Error: CoNLL-U dir not found: {conllu_dir}")
-        sys.exit(1)
 
-    conllu_files = sorted(list(conllu_path_obj.glob('*.conllu')))
-    print(f"Found {len(conllu_files)} documents to process.")
 
-    output_root_obj.mkdir(parents=True, exist_ok=True)
-
-    for conllu_file in conllu_files:
-        doc_name = conllu_file.stem
-
-        # 1. Define paths
-        doc_tsv_dir = tsv_root_obj / doc_name
-        doc_out_csv = output_root_obj / f"{doc_name}.csv"
-        doc_out_conllu = output_root_obj / f"{doc_name}.conllu"
-
-        if not doc_tsv_dir.exists() or not doc_tsv_dir.is_dir():
-            print(f"[Skip] No TSV directory found for: {doc_name} (checked {doc_tsv_dir})")
-            continue
-
-        # 2. Check if output files already exist to skip
-        if doc_out_csv.exists() and doc_out_conllu.exists():
-            print(f"[Skip] {doc_name}: Outputs complete (CSV and CoNLL-U already exist).")
-            continue
-
-        print(f"[Processing] {doc_name}...")
-
-        # 3. Gather all pages (TSVs) into one stream
-        tsv_data = get_sorted_tsv_content(doc_tsv_dir)
-        if not tsv_data:
-            print(f"  [Warn] No valid TSV data found in {doc_tsv_dir}")
-            continue
-
-        # 4. Merge TSV into CoNLL-U and permanently save it
-        if merge_and_write(conllu_file, tsv_data, doc_out_conllu):
-            # 5. Generate single consolidated CSV by reading the new CoNLL-U file
-            process_merged_file(doc_out_conllu, doc_out_csv)
-
-    print("\nPipeline Complete.")
 
 
 def main():
@@ -335,13 +503,28 @@ def main():
     parser.add_argument('--conllu-dir', default=os.getenv('CONLLU_INPUT_DIR'))
     parser.add_argument('--tsv-dir', default=os.getenv('TSV_INPUT_DIR'))
     parser.add_argument('--out-dir', default=os.getenv('SUMMARY_OUTPUT_DIR'))
+
+    # format flags: can be provided on CLI or via environment variables (SAVE_CONLLU_NE, SAVE_CSV, SAVE_TEITOK)
+    parser.add_argument('--save-conllu-ne', default=os.getenv('SAVE_CONLLU_NE', '1'),
+                        help="1/0 whether to keep the merged CoNLL-U per document (env: SAVE_CONLLU_NE).")
+    parser.add_argument('--save-csv', default=os.getenv('SAVE_CSV', '1'),
+                        help="1/0 whether to write the summary CSV per document (env: SAVE_CSV).")
+    parser.add_argument('--save-teitok', default=os.getenv('SAVE_TEITOK', '0'),
+                        help="1/0 whether to write TEITOK-XML per document (env: SAVE_TEITOK).")
+
     args = parser.parse_args()
 
     if not all([args.conllu_dir, args.tsv_dir, args.out_dir]):
         print("Missing arguments. Check config or flags.")
         sys.exit(1)
 
-    process_pipeline(args.conllu_dir, args.tsv_dir, args.out_dir)
+    save_conllu = bool_from_str(args.save_conllu_ne, default=True)
+    save_csv = bool_from_str(args.save_csv, default=True)
+    save_teitok = bool_from_str(args.save_teitok, default=False)
+
+    process_pipeline(args.conllu_dir, args.tsv_dir, args.out_dir,
+                     save_conllu=save_conllu, save_csv=save_csv, save_teitok=save_teitok)
+
 
 
 if __name__ == "__main__":
