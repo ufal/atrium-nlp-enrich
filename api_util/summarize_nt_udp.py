@@ -210,7 +210,7 @@ def bool_from_str(s, default=False):
     return s in ('1', 'true', 'yes', 'y', 'on')
 
 
-def process_pipeline(conllu_dir, tsv_root, output_root, alto_root, save_conllu=True, save_csv=True, save_teitok=False):
+def process_pipeline(conllu_dir, tsv_root, output_root, alto_root, teitok_out, save_conllu=True, save_csv=True, save_teitok=False):
     conllu_path_obj = Path(conllu_dir)
     tsv_root_obj = Path(tsv_root)
     output_root_obj = Path(output_root)
@@ -233,7 +233,7 @@ def process_pipeline(conllu_dir, tsv_root, output_root, alto_root, save_conllu=T
 
         doc_out_conllu = doc_out_dir / f"{doc_name}.conllu"
         doc_out_csv    = doc_out_dir / f"{doc_name}.csv"
-        doc_out_teitok = doc_out_dir / f"{doc_name}.teitok.xml"
+        doc_out_teitok = teitok_out / f"{doc_name}.teitok.xml"
         doc_in_alto    = alto_root / f"{doc_name}.alto.xml"
 
         required_paths = []
@@ -495,6 +495,7 @@ def main():
     parser.add_argument('--conllu-dir', default=os.getenv('CONLLU_INPUT_DIR'))
     parser.add_argument('--tsv-dir', default=os.getenv('TSV_INPUT_DIR'))
     parser.add_argument('--out-dir', default=os.getenv('SUMMARY_OUTPUT_DIR'))
+    parser.add_argument('--tt-dir', default=os.getenv('TEITOK_OUTPUT_DIR'))
     parser.add_argument('--alto-dir', default=os.getenv('ALTO_DIR'))
 
     # format flags: can be provided on CLI or via environment variables (SAVE_CONLLU_NE, SAVE_CSV, SAVE_TEITOK)
@@ -516,11 +517,16 @@ def main():
     save_csv = bool_from_str(args.save_csv, default=True)
     save_teitok = bool_from_str(args.save_teitok, default=False)
 
-    if save_teitok and not args.alto_dir:
-        print(f"ALTO XML directory is required for complete TEITOK XML generation.")
-        sys.exit(1)
+    if save_teitok:
+        if not args.alto_dir:
+            print(f"ALTO XML directory is required for complete TEITOK XML generation.")
+            sys.exit(1)
+        if not args.tt_dir:
+            print(f"TEITOK output directory is required for complete TEITOK XML generation.")
+            sys.exit(1)
 
-    process_pipeline(args.conllu_dir, args.tsv_dir, args.out_dir, args.alto_dir,
+
+    process_pipeline(args.conllu_dir, args.tsv_dir, args.out_dir, args.alto_dir, args.tt_dir,
                      save_conllu=save_conllu, save_csv=save_csv, save_teitok=save_teitok)
 
 

@@ -8,6 +8,7 @@ echo "=========================================="
 INPUT_UDP_DIR="$OUTPUT_DIR/UDP"
 INPUT_TSV_DIR="$OUTPUT_DIR/NE"
 SUMMARY_OUT_DIR="$OUTPUT_DIR/UDP_NE"
+TEITOK_OUT_DIR="$OUTPUT_DIR/TEITOK"
 STATS_FILE="$OUTPUT_DIR/summary_ne_counts.csv"
 
 mkdir -p "$SUMMARY_OUT_DIR"
