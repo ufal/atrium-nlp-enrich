@@ -7,7 +7,7 @@ lemmas & part-of-sentence tags, and keywords (KER) per page/document.
 ---
 
 > [!CAUTION]
-> This repository is a follow-up to main ALTO XML postprocessing [GitHub repository](https://github.com/K4TEL/atrium-alto-postprocess.git), 
+> This repository is a follow-up to main ALTO XML postprocessing [GitHub repository](https://github.com/ufal/atrium-alto-postprocess), 
 > a part of ATRIUM project dedicated to ALTO-2-TXT workflow and collection of statistics and from text content
 > of the documents (text and bounding boxes ordered by LayoutReader) recorder in CSV tables as a `text` column [^2].
 
@@ -365,10 +365,10 @@ TF-IDF values computed inside the system.
 **©️ 2026 UFAL & ATRIUM**
 
 [^1]: https://github.com/ufal/ker
-[^2]: https://github.com/K4TEL/atrium-alto-postprocess
+[^2]: https://github.com/ufal/atrium-alto-postprocess
 [^3]: https://ufal.mff.cuni.cz/~strakova/cnec2.0/ne-type-hierarchy.pdf
 [^4]: https://atrium-research.eu/
 [^5]: https://lindat.mff.cuni.cz/services/udpipe/api-reference.php
 [^6]: https://lindat.mff.cuni.cz/services/nametag/api-reference.php
-[^8]: https://github.com/K4TEL/atrium-nlp-enrich
+[^8]: https://github.com/ufal/atrium-nlp-enrich
 [^7]: https://ufal.mff.cuni.cz/home-page
