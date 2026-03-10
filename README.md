@@ -215,7 +215,8 @@ into human-readable categories (e.g., "Geographical name", "First name", "Compan
 * **Output 1:** `OUTPUT_DIR/summary_ne_counts.csv**` — Global table of aggregated Named Entity statistics across all documents.
 * **Output 2:** `OUTPUT_DIR/UDP_NE/<doc_id>.csv**` — Per-document CSV tables with tokens, lemmas, and human-readable NE explanations.
 * **Output 3 (Optional):** `OUTPUT_DIR/UDP_NE/<doc_id>.conllu**` — Final CoNLL-U files with NER tags enriched in the `MISC` column.
-* **Output 4 (Optional):** `OUTPUT_DIR/UDP_NE/<doc_id>.teitok.xml**` — **New:** TEITOK-style TEI XML files. These merge UD attributes and NER with ALTO spatial coordinates, making them ready for the **flexiconv** converter and facsimile viewing.
+* **Output 4 (Optional):** `OUTPUT_DIR/UDP_NE/<doc_id>.teitok.xml**` — TEITOK-style TEI XML files. These merge UD attributes and NER
+with ALTO spatial coordinates, making them ready for the **flexiconv** converter and facsimile viewing.
 
 The behavior of this step is controlled by boolean flags in your [config_api.txt](config_api.txt):
 
@@ -243,6 +244,9 @@ Example summary table: [summary_ne_counts.csv](data_samples/summary_ne_counts.cs
 Example output directory [UDP_NE](data_samples%2FUDP_NE) 📁 contains per-document CSV tables with NE tag and columns for 
 UDPipe features, plus, CoNLL-U files with NE annotations also in per-document manner.
 
+Example output directory [TEITOK](data_samples%2FTEITOK) 📁 contains per-document TEITOK XML files that
+represent the same information as NER-enriched CoNLL-U output files.
+
 #### Output Structure
 
 After completing the pipeline, your working and output directories will be organized as follows:
@@ -265,6 +269,10 @@ AND
 ├── UDP/  
 │   ├── <doc_id>.conllu
 │   ├── <doc_id>.conllu
+│   └── ...
+├── TEITOK/  
+│   ├── <doc_id>.teitok.xml
+│   ├── <doc_id>.teitok.xml
 │   └── ...
 ├── NE/           
 │   ├── <doc_id>     
