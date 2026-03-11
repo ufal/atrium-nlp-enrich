@@ -132,7 +132,7 @@ Maps input text files to document IDs and page numbers to ensure correct process
 * **Input:** `../CSVS_with_TEXT/` (raw text files in subdirectories from Step 1).
 * **Output:** `OUTPUT_DIR/manifest.tsv`.
 
-Example output file [manifest.tsv](data_samples/manifest.tsv) 📎 with **file**, **page**
+Example output file [manifest.tsv](data_samples/manifest_SHORT.tsv) 📎 with **file**, **page**
 number, and **path** columns. It lists all text files to be processed in the next steps.
 Run the following command to see how many pages will be processed:
 
@@ -241,7 +241,7 @@ ls -l OUTPUT_DIR/UDP_NE/*.csv | wc -l
 ```
 returns number of processed documents.
 
-Example summary table: [summary_ne_counts.csv](data_samples/summary_ne_counts.csv) 📎.
+Example summary table: [summary_ne_counts.csv](data_samples/summary_ne_counts_SHORT.csv) 📎.
 
 Example output directory [UDP_NE](data_samples%2FUDP_NE) 📁 contains per-document CSV tables with NE tag and columns for 
 UDPipe features, plus, CoNLL-U files with NE annotations also in per-document manner.
@@ -298,7 +298,7 @@ statistics across all processed pages.
 > The final CoNLL-U files with NER features are in `<OUTPUT_DIR>/UDP_NE/`.
 
 If you do not plan to rerun any part of the pipeline, you can also delete 
-the entire `TEMP/` directory including [manifest.tsv](data_samples/manifest.tsv) 📎.
+the entire `TEMP/` directory including [manifest.tsv](data_samples/manifest_SHORT.tsv) 📎.
 
 
 ### EXTRA: Extract Keywords (KER) based on tf-idf
@@ -325,7 +325,7 @@ where short flag meanings are (listed in the same order as used above):
 * **Output 2:** `KW_PER_DOC/` (directory with per-document CSV files
 
 This process creates `.csv` table with the columns like `file`, and pairs of `kw-<N>` (N-th keyword)) 
-and `score-<N>` (N-th keyword's score). An example of the summary is available in [keywords_summary.csv](data_samples/keywords_summary.csv) 📎.
+and `score-<N>` (N-th keyword's score). An example of the summary is available in [keywords_summary.csv](data_samples/keywords_summary_SHORT.csv) 📎.
 
 Example of per-document CSV file with keywords: [KW_PER_DOC](data_samples/KW_PER_DOC) 📁.
 
