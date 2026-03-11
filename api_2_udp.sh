@@ -70,7 +70,7 @@ doc_count=0
 
 # Loop through all CSV files in the input directory
 # (We filter by extension to ensure we only process the source files)
-find "$INPUT_DIR" -name "*.csv" | sort | while read csv_file; do
+find "$INPUT_TABLES_DIR" -name "*.csv" | sort | while read csv_file; do
 
     # Extract ID (filename without extension, e.g., CTX193202973)
     doc_id=$(basename "$csv_file" .csv)

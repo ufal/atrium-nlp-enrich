@@ -1,6 +1,6 @@
 # 📦 ALTO XML Files Postprocessing Pipeline - NLP Enrichment of text
 
-This project provides a workflow for processing text stored in CSV with NLP services. It takes ordered text 
+This project provides a workflow for processing text stored in CSV (XLSX) with NLP services. It takes ordered text 
 and extracts high-level linguistic features like Named Entities (NER) with tags and CONLL-U files with 
 lemmas & part-of-sentence tags, and keywords (KER) per page/document.
 
@@ -9,7 +9,7 @@ lemmas & part-of-sentence tags, and keywords (KER) per page/document.
 > [!CAUTION]
 > This repository is a follow-up to main ALTO XML postprocessing [GitHub repository](https://github.com/ufal/atrium-alto-postprocess), 
 > a part of ATRIUM project dedicated to ALTO-2-TXT workflow and collection of statistics and from text content
-> of the documents (text and bounding boxes ordered by LayoutReader) recorder in CSV tables as a `text` column [^2].
+> of the documents (text and bounding boxes ordered by LayoutReader) recorder in CSV (XLSX) tables as a `text` column [^2].
 
 ## Table of contents
 
@@ -48,12 +48,12 @@ The process is divided into sequential steps, each responsible for a specific pa
 ### ▶ Step 1: Prepare CSVs with texts from Page-Specific ALTOs
 
 > [!IMPORTANT]
-> If you already have a directory of CSV tables with `text` column containing extracted text
+> If you already have a directory of CSV (XLSX) tables with `text` column containing extracted text
 > files from ALTO XMLs, you can skip Step 1 and proceed directly to Step 2.
 
 The `../CSVS_with_TEXT/` directory mentioned later is the result of ALTO XML postprocessing pipeline described 
-in the separate repository [^2]. It contains document-specific CSV files with the `text` column containing 
-extracted textual content from the ALTO XML files. Each CSV file corresponds to a document and contains rows
+in the separate repository [^2]. It contains document-specific CSV (XLSX) files with the `text` column containing 
+extracted textual content from the ALTO XML files. Each CSV (XLSX) file corresponds to a document and contains rows
 for each page with a line number column for the proper ordering (`page_num` and `line_num`).
 
 ```
@@ -62,7 +62,7 @@ CSVS_with_TEXT/
 ├── document2.csv
 └── ...
 ```
-with the structure of each CSV file like:
+with the structure of each CSV (XLSX) file like:
 ```
 file,page_num,line_num,text,split_ws,split_we,lang,lang_score,perplex,categ
 CTX201504033,1,8,2012,,,N/A,0,0,Non-text
@@ -74,6 +74,8 @@ Where `split_ws` and `split_we` are the start and end character offsets of the w
 The `lang` and `lang_score` columns indicate the detected language and its confidence score,
 while `perplex` and `categ` provide additional metadata about the text classification.
 
+If the script detects an `.xlsx` file, it will iterate over all sheet names, verify if a `text` column exists 
+in each sheet, and extract the content safely for Excel tables with multiple sheets.
 
 ### ▶ Step 2: Extract NER and CONLL-U
 
@@ -90,10 +92,10 @@ directory paths, API endpoints, and model selection.
 
 ```bash
 # Example settings in config_api.env
-INPUT_DIR="../OUT/CSVS_with_TEXT"        # Source of text files (from Step 3.1)
-ALTO_DIR="../ALTO"        # Source of ALTO XML files (from Step 1) - for TEITOK conversion
-OUTPUT_DIR="../OUT"        # Destination for results
-WORK_DIR="./TEMP"              # Working directory for intermediate files
+OUTPUT_DIR="../../ARUB"         # Destination for results
+INPUT_TABLES_DIR="$OUTPUT_DIR/DOC_LINE_LR_CLS"  # Directory containing input tables (from Step 1)
+ALTO_DIR="$OUTPUT_DIR/altos"    # Source of ALTO XML files (from Step 1) - for TEITOK conversion
+WORK_DIR="./TEMP"               # Working directory for intermediate files
 
 LOG_FILE="$OUTPUT_DIR/processing.log"
 
