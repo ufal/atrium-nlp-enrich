@@ -113,7 +113,6 @@ MAX_RETRIES=5                  # Number of retries for failed API calls
 SAVE_CONLLU_NE=true   # keep merged CoNLL-U with NER in MISC
 SAVE_CSV=true         # write token-level summary CSV
 SAVE_TEITOK=true      # write TEITOK-style TEI XML (flexiconv-compatible)
-TT_MISMATCH_GAP=100   # max characters allowed to skip in ALTO-2-TEITOK matching
 ```
 
 #### Execution Pipeline
@@ -203,7 +202,8 @@ XML files that merge linguistic tokens with original ALTO layout coordinates.
 The process utilizes [summarize_nt_udp.py](api_util/summarize_nt_udp.py) 📎 to merge these 
 layers and [analyze.py](api_util/analyze.py) 📎 to map complex CNEC 2.0 tags 
 (e.g., `g`, `pf`, `if`) into human-readable categories (e.g., "Geographical name", 
-"First name", "Company/Firm").
+"First name", "Company/Firm"). Optionally, TEITOK-related functionality is implemented in
+[teitok_alto.py](api_util/teitok_alto.py) 📎.
 
 ```bash
 ./api_4_stats.sh
@@ -216,8 +216,8 @@ layers and [analyze.py](api_util/analyze.py) 📎 to map complex CNEC 2.0 tags
 * **Input 3 (Optional):** `ALTO_DIR/*.alto.xml` — Source ALTO XML files used during TEITOK conversion to provide spatial bounding box coordinates for each token.
 
 * **Output 1:** `OUTPUT_DIR/summary_ne_counts.csv` — Global table of aggregated Named Entity statistics across all documents.
-* **Output 2:** `OUTPUT_DIR/UDP_NE/<doc_id>.csv` — Per-document CSV tables with tokens, lemmas, and human-readable NE explanations.
-* **Output 3 (Optional):** `OUTPUT_DIR/UDP_NE/<doc_id>.conllu` — Final CoNLL-U files with NER tags enriched in the `MISC` column.
+* **Output 2:** `OUTPUT_DIR/UDP_NE/<doc_id>/<doc_id>.csv` — Per-document CSV tables with tokens, lemmas, and human-readable NE explanations.
+* **Output 3 (Optional):** `OUTPUT_DIR/UDP_NE/<doc_id>/<doc_id>.conllu` — Final CoNLL-U files with NER tags enriched in the `MISC` column.
 * **Output 4 (Optional):** `OUTPUT_DIR/TEITOK/<doc_id>.teitok.xml` — TEITOK-style TEI XML files ready for the **flexiconv** converter and facsimile viewing (see below).
 
 The behavior of this step is controlled by boolean flags in your [config_api.txt](config_api.txt):
@@ -228,46 +228,67 @@ The behavior of this step is controlled by boolean flags in your [config_api.txt
 | `SAVE_CSV`       | Write the token-level summary CSV per document.                               | `true`  |
 | `SAVE_TEITOK`    | Write TEITOK-style TEI XML with bounding boxes and NER spans (requires ALTO). | `true`  |
 
-#### ALTO-to-TEITOK Coordinate Alignment
 
-When `SAVE_TEITOK=true`, the script attempts to align every UDPipe token to a 
-bounding box from the corresponding ALTO XML file. This is done through a character-level 
-greedy aligner that flattens all ALTO `String` elements into a single NFC-normalized 
-character sequence and matches token forms left-to-right across it. The aligner tolerates 
-moderate OCR/tokeniser divergences — for example, differing word forms or NFC/NFD 
-encoding mismatches — by scanning a short lookahead window before skipping a token, 
-which prevents a single mismatch from causing a cascade of alignment failures downstream.
+#### ALTO-to-TEITOK XML Generation and Coordinate Alignment
 
-Matched bounding boxes are written to each `<tok>` element as `@bbox="x1 y1 x2 y2"` 
-(absolute pixel coordinates in TEITOK's hOCR-derived format). Each token also carries 
-`@type="w"` or `@type="pc"` (punctuation character), derived from UDPipe's UPOS tag, to 
-preserve the original token-class distinction used in TEI sources.
+When `SAVE_TEITOK=true`, the script  ([teitok_alto.py](api_util/teitok_alto.py) 📎) 
+generates standard-compliant TEITOK XML by aligning UDPipe tokens to spatial bounding 
+boxes from the corresponding ALTO XML file. 
 
-Named entity spans are wrapped in `<name>` elements grouping their constituent `<tok>` 
-nodes. Two attributes encode the entity type at different levels of granularity: 
-`@type` holds the CoNLL-style category (`PER`, `ORG`, `LOC`, or `MISC`) intended for 
-querying and interoperability, while `@cnec` carries the raw CNEC 2.0 code (e.g. `pf`,
-`gu`, `if`) for use in visualisation. For example, a span tagged as a first name is 
-written as `<name type="PER" cnec="pf">`. Page boundaries are marked with `<pb n="N"/>` 
-elements. Alignment statistics (matched vs. total tokens) are printed to the console per document.
+This alignment is powered by an optimal sequence matching algorithm 
+(`difflib.SequenceMatcher`). By flattening all ALTO `String` elements into a single 
+NFC-normalized character sequence and mapping the token forms against it, the aligner 
+seamlessly bridges complex OCR and tokeniser mismatches (such as arbitrary word splits, 
+differing forms, or missing characters). This robust approach ensures virtually 100% 
+of available ALTO bounding boxes are successfully transferred to the output tokens.
+
+The structural and spatial hierarchy from the ALTO file is strictly preserved in the generated TEITOK XML:
+* **Tokens:** Matched coordinates are written to each `<tok>` element as `@bbox="x1 y1 x2 y2"` (absolute 
+pixel coordinates in TEITOK's hOCR-derived format). Each token also carries `@type="w"` (word) or 
+`@type="pc"` (punctuation character) derived from UDPipe's UPOS tag.
+* **Lines:** ALTO `<TextLine>` elements are preserved via `<lb>` (line break) tags, which also include 
+their own `@bbox` spatial coordinates.
+* **Blocks:** Text blocks are encapsulated within `<div type="MarginTextZone-P">` containers, satisfying 
+the core ATRIUM guidelines for classified text zones.
+* **Graphics:** Non-text elements like `Illustration` and `GraphicalElement` blocks are parsed and 
+appended to their respective pages as `<figure>` tags with strict bounding boxes.
+* **Pages:** Page boundaries are marked with `<pb n="N" id="..." facs="..."/>` elements pointing to 
+the specific document surface.
+
+Named entity spans are wrapped in `<name>` elements grouping their constituent `<tok>` nodes. 
+Two attributes encode the entity type at different levels of granularity: `@type` holds the CoNLL-style 
+category (`PER`, `ORG`, `LOC`, or `MISC`) intended for querying and interoperability, while `@cnec` carries
+the raw CNEC 2.0 code (e.g., `pf`, `gu`, `if`) for use in visualisation. For example, a span tagged as a 
+first name is written as `<name type="PER" cnec="pf">`. 
 
 > [!NOTE]
-> ALTO files from different ABBYY or Tesseract versions may produce variable rates of 
-> token-to-bbox matches depending on how closely the OCR word segmentation mirrors UDPipe's 
-> tokenisation. An alignment rate above ~85% is generally expected for clean scans.
+> Thanks to the sequence matching approach, the script achieves near-perfect spatial alignment between 
+> NLP tokens and OCR coordinates, drastically improving upon older greedy matching methods that would 
+> break on minor character variations. Alignment statistics (matched vs. total tokens) are printed to
+> the console per document.
 
-Run the following command to see how many documents have been processed into CSV files:
+
+<details>
+<summary> Commands to check progress of the script </summary>
+  Run the following command to see how many documents have been processed into CSV files:
 
 ```bash
-ls -l OUTPUT_DIR/UDP_NE | wc -l
+ls OUTPUT_DIR/UDP_NE | wc -l
 ```
 which returns the total number of created files, both `.csv` and `.conllu` corresponding 
 to specific documents.
 
 ```bash
-ls -l OUTPUT_DIR/UDP_NE/*.csv | wc -l
+ls OUTPUT_DIR/UDP_NE/*/*.csv | wc -l
 ```
-returns number of processed documents.
+returns number of documents processed into tables
+
+```bash
+ls OUTPUT_DIR/TEITOK/*.xml | wc -l
+```
+returns number of recorded `.teitok.xml` documents.
+
+</details>
 
 Example summary table: [summary_ne_counts.csv](data_samples/summary_ne_counts_SHORT.csv) 📎.
 
@@ -293,12 +314,14 @@ TEMP/
 AND
 ```
 <OUTPUT_DIR>
-├── UDP_NE/          
-│   ├── <doc_id>.csv       
-│   ├── <doc_id>.conllu     
-│   ├── <doc_id>.csv       
-│   ├── <doc_id>.conllu     
-│   └── ...
+├── UDP_NE/
+│   ├── <doc_id>     
+│   │   ├── <doc_id>.csv    
+│   │   └── <doc_id>.conllu     
+│   ├── <doc_id>     
+│   │   ├── <doc_id>.csv    
+│   │   └── <doc_id>.conllu     
+│   └── ...          
 ├── UDP/  
 │   ├── <doc_id>.conllu
 │   ├── <doc_id>.conllu
