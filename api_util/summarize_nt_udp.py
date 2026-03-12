@@ -400,13 +400,13 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
             if alto_pages:
                 out.write('  <facsimile>\n')
                 for pg_idx, pg in enumerate(alto_pages, start=1):
-                    surf_id  = f'{doc_id_safe}.pb{pg_idx}'
-                    facs_img = f'{doc_id_safe}-{pg_idx}.png'   # strict convention
-                    lrx_attr = f' lrx="{pg["width"]}"'  if pg.get('width')  else ''
+                    surf_id = f'{doc_id_safe}.surface{pg_idx}'  # distinct from pb id
+                    facs_img = f'{doc_id_safe}-{pg_idx}.png'
+                    lrx_attr = f' lrx="{pg["width"]}"' if pg.get('width') else ''
                     lry_attr = f' lry="{pg["height"]}"' if pg.get('height') else ''
                     out.write(f'    <surface id="{surf_id}"{lrx_attr}{lry_attr}>\n')
                     out.write(f'      <graphic url="{facs_img}"/>\n')
-                    out.write( '    </surface>\n')
+                    out.write('    </surface>\n')
                 out.write('  </facsimile>\n')
 
             # ── text body ────────────────────────────────────────────────────
@@ -417,10 +417,10 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
                 # New page when sent_id resets to '1'
                 if sent.get('id') == '1':
                     current_page += 1
-                    pb_id   = f'{doc_id_safe}.pb{current_page}'
-                    facs    = f'{doc_id_safe}-{current_page}.png'   # strict convention
-                    # facs="#pb_id" if we emitted a <facsimile>; plain filename otherwise
-                    facs_ref = f'#{pb_id}' if alto_pages else facs
+                    pb_id = f'{doc_id_safe}.pb{current_page}'
+                    surf_id = f'{doc_id_safe}.surface{current_page}'  # cross-ref
+                    facs_img = f'{doc_id_safe}-{current_page}.png'
+                    facs_ref = f'#{surf_id}' if alto_pages else facs_img
                     out.write(f'        <pb n="{current_page}"'
                               f' id="{pb_id}"'
                               f' facs="{facs_ref}"/>\n')
