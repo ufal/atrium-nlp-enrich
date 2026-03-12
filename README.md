@@ -191,16 +191,18 @@ which returns the total number of directories created (each subfolder correspond
 
 Example output directory [NE](data_samples%2FNE) 📁 contains per-page TSV files with NE annotations, where the NE tags follow the CNEC 2.0 standard [^3] which is used in the Czech Nametag model.
 
+
 ##### 4. Generate Statistics
 
-This stage consolidates the linguistic data from UDPipe (CoNLL-U) and the NER data from NameTag (TSV) into 
-final per-document formats. It also generates a master summary of entity counts across the entire 
-collection and can optionally produce TEITOK-compatible XML files that merge linguistic tokens with 
-original ALTO layout coordinates.
+This stage consolidates the linguistic data from UDPipe (CoNLL-U) and the NER data from 
+NameTag (TSV) into final per-document formats. It also generates a master summary of 
+entity counts across the entire collection and can optionally produce TEITOK-compatible 
+XML files that merge linguistic tokens with original ALTO layout coordinates.
 
-The process utilizes [summarize_nt_udp.py](api_util/summarize_nt_udp.py) 📎 to merge these layers 
-and [analyze.py](api_util/analyze.py) 📎 to map complex CNEC 2.0 tags (e.g., `g`, `pf`, `if`) into 
-human-readable categories (e.g., "Geographical name", "First name", "Company/Firm").
+The process utilizes [summarize_nt_udp.py](api_util/summarize_nt_udp.py) 📎 to merge these 
+layers and [analyze.py](api_util/analyze.py) 📎 to map complex CNEC 2.0 tags 
+(e.g., `g`, `pf`, `if`) into human-readable categories (e.g., "Geographical name", 
+"First name", "Company/Firm").
 
 ```bash
 ./api_4_stats.sh
@@ -210,51 +212,56 @@ human-readable categories (e.g., "Geographical name", "First name", "Company/Fir
 
 * **Input 1:** `OUTPUT_DIR/UDP/*.conllu` — Per-document CoNLL-U files containing morphology and syntax.
 * **Input 2:** `OUTPUT_DIR/NE/*/*.tsv` — Per-page TSV files containing Named Entity annotations.
-* **Input 3 (Optional):** `ALTO_DIR/*.alto.xml` — Source ALTO XML files used during TEITOK conversion to provide coordinate mapping (`frame` attributes).
+* **Input 3 (Optional):** `ALTO_DIR/*.alto.xml` — Source ALTO XML files used during TEITOK conversion to provide spatial bounding box coordinates for each token.
 
-
-* **Output 1:** `OUTPUT_DIR/summary_ne_counts.csv**` — Global table of aggregated Named Entity statistics across all documents.
-* **Output 2:** `OUTPUT_DIR/UDP_NE/<doc_id>.csv**` — Per-document CSV tables with tokens, lemmas, and human-readable NE explanations.
-* **Output 3 (Optional):** `OUTPUT_DIR/UDP_NE/<doc_id>.conllu**` — Final CoNLL-U files with NER tags enriched in the `MISC` column.
-* **Output 4 (Optional):** `OUTPUT_DIR/UDP_NE/<doc_id>.teitok.xml**` — TEITOK-style TEI XML files. These merge UD attributes and NER
-with ALTO spatial coordinates, making them ready for the **flexiconv** converter and facsimile viewing.
+* **Output 1:** `OUTPUT_DIR/summary_ne_counts.csv` — Global table of aggregated Named Entity statistics across all documents.
+* **Output 2:** `OUTPUT_DIR/UDP_NE/<doc_id>.csv` — Per-document CSV tables with tokens, lemmas, and human-readable NE explanations.
+* **Output 3 (Optional):** `OUTPUT_DIR/UDP_NE/<doc_id>.conllu` — Final CoNLL-U files with NER tags enriched in the `MISC` column.
+* **Output 4 (Optional):** `OUTPUT_DIR/TEITOK/<doc_id>.teitok.xml` — TEITOK-style TEI XML files ready for the **flexiconv** converter and facsimile viewing (see below).
 
 The behavior of this step is controlled by boolean flags in your [config_api.txt](config_api.txt):
 
-| Variable         | Description                                                    | Default |
-|------------------|----------------------------------------------------------------|---------|
-| `SAVE_CONLLU_NE` | Keep the enriched CoNLL-U with NER in the `MISC` field.        | `true`  |
-| `SAVE_CSV`       | Write the token-level summary CSV per document.                | `true`  |
-| `SAVE_TEITOK`    | Write TEITOK-style TEI XML (merges ALTO coordinates if found). | `true`  |
-`
+| Variable         | Description                                                                   | Default |
+|------------------|-------------------------------------------------------------------------------|---------|
+| `SAVE_CONLLU_NE` | Keep the enriched CoNLL-U with NER in the `MISC` field.                       | `true`  |
+| `SAVE_CSV`       | Write the token-level summary CSV per document.                               | `true`  |
+| `SAVE_TEITOK`    | Write TEITOK-style TEI XML with bounding boxes and NER spans (requires ALTO). | `true`  |
 
 #### ALTO-to-TEITOK Coordinate Alignment
 
-When `SAVE_TEITOK=true`, the script attempts to align every UDPipe token to a bounding box from the corresponding 
-ALTO XML file. This is done through a character-level greedy aligner that flattens all ALTO `String` 
-elements into a single NFC-normalized character sequence and matches token forms left-to-right 
-across it. The aligner tolerates moderate OCR/tokeniser divergences — for example, differing word 
-forms or NFC/NFD encoding mismatches — by scanning a short lookahead window before skipping a token, 
+When `SAVE_TEITOK=true`, the script attempts to align every UDPipe token to a 
+bounding box from the corresponding ALTO XML file. This is done through a character-level 
+greedy aligner that flattens all ALTO `String` elements into a single NFC-normalized 
+character sequence and matches token forms left-to-right across it. The aligner tolerates 
+moderate OCR/tokeniser divergences — for example, differing word forms or NFC/NFD 
+encoding mismatches — by scanning a short lookahead window before skipping a token, 
 which prevents a single mismatch from causing a cascade of alignment failures downstream.
 
-Matched bounding boxes are written to each `<tok>` element as `@bbox="x1 y1 x2 y2"` (absolute pixel 
-coordinates in TEITOK's hOCR-derived format). Named entity spans are wrapped 
-in `<name type="code" subtype="label">` elements grouping their constituent `<tok>` nodes, and page 
-boundaries are marked with `<pb n="N"/>` elements. Alignment statistics (matched vs. total tokens) are 
-printed to the console per document.
+Matched bounding boxes are written to each `<tok>` element as `@bbox="x1 y1 x2 y2"` 
+(absolute pixel coordinates in TEITOK's hOCR-derived format). Each token also carries 
+`@type="w"` or `@type="pc"` (punctuation character), derived from UDPipe's UPOS tag, to 
+preserve the original token-class distinction used in TEI sources.
+
+Named entity spans are wrapped in `<name>` elements grouping their constituent `<tok>` 
+nodes. Two attributes encode the entity type at different levels of granularity: 
+`@type` holds the CoNLL-style category (`PER`, `ORG`, `LOC`, or `MISC`) intended for 
+querying and interoperability, while `@cnec` carries the raw CNEC 2.0 code (e.g. `pf`,
+`gu`, `if`) for use in visualisation. For example, a span tagged as a first name is 
+written as `<name type="PER" cnec="pf">`. Page boundaries are marked with `<pb n="N"/>` 
+elements. Alignment statistics (matched vs. total tokens) are printed to the console per document.
 
 > [!NOTE]
-> ALTO files from different ABBYY or Tesseract versions may produce variable rates of token-to-bbox 
-> matches depending on how closely the OCR word segmentation mirrors UDPipe's tokenisation. An alignment 
-> rate above ~85% is generally expected for clean scans.
-
+> ALTO files from different ABBYY or Tesseract versions may produce variable rates of 
+> token-to-bbox matches depending on how closely the OCR word segmentation mirrors UDPipe's 
+> tokenisation. An alignment rate above ~85% is generally expected for clean scans.
 
 Run the following command to see how many documents have been processed into CSV files:
 
 ```bash
 ls -l OUTPUT_DIR/UDP_NE | wc -l
 ```
-which returns the total number of created files, both `.csv` and `.conllu` corresponding to specific documents.
+which returns the total number of created files, both `.csv` and `.conllu` corresponding 
+to specific documents.
 
 ```bash
 ls -l OUTPUT_DIR/UDP_NE/*.csv | wc -l
@@ -263,12 +270,14 @@ returns number of processed documents.
 
 Example summary table: [summary_ne_counts.csv](data_samples/summary_ne_counts_SHORT.csv) 📎.
 
-Example output directory [UDP_NE](data_samples%2FUDP_NE) 📁 contains per-document CSV tables with NE tag and columns for 
-UDPipe features, plus, CoNLL-U files with NE annotations also in per-document manner.
+Example output directory [UDP_NE](data_samples%2FUDP_NE) 📁 contains per-document CSV 
+tables with NE tags and UDPipe feature columns, plus CoNLL-U files with NE annotations in 
+per-document manner.
 
-Example output directory [TEITOK](data_samples%2FTEITOK) 📁 contains per-document TEITOK XML files that
-represent the same information as NER-enriched CoNLL-U output files, plus, bounding boxes of ALTO XML elements
-related to `<tok>` elements of TEITOK XML.
+Example output directory [TEITOK](data_samples%2FTEITOK) 📁 contains per-document TEITOK 
+XML files combining UD linguistic annotations and NER spans with bounding boxes aligned 
+from the source ALTO XML.
+
 
 #### Output Structure
 

@@ -229,6 +229,23 @@ def _bio_to_code(ner_tag):
     return ''
 
 
+# Maps CNEC 2.0 type codes to the four CoNLL-style categories used in @type.
+# @cnec carries the raw CNEC code; @type is used for querying / interop.
+_CNEC_TO_CONLL = {
+    # PER — personal names
+    'p': 'PER', 'p_': 'PER', 'P': 'PER',
+    'pf': 'PER', 'ps': 'PER', 'pm': 'PER',
+    'ph': 'PER', 'pc': 'PER', 'pd': 'PER', 'pp': 'PER',
+    # ORG — institutions and organisations
+    'i': 'ORG', 'i_': 'ORG', 'I': 'ORG',
+    'ia': 'ORG', 'if': 'ORG', 'io': 'ORG', 'ic': 'ORG',
+    # LOC — geographical and place names
+    'g': 'LOC', 'G': 'LOC', 'g_': 'LOC',
+    'gu': 'LOC', 'gl': 'LOC', 'gq': 'LOC', 'gr': 'LOC',
+    'gs': 'LOC', 'gc': 'LOC', 'gt': 'LOC', 'gh': 'LOC',
+}
+
+
 def _group_ner_spans(tokens):
     groups = []
     i = 0
@@ -256,13 +273,17 @@ def _group_ner_spans(tokens):
 def _tok_xml(tok, id_map, indent=10):
     """
     Render one <tok> element.
-    Bbox is read from tok['_bbox'] (pre-resolved by _align_tokens_to_alto).
-    Format: @bbox="x1 y1 x2 y2"  (TEITOK convention, no 'bbox' keyword prefix).
+
+    @type  = "w" (word) | "pc" (punctuation character), derived from UPOS.
+             Preserves the original token-class distinction when the source is TEI.
+    @bbox  = "x1 y1 x2 y2"  (TEITOK hOCR-derived format, absolute pixel coords).
     """
     wid      = id_map.get(tok['id'], tok['id'])
     head_ref = id_map.get(tok['head'], '0') if tok.get('head') and tok['head'] != '0' else '0'
 
-    attrs = [f'xml:id="{wid}"']
+    tok_type = 'pc' if tok.get('upos') == 'PUNCT' else 'w'
+
+    attrs = [f'xml:id="{wid}"', f'type="{tok_type}"']
     if tok.get('lemma') and tok['lemma'] != '_':
         attrs.append(f'lemma="{escape(tok["lemma"])}"')
     if tok.get('upos') and tok['upos'] != '_':
@@ -289,11 +310,14 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
     """
     Produce TEITOK XML from a NER-enriched CoNLL-U file.
 
-    TEITOK conventions:
-    - <tok> carries @lemma @upos @xpos @feats @head @deprel @join @bbox
-    - @bbox = "x1 y1 x2 y2"  (TEITOK's hOCR-derived format, no keyword prefix)
-    - Page breaks via <pb n="N"/> before each page's sentences
-    - Named entities as <name type="code" subtype="label"> wrapping <tok> spans
+    TEITOK conventions used here:
+    - <tok type="w"|"pc"> carries @lemma @upos @xpos @feats @head @deprel @join @bbox
+    - @type  = "w" (word) or "pc" (punctuation), derived from UPOS
+    - @bbox  = "x1 y1 x2 y2"  (hOCR-derived absolute pixel coords)
+    - <name type="PER|ORG|LOC|MISC" cnec="<cnec-code>"> wraps NE token spans
+      @type  is the CoNLL-style category used for querying / interop
+      @cnec  carries the raw CNEC 2.0 code (e.g. "pf", "gu") for visualisation
+    - Page breaks via <pb n="N"/> before each page's first sentence
     """
     alto_strings, _ = _parse_alto(alto_path)
 
@@ -382,10 +406,10 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
 
                 for grp in groups:
                     if grp['kind'] == 'name':
-                        code  = grp['code']
-                        label = CNEC_TYPE_MAP.get(code, code)
-                        out.write(f'          <name type="{escape(code)}"'
-                                  f' subtype="{escape(label)}">\n')
+                        code      = grp['code']
+                        conll_cat = _CNEC_TO_CONLL.get(code, 'MISC')
+                        out.write(f'          <name type="{escape(conll_cat)}"'
+                                  f' cnec="{escape(code)}">\n')
                         for tok in grp['tokens']:
                             out.write('  ' + _tok_xml(tok, id_map, indent=12))
                         out.write('          </name>\n')
