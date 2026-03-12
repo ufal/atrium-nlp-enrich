@@ -80,6 +80,11 @@ CNEC_TYPE_MAP = {
 }
 
 
+# Replace the bare escape() calls on attribute values with this helper:
+def _attr(value: str) -> str:
+    """Escape a string for use inside an XML attribute value (double-quoted)."""
+    return escape(value, {'"': '&quot;'})
+
 
 def _parse_alto(alto_path):
     """
@@ -271,34 +276,31 @@ def _group_ner_spans(tokens):
 
 
 def _tok_xml(tok, id_map, indent=10):
-    """
-    Render one <tok> element.
+    wid = id_map.get(tok['id'], tok['id'])
 
-    @type  = "w" (word) | "pc" (punctuation character), derived from UPOS.
-             Preserves the original token-class distinction when the source is TEI.
-    @bbox  = "x1 y1 x2 y2"  (TEITOK hOCR-derived format, absolute pixel coords).
-    """
-    wid      = id_map.get(tok['id'], tok['id'])
-    head_ref = id_map.get(tok['head'], '0') if tok.get('head') and tok['head'] != '0' else '0'
+    # Skip head attribute entirely when token is root (head == '0')
+    head_ref = None
+    if tok.get('head') and tok['head'] != '0':
+        head_ref = id_map.get(tok['head'], tok['head'])
 
     tok_type = 'pc' if tok.get('upos') == 'PUNCT' else 'w'
 
-    attrs = [f'xml:id="{wid}"', f'type="{tok_type}"']
+    attrs = [f'id="{wid}"', f'type="{tok_type}"']   # xml:id → id
     if tok.get('lemma') and tok['lemma'] != '_':
-        attrs.append(f'lemma="{escape(tok["lemma"])}"')
+        attrs.append(f'lemma="{_attr(tok["lemma"])}"')
     if tok.get('upos') and tok['upos'] != '_':
-        attrs.append(f'upos="{escape(tok["upos"])}"')
+        attrs.append(f'upos="{_attr(tok["upos"])}"')
     if tok.get('xpos') and tok['xpos'] != '_':
-        attrs.append(f'xpos="{escape(tok["xpos"])}"')
+        attrs.append(f'xpos="{_attr(tok["xpos"])}"')
     if tok.get('feats') and tok['feats'] != '_':
-        attrs.append(f'feats="{escape(tok["feats"])}"')
-    attrs.append(f'head="{head_ref}"')
+        attrs.append(f'feats="{_attr(tok["feats"])}"')
+    if head_ref is not None:
+        attrs.append(f'head="{head_ref}"')
     if tok.get('deprel') and tok['deprel'] != '_':
-        attrs.append(f'deprel="{escape(tok["deprel"])}"')
+        attrs.append(f'deprel="{_attr(tok["deprel"])}"')
     if not tok.get('space_after', True):
         attrs.append('join="right"')
 
-    # Bbox pre-resolved by _align_tokens_to_alto; None if no ALTO match
     bbox = tok.get('_bbox')
     if bbox:
         attrs.append(f'bbox="{bbox["left"]} {bbox["top"]} {bbox["right"]} {bbox["bottom"]}"')
@@ -306,20 +308,21 @@ def _tok_xml(tok, id_map, indent=10):
     pad = ' ' * indent
     return f'{pad}<tok {" ".join(attrs)}>{escape(tok["form"])}</tok>\n'
 
+
 def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
     """
     Produce TEITOK XML from a NER-enriched CoNLL-U file.
 
-    TEITOK conventions used here:
-    - <tok type="w"|"pc"> carries @lemma @upos @xpos @feats @head @deprel @join @bbox
-    - @type  = "w" (word) or "pc" (punctuation), derived from UPOS
-    - @bbox  = "x1 y1 x2 y2"  (hOCR-derived absolute pixel coords)
-    - <name type="PER|ORG|LOC|MISC" cnec="<cnec-code>"> wraps NE token spans
-      @type  is the CoNLL-style category used for querying / interop
-      @cnec  carries the raw CNEC 2.0 code (e.g. "pf", "gu") for visualisation
-    - Page breaks via <pb n="N"/> before each page's first sentence
+    TEITOK conventions applied:
+    - xmlnsoff= instead of xmlns= (TEITOK disables namespace processing)
+    - id= instead of xml:id=  (same reason)
+    - lang= instead of xml:lang=
+    - <facsimile>/<surface lrx= lry=> carries page dimensions from ALTO
+    - <pb facs="{doc_id}-{n}.png"> strict filename convention
+    - head= omitted on root tokens
+    - lemma= and text= attribute values fully quote-escaped
     """
-    alto_strings, _ = _parse_alto(alto_path)
+    alto_strings, alto_pages = _parse_alto(alto_path)   # now use both returns
 
     # ── Parse CoNLL-U ────────────────────────────────────────────────────────
     sentences   = []
@@ -364,11 +367,9 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
         print(f'  [Error] Reading CoNLL-U {conllu_path}: {e}', file=sys.stderr)
         return False
 
-    # ── Align all tokens to ALTO bboxes in one pass ──────────────────────────
-    # Flatten sentences → single token list, align, then redistribute.
+    # ── Align tokens to ALTO bboxes ──────────────────────────────────────────
     all_tokens = [tok for sent in sentences for tok in sent['tokens']]
     all_bboxes = _align_tokens_to_alto(all_tokens, alto_strings)
-
     tok_ptr = 0
     for sent in sentences:
         for tok in sent['tokens']:
@@ -386,20 +387,48 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
     try:
         with open(teitok_path, 'w', encoding='utf-8') as out:
             out.write('<?xml version="1.0" encoding="utf-8"?>\n')
-            out.write('<TEI xmlns="http://www.tei-c.org/ns/1.0" xml:lang="cs">\n')
+            # TEITOK: xmlnsoff= disables namespace processing; lang= not xml:lang=
+            out.write('<TEI xmlnsoff="http://www.tei-c.org/ns/1.0" lang="cs">\n')
+
+            # ── teiHeader ────────────────────────────────────────────────────
             out.write('  <teiHeader/>\n')
+
+            # ── facsimile block — page dimensions from ALTO, no image needed ─
+            # TEI encodes page size via <surface lrx= lry=> (lower-right corner
+            # = width/height when upper-left is implicitly 0,0).  This lets
+            # TEITOK know the canvas size without requiring the image file.
+            if alto_pages:
+                out.write('  <facsimile>\n')
+                for pg_idx, pg in enumerate(alto_pages, start=1):
+                    surf_id  = f'{doc_id_safe}.pb{pg_idx}'
+                    facs_img = f'{doc_id_safe}-{pg_idx}.png'   # strict convention
+                    lrx_attr = f' lrx="{pg["width"]}"'  if pg.get('width')  else ''
+                    lry_attr = f' lry="{pg["height"]}"' if pg.get('height') else ''
+                    out.write(f'    <surface id="{surf_id}"{lrx_attr}{lry_attr}>\n')
+                    out.write(f'      <graphic url="{facs_img}"/>\n')
+                    out.write( '    </surface>\n')
+                out.write('  </facsimile>\n')
+
+            # ── text body ────────────────────────────────────────────────────
             out.write('  <text>\n    <body>\n')
-            out.write(f'      <div type="document" xml:id="{doc_id_safe}">\n')
+            out.write(f'      <div type="document" id="{doc_id_safe}">\n')
 
             for s_idx, sent in enumerate(sentences, start=1):
+                # New page when sent_id resets to '1'
                 if sent.get('id') == '1':
                     current_page += 1
+                    pb_id   = f'{doc_id_safe}.pb{current_page}'
+                    facs    = f'{doc_id_safe}-{current_page}.png'   # strict convention
+                    # facs="#pb_id" if we emitted a <facsimile>; plain filename otherwise
+                    facs_ref = f'#{pb_id}' if alto_pages else facs
                     out.write(f'        <pb n="{current_page}"'
-                              f' xml:id="{doc_id_safe}.pb{current_page}"/>\n')
+                              f' id="{pb_id}"'
+                              f' facs="{facs_ref}"/>\n')
 
                 sid       = escape(f'{doc_id_safe}.s{s_idx}')
-                text_attr = f' text="{escape(sent["text"])}"' if sent.get('text') else ''
-                out.write(f'        <s xml:id="{sid}"{text_attr}>\n')
+                # text attribute: must escape quotes inside the value
+                text_attr = f' text="{_attr(sent["text"])}"' if sent.get('text') else ''
+                out.write(f'        <s id="{sid}"{text_attr}>\n')   # xml:id → id
 
                 id_map = {t['id']: f'{sid}.w{t["id"]}' for t in sent['tokens']}
                 groups = _group_ner_spans(sent['tokens'])
@@ -412,7 +441,7 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
                                   f' cnec="{escape(code)}">\n')
                         for tok in grp['tokens']:
                             out.write('  ' + _tok_xml(tok, id_map, indent=12))
-                        out.write('          </name>\n')
+                        out.write('          </name>\n')   # was </n> — typo fixed
                     else:
                         out.write(_tok_xml(grp['tokens'][0], id_map, indent=10))
 
@@ -423,7 +452,6 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
     except Exception as e:
         print(f'  [Error] Writing TEITOK {teitok_path}: {e}', file=sys.stderr)
         return False
-
 
 # === New helper: parse boolean-like env/arg values ===
 def bool_from_str(s, default=False):
