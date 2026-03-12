@@ -193,15 +193,14 @@ Example output directory [NE](data_samples%2FNE) 📁 contains per-page TSV file
 
 ##### 4. Generate Statistics
 
-This stage consolidates the linguistic data from UDPipe (CoNLL-U) and 
-the NER data from NameTag (TSV) into final per-document formats. It also 
-generates a master summary of entity counts across the entire collection 
-and can optionally produce TEITOK-compatible XML files that merge linguistic 
-tokens with original ALTO layout coordinates. 
+This stage consolidates the linguistic data from UDPipe (CoNLL-U) and the NER data from NameTag (TSV) into 
+final per-document formats. It also generates a master summary of entity counts across the entire 
+collection and can optionally produce TEITOK-compatible XML files that merge linguistic tokens with 
+original ALTO layout coordinates.
 
-The process utilizes [summarize_nt_udp.py](api_util/summarize_nt_udp.py) 📎 to merge these layers and [analyze.py](api_util/analyze.py) 📎 to map 
-complex CNEC 2.0 tags into human-readable categories (e.g., `g`, `pf`, `if`) 
-into human-readable categories (e.g., "Geographical name", "First name", "Company/Firm").
+The process utilizes [summarize_nt_udp.py](api_util/summarize_nt_udp.py) 📎 to merge these layers 
+and [analyze.py](api_util/analyze.py) 📎 to map complex CNEC 2.0 tags (e.g., `g`, `pf`, `if`) into 
+human-readable categories (e.g., "Geographical name", "First name", "Company/Firm").
 
 ```bash
 ./api_4_stats.sh
@@ -229,6 +228,27 @@ The behavior of this step is controlled by boolean flags in your [config_api.txt
 | `SAVE_TEITOK`    | Write TEITOK-style TEI XML (merges ALTO coordinates if found). | `true`  |
 `
 
+#### ALTO-to-TEITOK Coordinate Alignment
+
+When `SAVE_TEITOK=true`, the script attempts to align every UDPipe token to a bounding box from the corresponding 
+ALTO XML file. This is done through a character-level greedy aligner that flattens all ALTO `String` 
+elements into a single NFC-normalized character sequence and matches token forms left-to-right 
+across it. The aligner tolerates moderate OCR/tokeniser divergences — for example, differing word 
+forms or NFC/NFD encoding mismatches — by scanning a short lookahead window before skipping a token, 
+which prevents a single mismatch from causing a cascade of alignment failures downstream.
+
+Matched bounding boxes are written to each `<tok>` element as `@bbox="x1 y1 x2 y2"` (absolute pixel 
+coordinates in TEITOK's hOCR-derived format). Named entity spans are wrapped 
+in `<name type="code" subtype="label">` elements grouping their constituent `<tok>` nodes, and page 
+boundaries are marked with `<pb n="N"/>` elements. Alignment statistics (matched vs. total tokens) are 
+printed to the console per document.
+
+> [!NOTE]
+> ALTO files from different ABBYY or Tesseract versions may produce variable rates of token-to-bbox 
+> matches depending on how closely the OCR word segmentation mirrors UDPipe's tokenisation. An alignment 
+> rate above ~85% is generally expected for clean scans.
+
+
 Run the following command to see how many documents have been processed into CSV files:
 
 ```bash
@@ -247,7 +267,8 @@ Example output directory [UDP_NE](data_samples%2FUDP_NE) 📁 contains per-docum
 UDPipe features, plus, CoNLL-U files with NE annotations also in per-document manner.
 
 Example output directory [TEITOK](data_samples%2FTEITOK) 📁 contains per-document TEITOK XML files that
-represent the same information as NER-enriched CoNLL-U output files.
+represent the same information as NER-enriched CoNLL-U output files, plus, bounding boxes of ALTO XML elements
+related to `<tok>` elements of TEITOK XML.
 
 #### Output Structure
 
