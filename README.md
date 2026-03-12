@@ -113,6 +113,7 @@ MAX_RETRIES=5                  # Number of retries for failed API calls
 SAVE_CONLLU_NE=true   # keep merged CoNLL-U with NER in MISC
 SAVE_CSV=true         # write token-level summary CSV
 SAVE_TEITOK=true      # write TEITOK-style TEI XML (flexiconv-compatible)
+TT_MISMATCH_GAP=100   # max characters allowed to skip in ALTO-2-TEITOK matching
 ```
 
 #### Execution Pipeline

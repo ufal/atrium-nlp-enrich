@@ -147,7 +147,7 @@ def _parse_alto(alto_path):
     return alto_strings, alto_pages
 
 
-def _align_tokens_to_alto(tokens, alto_strings):
+def _align_tokens_to_alto(tokens, alto_strings, max_skip_chars=50):
     """
     Align a flat list of token dicts to ALTO String bounding boxes using
     greedy, left-to-right, character-level matching.
@@ -163,8 +163,6 @@ def _align_tokens_to_alto(tokens, alto_strings):
     """
     if not alto_strings:
         return [None] * len(tokens)
-
-    MAX_SKIP = 50  # max chars to advance on mismatch before giving up
 
     # Flatten ALTO strings into a single NFC character sequence.
     # Each entry: (char, alto_string_index)
@@ -185,10 +183,10 @@ def _align_tokens_to_alto(tokens, alto_strings):
         if not form:
             continue
 
-        # Try matching from pos, then pos+1 … pos+MAX_SKIP.
+        # Try matching from pos, then pos+1 … pos+max_skip_chars.
         # This lets the aligner resync after an OCR/tokeniser divergence
         # without cascading failures into subsequent tokens.
-        for skip in range(MAX_SKIP + 1):
+        for skip in range(max_skip_chars + 1):
             start = pos + skip
             # Advance past inter-string gaps at the scan start
             while start < len(char_seq) and char_seq[start][1] == -1:
@@ -309,7 +307,7 @@ def _tok_xml(tok, id_map, indent=10):
     return f'{pad}<tok {" ".join(attrs)}>{escape(tok["form"])}</tok>\n'
 
 
-def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
+def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None, chars_mismatch_gap=50):
     """
     Produce TEITOK XML from a NER-enriched CoNLL-U file.
 
@@ -369,7 +367,7 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
 
     # ── Align tokens to ALTO bboxes ──────────────────────────────────────────
     all_tokens = [tok for sent in sentences for tok in sent['tokens']]
-    all_bboxes = _align_tokens_to_alto(all_tokens, alto_strings)
+    all_bboxes = _align_tokens_to_alto(all_tokens, alto_strings, max_skip_chars=chars_mismatch_gap)
     tok_ptr = 0
     for sent in sentences:
         for tok in sent['tokens']:
@@ -464,7 +462,7 @@ def bool_from_str(s, default=False):
 
 
 def process_pipeline(conllu_dir, tsv_root, output_root, alto_root, teitok_out,
-                     save_conllu=True, save_csv=True, save_teitok=False):
+                     save_conllu=True, save_csv=True, save_teitok=False, mismatch_gap=50):
     conllu_path_obj = Path(conllu_dir)
     tsv_root_obj    = Path(tsv_root)
     output_root_obj = Path(output_root)
@@ -529,7 +527,8 @@ def process_pipeline(conllu_dir, tsv_root, output_root, alto_root, teitok_out,
 
         if need_teitok:
             write_teitok_merged(doc_out_conllu, doc_out_teitok,
-                                doc_in_alto, doc_id=doc_name)
+                                doc_in_alto, doc_id=doc_name,
+                                chars_mismatch_gap=mismatch_gap)
 
         if not save_conllu:
             csv_done    = not save_csv    or doc_out_csv.exists()
@@ -770,6 +769,9 @@ def main():
     parser.add_argument('--save-teitok', default=os.getenv('SAVE_TEITOK', '0'),
                         help="1/0 whether to write TEITOK-XML per document (env: SAVE_TEITOK).")
 
+    parser.add_argument('--tt-gap', default=os.getenv('TT_MISMATCH_GAP', 100),
+                        help='Number of characters allowed to skip in ALTO-2-TEITOK matching (env: TT_MISMATCH_GAP).')
+
     args = parser.parse_args()
 
     if not all([args.conllu_dir, args.tsv_dir, args.out_dir]):
@@ -793,7 +795,7 @@ def main():
 
 
     process_pipeline(args.conllu_dir, args.tsv_dir, args.out_dir, args.alto_dir, args.tt_dir,
-                     save_conllu=save_conllu, save_csv=save_csv, save_teitok=save_teitok)
+                     save_conllu=save_conllu, save_csv=save_csv, save_teitok=save_teitok, mismatch_gap=args.tt_gap)
 
 
 
