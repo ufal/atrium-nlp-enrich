@@ -278,14 +278,23 @@ def _parse_misc(misc_str):
     return misc
 
 
-def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
-    """ Produce TEITOK XML from a NER-enriched CoNLL-U and structural ALTO file. """
+def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None,
+                        model_udpipe=None, model_nametag=None):
+    """Produce TEITOK XML from a NER-enriched CoNLL-U and structural ALTO file.
+
+    model_udpipe  – fallback model identifier when the CoNLL-U comments don't
+                    carry a '# udpipe_model' line (e.g. 'czech-pdt-ud-2.15-241121').
+    model_nametag – NameTag model identifier added to encodingDesc/appInfo
+                    (e.g. 'nametag3-czech-cnec2.0-240830').
+    """
     alto_strings, alto_pages, alto_graphics, alto_blocks, alto_meta = _parse_alto(alto_path)
 
     sentences = []
     current_tok = []
     sent_id, sent_text = None, None
     conllu_meta = {}
+
+
 
     try:
         with open(conllu_path, 'r', encoding='utf-8') as f:
@@ -357,14 +366,36 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
                 out.write('      <sourceDesc><p>Unknown source</p></sourceDesc>\n')
             out.write('    </fileDesc>\n')
 
+            # AFTER
             out.write('    <encodingDesc>\n')
             out.write('      <appInfo>\n')
-            if conllu_meta.get('generator'):
+
+            # UDPipe: prefer model name from CoNLL-U comments; fall back to passed arg
+            udpipe_model_name = conllu_meta.get('udpipe_model') or model_udpipe or ''
+            udpipe_generator = conllu_meta.get('generator', 'UDPipe')
+            if udpipe_model_name or conllu_meta.get('generator'):
                 out.write(
-                    f'        <application ident="udpipe" version="2"><label>{escape(conllu_meta.get("generator"))} (Model: {escape(conllu_meta.get("udpipe_model", ""))})</label></application>\n')
+                    f'        <application ident="udpipe" version="2">'
+                    f'<label>{escape(udpipe_generator)}</label>'
+                    f'<desc>Model: {escape(udpipe_model_name)}</desc>'
+                    f'</application>\n'
+                )
+
+            # NameTag NER: recorded from config MODEL_NAMETAG
+            if model_nametag:
+                out.write(
+                    f'        <application ident="nametag">'
+                    f'<label>NameTag NER</label>'
+                    f'<desc>Model: {escape(model_nametag)}</desc>'
+                    f'</application>\n'
+                )
+
             if alto_meta.get('ocr_software'):
                 out.write(
-                    f'        <application ident="ocr"><label>{escape(alto_meta["ocr_software"])} {escape(alto_meta.get("ocr_version", ""))}</label></application>\n')
+                    f'        <application ident="ocr">'
+                    f'<label>{escape(alto_meta["ocr_software"])} {escape(alto_meta.get("ocr_version", ""))}</label>'
+                    f'</application>\n'
+                )
             out.write('      </appInfo>\n')
             out.write('    </encodingDesc>\n')
 

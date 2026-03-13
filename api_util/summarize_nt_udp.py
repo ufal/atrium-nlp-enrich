@@ -94,7 +94,8 @@ def bool_from_str(s, default=False):
 
 
 def process_pipeline(conllu_dir, tsv_dir, output_dir, alto_dir, teitok_out,
-                     save_conllu=True, save_csv=True, save_teitok=False):
+                     save_conllu=True, save_csv=True, save_teitok=False,
+                     model_udpipe=None, model_nametag=None):
     conllu_path_obj = Path(conllu_dir)
     tsv_root_obj = Path(tsv_dir)
     output_root_obj = Path(output_dir)
@@ -154,7 +155,8 @@ def process_pipeline(conllu_dir, tsv_dir, output_dir, alto_dir, teitok_out,
             process_merged_file(doc_out_conllu, doc_out_csv)
 
         if need_teitok:
-            write_teitok_merged(doc_out_conllu, doc_out_teitok, doc_in_alto, doc_id=doc_name)
+            write_teitok_merged(doc_out_conllu, doc_out_teitok, doc_in_alto, doc_id=doc_name,
+                                model_udpipe=model_udpipe, model_nametag=model_nametag)
 
         if not save_conllu:
             csv_done = not save_csv or doc_out_csv.exists()
@@ -369,8 +371,11 @@ def main():
             print(f"Creating default: {args.tt_dir}")
             Path(args.tt_dir).mkdir(parents=True, exist_ok=True)
 
-    process_pipeline(args.conllu_dir, args.tsv_dir, args.out_dir, args.alto_dir, args.tt_dir,
-                     save_conllu=save_conllu, save_csv=save_csv, save_teitok=save_teitok)
+        # AFTER
+        process_pipeline(args.conllu_dir, args.tsv_dir, args.out_dir, args.alto_dir, args.tt_dir,
+                         save_conllu=save_conllu, save_csv=save_csv, save_teitok=save_teitok,
+                         model_udpipe=os.getenv('MODEL_UDPIPE'),
+                         model_nametag=os.getenv('MODEL_NAMETAG'))
 
 
 if __name__ == "__main__":
