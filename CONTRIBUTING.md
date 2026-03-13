@@ -4,7 +4,7 @@ Thank you for your interest in contributing!
 This document describes the development workflow, conventions, and rules for contributors.
 
 
-## Branches & Environments
+## 🌿 Branches & Environments
 
 | Branch   | Environment          | Rule                                                                            |
 |----------|----------------------|---------------------------------------------------------------------------------|
@@ -19,17 +19,17 @@ master   ←  (humans only, after test stabilises)
 
 ---
 
-## Branch Naming
+### 🏷️ Branch Naming
 
-| Type             | Pattern                       | Example                       |
-|------------------|-------------------------------|-------------------------------|
-| New feature      | `feature/<issue>`             | `feature/42-teitok-export`    |
-| Bug fix          | `bugfix/<issue>`              | `bugfix/17-chunk-merge-error` |
-| Hotfix on master | `hotfix/<issue>`              | `hotfix/99-api-timeout`       |
+| Type             | Pattern           | Example                       |
+|------------------|-------------------|-------------------------------|
+| New feature      | `feature/<issue>` | `feature/42-teitok-export`    |
+| Bug fix          | `bugfix/<issue>`  | `bugfix/17-chunk-merge-error` |
+| Hotfix on master | `hotfix/<issue>`  | `hotfix/99-api-timeout`       |
 
 ---
 
-## Contributor Workflow
+## 🔁 Contributor Workflow
 
 1. **Create an issue** (or find an existing one) describing the problem or feature.
 2. **Branch from `master`:**
@@ -45,7 +45,7 @@ master   ←  (humans only, after test stabilises)
 
 ---
 
-## Pull Request Format
+## 📋 Pull Request Format
 
 Every PR must include:
 
@@ -56,17 +56,21 @@ Every PR must include:
 
 Use a **Draft PR** if the work is not ready for review.
 
-**Do not open PRs into `master`** — merging into `master` is exclusively the maintainers' 
+**Do not open PRs into `master`** — merging into `master` is exclusively the maintainers'
 responsibility.
+
+> **Note on issue tracking:** Issues reference the commits and PRs that resolved them —
+> not the other way around. Commit messages describe *what changed*; the issue is the
+> place to record *why* and link the resulting commits together.
 
 ---
 
-## Commit Messages
+## ✏️ Commit Messages
 
 Format:
 
 ```
-[type] concise description (#issue-number)
+[type] concise description of what changed
 ```
 
 Allowed types:
@@ -87,16 +91,16 @@ Allowed types:
 Examples:
 
 ```
-[feat] Add per-document TEITOK XML export (#42)
-[fix] Correct chunk boundary detection in chunk.py (#17)
-[docs] Update config_api.txt parameter descriptions (#0)
+[add] Add per-document TEITOK XML export
+[fix] Correct chunk boundary detection in chunk.py
+[docs] Update config_api.txt parameter descriptions
 ```
 
 ---
 
-## Testing
+## 🧪 Testing
 
-### Minimum before every commit
+### ✅ Minimum before every commit
 
 ```bash
 # 1. Python compilation check
@@ -106,7 +110,7 @@ python -m compileall -q api_util/
 pre-commit run --all-files
 ```
 
-### Scope-based testing
+### 🔬 Scope-based testing
 
 ```bash
 # Run targeted unit tests
@@ -117,29 +121,29 @@ Use the data samples in `data_samples/` as input when smoke-testing the pipeline
 
 ---
 
-## Generated Artefacts
+## ⚙️ Generated Artefacts
 
 Some files are modified automatically by scripts or hooks:
 
-| Script              | What it generates                                     |
-|---------------------|-------------------------------------------------------|
-| `api_1_manifest.sh` | `manifest.tsv` — ordered list of all pages to process |
-| `api_2_udp.sh`      | `UDP/*.conllu` — per-document CoNLL-U files           |
-| `api_3_nt.sh`       | `NE/*/*.tsv` — per-page NER-annotated TSV files       |
-| `api_4_stats.sh`    | `UDP_NE/`, `TEITOK/`, `summary_ne_counts.csv`         |
+| Script              | What it generates                                      |
+|---------------------|--------------------------------------------------------|
+| `api_1_manifest.sh` | `manifest.tsv` — ordered list of all pages to process  |
+| `api_2_udp.sh`      | `UDP/*.conllu` — per-document CoNLL-U files            |
+| `api_3_nt.sh`       | `NE/*/*.tsv` — per-page NER-annotated TSV files        |
+| `api_4_stats.sh`    | `UDP_NE/`, `TEITOK/`, `summary_ne_counts.csv`          |
 
 Rules:
 
 1. Do not manually edit auto-generated output files.
 2. After changing chunking logic, re-run `api_2_udp.sh` to verify CoNLL-U validity.
-3. After changing NER merging logic or TEITOK XMLs composition, re-run `api_4_stats.sh` 
+3. After changing NER merging logic or TEITOK XML composition, re-run `api_4_stats.sh`
 and inspect `summary_ne_counts.csv`.
 
 ---
 
-## Output Format Flags
+## 🚩 Output Format Flags
 
-Pipeline output is controlled by boolean flags in `config_api.txt`. When adding a new output format, 
+Pipeline output is controlled by boolean flags in `config_api.txt`. When adding a new output format,
 follow this pattern:
 
 | Variable         | Description                                              | Default |
@@ -152,7 +156,7 @@ New flags must be documented here and in `config_api.txt`.
 
 ---
 
-## Repository Documentation Management
+## 📁 Repository Documentation Management
 
 Each documentation file has one target audience and one responsibility.
 Rules are not repeated — cross-references are used instead.
@@ -172,17 +176,17 @@ Rules:
 
 ## 📞 Contacts & Acknowledgements
 
-For technical questions contact **lutsai.k@gmail.com** 
+For technical questions contact **lutsai.k@gmail.com**
 
 **Issues:** https://github.com/ufal/atrium-nlp-enrich/issues
 
 
 * **Developed by:** UFAL [^7]
 * **Funded by:** ATRIUM [^4]
-* **Models:** 
-  * NameTag 3 [^6] 
+* **Models:**
+  * NameTag 3 [^6]
   * UDPipe 2 [^5]
-  
+
 **©️ 2026 UFAL & ATRIUM**
 
 
@@ -193,4 +197,3 @@ For technical questions contact **lutsai.k@gmail.com**
 [^6]: https://lindat.mff.cuni.cz/services/nametag/api-reference.php
 [^1]: https://github.com/ufal/atrium-nlp-enrich
 [^7]: https://ufal.mff.cuni.cz/home-page
-
