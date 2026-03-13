@@ -7,21 +7,15 @@ import difflib
 import collections
 import unicodedata
 import xml.etree.ElementTree as ET
-
+import datetime
 
 # Maps CNEC 2.0 type codes to the four CoNLL-style categories used in @type.
 # @cnec carries the raw CNEC code; @type is used for querying / interop.
 _CNEC_TO_CONLL = {
-    # PER — personal names
-    'p': 'PER', 'p_': 'PER', 'P': 'PER',
-    'pf': 'PER', 'ps': 'PER', 'pm': 'PER',
+    'p': 'PER', 'p_': 'PER', 'P': 'PER', 'pf': 'PER', 'ps': 'PER', 'pm': 'PER',
     'ph': 'PER', 'pc': 'PER', 'pd': 'PER', 'pp': 'PER',
-    # ORG — institutions and organisations
-    'i': 'ORG', 'i_': 'ORG', 'I': 'ORG',
-    'ia': 'ORG', 'if': 'ORG', 'io': 'ORG', 'ic': 'ORG',
-    # LOC — geographical and place names
-    'g': 'LOC', 'G': 'LOC', 'g_': 'LOC',
-    'gu': 'LOC', 'gl': 'LOC', 'gq': 'LOC', 'gr': 'LOC',
+    'i': 'ORG', 'i_': 'ORG', 'I': 'ORG', 'ia': 'ORG', 'if': 'ORG', 'io': 'ORG', 'ic': 'ORG',
+    'g': 'LOC', 'G': 'LOC', 'g_': 'LOC', 'gu': 'LOC', 'gl': 'LOC', 'gq': 'LOC', 'gr': 'LOC',
     'gs': 'LOC', 'gc': 'LOC', 'gt': 'LOC', 'gh': 'LOC',
 }
 
@@ -34,14 +28,21 @@ def _attr(value: str) -> str:
 def _parse_alto(alto_path):
     """
     Parse ALTO XML (v2/v3/v4/no-namespace).
-    Returns strings, pages, and structural/graphical elements with full hierarchy.
+    Returns strings, pages, graphics, block_bboxes, and metadata with full hierarchy.
     """
     alto_strings = []
     alto_pages = []
     alto_graphics = []
+    alto_blocks = {}
+    alto_meta = {
+        'source_image': '',
+        'ocr_software': '',
+        'ocr_version': '',
+        'ocr_date': ''
+    }
 
     if not (alto_path and Path(alto_path).exists()):
-        return alto_strings, alto_pages, alto_graphics
+        return alto_strings, alto_pages, alto_graphics, alto_blocks, alto_meta
 
     try:
         tree = ET.parse(alto_path)
@@ -54,6 +55,18 @@ def _parse_alto(alto_path):
         def _tag(local):
             return f'{{{ns_uri}}}{local}' if ns_uri else local
 
+        # Extract Header Metadata
+        for desc in root.iter(_tag('Description')):
+            for img_info in desc.iter(_tag('fileName')):
+                if img_info.text: alto_meta['source_image'] = img_info.text.strip()
+            for ocr in desc.iter(_tag('ocrProcessingStep')):
+                for dt in ocr.iter(_tag('processingDateTime')):
+                    if dt.text: alto_meta['ocr_date'] = dt.text.strip()
+                for sw in ocr.iter(_tag('softwareName')):
+                    if sw.text: alto_meta['ocr_software'] = sw.text.strip()
+                for swv in ocr.iter(_tag('softwareVersion')):
+                    if swv.text: alto_meta['ocr_version'] = swv.text.strip()
+
         for page_idx, page in enumerate(root.iter(_tag('Page')), start=1):
             alto_pages.append({
                 'id': page.get('ID', f'Page{page_idx}'),
@@ -65,6 +78,17 @@ def _parse_alto(alto_path):
             # Capture all TextBlocks and TextLines
             for block in page.iter(_tag('TextBlock')):
                 block_id = block.get('ID', '')
+
+                # Get Block Bbox for <div> representation
+                try:
+                    b_hpos = float(block.get('HPOS', 0))
+                    b_vpos = float(block.get('VPOS', 0))
+                    b_width = float(block.get('WIDTH', 0))
+                    b_height = float(block.get('HEIGHT', 0))
+                    alto_blocks[
+                        block_id] = f"{int(b_hpos)} {int(b_vpos)} {int(b_hpos + b_width)} {int(b_vpos + b_height)}"
+                except (ValueError, TypeError):
+                    pass
 
                 for line in block.iter(_tag('TextLine')):
                     line_id = line.get('ID', '')
@@ -120,7 +144,7 @@ def _parse_alto(alto_path):
     except Exception as e:
         print(f'  [Warn] Failed to parse ALTO {alto_path}: {e}', file=sys.stderr)
 
-    return alto_strings, alto_pages, alto_graphics
+    return alto_strings, alto_pages, alto_graphics, alto_blocks, alto_meta
 
 
 def _align_tokens_to_alto(tokens, alto_strings):
@@ -152,7 +176,6 @@ def _align_tokens_to_alto(tokens, alto_strings):
                 tok_char_to_tok_idx.append(t_idx)
     tok_str = "".join(tok_char_list)
 
-    # Use SequenceMatcher over characters. O(N) autojunk handles large streams optimally.
     sm = difflib.SequenceMatcher(None, tok_str, alto_str)
     tok_to_alto_indices = collections.defaultdict(list)
 
@@ -174,7 +197,6 @@ def _align_tokens_to_alto(tokens, alto_strings):
         rights = [alto_strings[a]['right'] for a in a_indices]
         bottoms = [alto_strings[a]['bottom'] for a in a_indices]
 
-        # Primary attributes extracted from the start of the matching string.
         first_a = alto_strings[a_indices[0]]
 
         bboxes[t_idx] = {
@@ -244,7 +266,6 @@ def _tok_xml(tok, id_map, indent=10):
     return f'{pad}<tok {" ".join(attrs)}>{escape(tok["form"])}</tok>\n'
 
 
-
 def _parse_misc(misc_str):
     if misc_str == '_' or not misc_str: return {}
     misc = {}
@@ -259,16 +280,24 @@ def _parse_misc(misc_str):
 
 def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
     """ Produce TEITOK XML from a NER-enriched CoNLL-U and structural ALTO file. """
-    alto_strings, alto_pages, alto_graphics = _parse_alto(alto_path)
+    alto_strings, alto_pages, alto_graphics, alto_blocks, alto_meta = _parse_alto(alto_path)
 
     sentences = []
     current_tok = []
     sent_id, sent_text = None, None
+    conllu_meta = {}
 
     try:
         with open(conllu_path, 'r', encoding='utf-8') as f:
             for raw in f:
                 line = raw.rstrip('\n')
+
+                # Fetch CoNLL-U Metadata for TEI Header
+                if line.startswith('# generator ='): conllu_meta['generator'] = line.split('=', 1)[1].strip()
+                if line.startswith('# udpipe_model ='): conllu_meta['udpipe_model'] = line.split('=', 1)[1].strip()
+                if line.startswith('# udpipe_model_licence ='): conllu_meta['udpipe_model_licence'] = \
+                line.split('=', 1)[1].strip()
+
                 if line.startswith('# sent_id'):
                     sent_id = line.split('=', 1)[1].strip() if '=' in line else None
                     continue
@@ -307,18 +336,55 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
     print(f'  [ALTO] matched {matched}/{len(all_tokens)} tokens to ALTO bboxes')
 
     doc_id_safe = escape(doc_id or Path(teitok_path).stem)
+    alto_filename = Path(alto_path).name if alto_path else "Unknown"
+    current_date = datetime.date.today().isoformat()
 
     try:
         with open(teitok_path, 'w', encoding='utf-8') as out:
             out.write('<?xml version="1.0" encoding="utf-8"?>\n')
             out.write('<TEI xmlnsoff="http://www.tei-c.org/ns/1.0" xml:lang="cs">\n')
-            out.write('  <teiHeader/>\n')
+
+            # --- Write TEI Header Data ---
+            out.write('  <teiHeader>\n')
+            out.write('    <fileDesc>\n')
+            out.write(f'      <titleStmt><title>{doc_id_safe}</title></titleStmt>\n')
+            out.write('      <publicationStmt><p>Unpublished</p></publicationStmt>\n')
+
+            source_info = alto_meta.get("source_image", "")
+            if source_info:
+                out.write(f'      <sourceDesc><p>Source image: {escape(source_info)}</p></sourceDesc>\n')
+            else:
+                out.write('      <sourceDesc><p>Unknown source</p></sourceDesc>\n')
+            out.write('    </fileDesc>\n')
+
+            out.write('    <encodingDesc>\n')
+            out.write('      <appInfo>\n')
+            if conllu_meta.get('generator'):
+                out.write(
+                    f'        <application ident="udpipe" version="2"><label>{escape(conllu_meta.get("generator"))} (Model: {escape(conllu_meta.get("udpipe_model", ""))})</label></application>\n')
+            if alto_meta.get('ocr_software'):
+                out.write(
+                    f'        <application ident="ocr"><label>{escape(alto_meta["ocr_software"])} {escape(alto_meta.get("ocr_version", ""))}</label></application>\n')
+            out.write('      </appInfo>\n')
+            out.write('    </encodingDesc>\n')
+
+            out.write('    <revisionDesc>\n')
+            out.write(
+                f'      <change when="{current_date}" who="altoconvert">Converted from ALTO file {escape(alto_filename)}</change>\n')
+            if alto_meta.get('ocr_date') and alto_meta.get('ocr_software'):
+                out.write(
+                    f'      <change when="{escape(alto_meta["ocr_date"])}" who="{escape(alto_meta["ocr_software"])}">OCR processing</change>\n')
+            if conllu_meta.get('generator'):
+                out.write(
+                    f'      <change when="{current_date}" who="udpipe">NLP enrichment by {escape(conllu_meta.get("generator"))}</change>\n')
+            out.write('    </revisionDesc>\n')
+            out.write('  </teiHeader>\n')
 
             if alto_pages:
                 out.write('  <facsimile>\n')
                 for pg in alto_pages:
                     surf_id = f'{doc_id_safe}.surface{pg["idx"]}'
-                    facs_img = f'{doc_id_safe}_p{pg["idx"]}.png'
+                    facs_img = f'{doc_id_safe}-{pg["idx"]}.png'
                     lrx_attr = f' lrx="{pg["width"]}"' if pg.get('width') else ''
                     lry_attr = f' lry="{pg["height"]}"' if pg.get('height') else ''
                     out.write(f'    <surface id="{surf_id}"{lrx_attr}{lry_attr}>\n')
@@ -350,7 +416,7 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
 
                     current_page = new_page_num
                     pb_id = f'{doc_id_safe}.pb{current_page}'
-                    facs_img = f'{doc_id_safe}_p{current_page}.png'
+                    facs_img = f'{doc_id_safe}-{current_page}.png'
                     out.write(f'      <pb n="{current_page}" id="{pb_id}" facs="{facs_img}"/>\n')
 
                     # Print mapped structural graphics linked to this page
@@ -368,7 +434,11 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
                     if current_block is not None: out.write('      </div>\n')
                     current_block = sent_block
                     div_id = escape(f"{doc_id_safe}.{current_block}")
-                    out.write(f'      <div type="MarginTextZone-P" id="{div_id}">\n')
+
+                    # Fetch block bbox mapped from ALTO
+                    block_bbox = alto_blocks.get(current_block, "")
+                    bbox_attr = f' bbox="{block_bbox}"' if block_bbox else ''
+                    out.write(f'      <div type="MarginTextZone-P" id="{div_id}"{bbox_attr}>\n')
 
                 sid = escape(f'{doc_id_safe}.s{s_idx}')
                 text_attr = f' text="{_attr(sent["text"])}"' if sent.get('text') else ''
@@ -386,6 +456,7 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
                             current_line = b.get('line_id')
                             lb_id = escape(f"{doc_id_safe}.{current_line}")
                             lb_bbox = b.get('line_bbox', '')
+                            # Adding standard <lb> based on the ALTO <TextLine> bounds
                             out.write(f'{" " * base_indent}<lb id="{lb_id}" bbox="{lb_bbox}"/>\n')
 
                     if grp['kind'] == 'name':
@@ -411,4 +482,3 @@ def write_teitok_merged(conllu_path, teitok_path, alto_path=None, doc_id=None):
     except Exception as e:
         print(f'  [Error] Writing TEITOK {teitok_path}: {e}', file=sys.stderr)
         return False
-
