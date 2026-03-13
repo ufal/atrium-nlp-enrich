@@ -357,6 +357,11 @@ the entire `TEMP/` directory including [manifest.tsv](data_samples/manifest_SHOR
 
 ### EXTRA: Extract Keywords (KER) based on tf-idf
 
+> [!NOTE]
+> This is an optional step in NLP enrichment of your data since it can give an overview of the 
+> whole collection in a relatively short time. Moreover, this process requires lemmas 
+> of words (output of Step 2) to get informative results.
+
 Finally, you can extract keywords 🔎 from your text. This script runs on a directory of
 document-specific `.conllu` files (e.g., `OUTPUT_DIR/UDP/`) containing ordered text content with word lemmas..
 
@@ -403,6 +408,8 @@ Where each file contains **keyword** plus its **score** in two columns sorted by
 The table above specifies how to interpret keyword scores returned by the KER algorithm based on their 
 TF-IDF values computed inside the system.
 
+> [!NOTE]
+> This step was considered unnecessary for the ATRIUM project
 
 ---
 
