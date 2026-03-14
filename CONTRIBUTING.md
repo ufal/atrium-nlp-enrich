@@ -12,36 +12,34 @@ This document describes the development workflow, conventions, and rules for con
 | `master` | Stable / Integration | Merged exclusively by a human reviewer. Do not open PRs directly into `master`. |
 
 ```text
-test  ←  feature/<issue>
-test  ←  bugfix/<issue>
-master   ←  (humans only, after test stabilises)
-```
+test    ←  feature-<name>
+test    ←  bugfix-<name>
+master  ←  (humans only, after test stabilises)
 
----
+```
 
 ### 🏷️ Branch Naming
 
-| Type             | Pattern           | Example                       |
-|------------------|-------------------|-------------------------------|
-| New feature      | `feature/<issue>` | `feature/42-teitok-export`    |
-| Bug fix          | `bugfix/<issue>`  | `bugfix/17-chunk-merge-error` |
-| Hotfix on master | `hotfix/<issue>`  | `hotfix/99-api-timeout`       |
+| Type             | Pattern          | Example              |
+|------------------|------------------|----------------------|
+| New feature      | `feature-<name>` | `feature-teitok`     |
+| Bug fix          | `bugfix-<name>`  | `bugfix-chunking`    |
+| Hotfix on master | `hotfix-<name>`  | `hotfix-api-timeout` |
 
 ---
 
 ## 🔁 Contributor Workflow
 
 1. **Create an issue** (or find an existing one) describing the problem or feature.
-2. **Branch from `master`:**
-
-   ```bash
-   git checkout master
-   git pull origin master
-   git checkout -b feature/<issue-number>
-   ```
-
-3. **Run the minimum tests** (see the Testing section).
-4. **Open a Pull Request** targeting the `test` branch.
+2. **Branch from `test`:**
+```bash
+git checkout test
+git pull origin test
+git checkout -b feature-<name>
+```
+3. **Implement your changes** observing the project's code conventions.
+4. **Run the minimum tests** (see the Testing section).
+5. **Open a Pull Request** targeting the `test` branch.
 
 ---
 
@@ -49,19 +47,19 @@ master   ←  (humans only, after test stabilises)
 
 Every PR must include:
 
-- **Issue link:** `Closes #<number>` or `Refs #<number>`
-- **Motivation:** why the change is needed
-- **Description of change:** what was changed and how
-- **Testing:** what was run, what passed, what could not be executed
+* **Issue link:** `Closes #<number>` or `Refs #<number>`
+* **Motivation:** why the change is needed
+* **Description of change:** what was changed and how
+* **Testing:** what was run, what passed, what could not be executed
 
 Use a **Draft PR** if the work is not ready for review.
 
-**Do not open PRs into `master`** — merging into `master` is exclusively the maintainers'
-responsibility.
+**Do not open PRs into `master` — merging into `master` is exclusively the 
+maintainers' responsibility.
 
-> **Note on issue tracking:** Issues reference the commits and PRs that resolved them —
-> not the other way around. Commit messages describe *what changed*; the issue is the
-> place to record *why* and link the resulting commits together.
+> **Note on issue tracking:** Issues reference the commits and PRs that resolved 
+> them — not the other way around. Commit messages describe *what changed*; the issue 
+> is the place to record *why* and link the resulting commits together.
 
 ---
 
@@ -69,7 +67,7 @@ responsibility.
 
 Format:
 
-```
+```text
 [type] concise description of what changed
 ```
 
@@ -88,36 +86,52 @@ Allowed types:
 | `style`    | Formatting, no logic change           |
 | `perf`     | Performance optimisation              |
 
-Examples:
-
-```
-[add] Add per-document TEITOK XML export
-[fix] Correct chunk boundary detection in chunk.py
-[docs] Update config_api.txt parameter descriptions
-```
 
 ---
 
-## 🧪 Testing
+## 🧪 Code Conventions & Testing
 
-### ✅ Minimum before every commit
+### Code Conventions
+
+* **Comments:** informative but short, may be LLM-generated, added when function name does 
+not explain its functionality in detail
+* **Argument types:** set default type (e.g., `int`, `list`) for function arguments
+* **Console flags:** when a new one added, provide help message for it
+* **Config files:** when set of variables changes it should be reflected in repository documentation
+* **Generated code:** always should be manually launched and checked for mistakes before pushing
+
+### Minimum checks before every commit
+
+Always run basic validation locally before pushing:
 
 ```bash
 # 1. Python compilation check
-python -m compileall -q api_util/
+python -m compileall -q .
 
-# 2. Pre-commit hooks
+# 2. Pre-commit hooks (runs black, isort, flake8, etc.)
 pre-commit run --all-files
+
 ```
 
-### 🔬 Scope-based testing
+> [!NOTE]
+>  If specific scripts or extraction modules are updated, please run a smoke-test 
+> against the `data_samples/` directory to verify extraction integrity.
 
-```bash
-# Run targeted unit tests
-python -m pytest api_util/
-```
+---
 
-Use the data samples in `data_samples/` as input when smoke-testing the pipeline.
+## 📁 Repository Documentation Management
+
+Each documentation file has one target audience and one responsibility. Rules are not repeated — cross-references are used instead.
+
+| File              | Audience        | Responsibility                                 |
+|-------------------|-----------------|------------------------------------------------|
+| `README.md`       | GitHub visitors | Project overview, workflow stages, quick start |
+| `CONTRIBUTING.md` | Developers      | Code conventions, branches, PRs, testing       |
+
+* **Do not duplicate rules:** if a rule is defined in `CONTRIBUTING.md`, other files 
+reference it rather than copying it.
+* **When changing a rule:** update the canonical source and verify that referencing files
+still point correctly.
 
 ---
 
@@ -153,24 +167,6 @@ follow this pattern:
 | `SAVE_TEITOK`    | TEITOK-style TEI XML with bounding boxes (requires ALTO) | `true`  |
 
 New flags must be documented here and in `config_api.txt`.
-
----
-
-## 📁 Repository Documentation Management
-
-Each documentation file has one target audience and one responsibility.
-Rules are not repeated — cross-references are used instead.
-
-| File              | Audience        | Responsibility                                 |
-|-------------------|-----------------|------------------------------------------------|
-| `README.md`       | GitHub visitors | Project overview, workflow stages, quick start |
-| `CONTRIBUTING.md` | Developers      | Code conventions, branches, PRs, testing       |
-
-Rules:
-
-1. **Do not duplicate rules** — if a rule is defined in `CONTRIBUTING.md`, other files reference it rather than copying it.
-2. **Single canonical source** — for each type of information, exactly one canonical file exists (see table above).
-3. **When changing a rule**, update the canonical source and verify that referencing files still point correctly.
 
 ---
 
