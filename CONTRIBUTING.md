@@ -3,6 +3,15 @@
 Thank you for your interest in contributing!
 This document describes the development workflow, conventions, and rules for contributors.
 
+## 📦 Release History
+
+| Version    | Highlights                                                                                                                                                                                                                                                                                      | Status      |
+|:-----------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:------------|
+| **v0.5.0** | text lines -> UDP -> NER -> CSV + CoNLLU-NE + alpha TEITOK (CSV inputs, 3 steps to get NER and UDP, Outputs per-document files: CoNLLU-NE as a combination of UDP and NT APIs application, CSV table with text line's POS and NER columns, TEITOK XML formed from ALTO XML + CoNLLU-NE (draft)) | Pre-release |
+| **v0.4.0** | UDP from raw CSV -> KER + NER -> CoNLLU-NE (Config file format changed, Added second per-document result files - combination of UDPipe with NER tags, UDPipe called on CSV files as before, KER called on CoNLL-U files for lemma access)                                                       | Pre-release |
+| **v0.3.0** | KER + UDP -> NER from raw CSV files with textlines (Inputs format changed to CSV for KER and UDPipe, UDPipe results moved from TEMP to OUTPUT, UDPipe outputs as NER inputs)                                                                                                                    | Pre-release |
+| **v0.2.0** | NER + UDP + KER from raw TXT files (KER local processing added, TXT inputs in all)                                                                                                                                                                                                              | Pre-release |
+| **v0.1.0** | NER + UDP from raw TXT files (Per-page txt files extracted by alto-tools as inputs, 4-step process, Initial working version)                                                                                                                                                                    | Pre-release |
 
 ## 🌿 Branches & Environments
 
