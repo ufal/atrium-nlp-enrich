@@ -880,19 +880,54 @@ VLLM_BATCH_SIZE=16            # Lines per generate() call; increase on ≥ 160 G
 
 ### 🗂 Workflow
 
-**1. Vocabulary Harvesting ([vocab_manager.py](vocab_manager.py) 📎)**
+**1. Vocabulary Harvesting ([vocab_build.py](vocab_build.py) 📎)**
 
-Before running inference, build the allowable vocabulary list. The vocabulary manager
-queries the AMCR OAI-PMH endpoint via paginated HTTP GET requests to fetch Czech–English
-term pairs, groups them into a thematic taxonomy guided by
-[taxonomy_config.json](data_samples/taxonomy_config.json) 📎, and caches the result
-locally as `teater_nested_vocab.json`. The cache is written with `sort_keys=True` for
-deterministic diffs, and the serialised prompt string is memoised so repeated reads
-within one pipeline run are free.
+The vocabulary is built in two stages, and only the first needs the internet:
+
+```
+harvest (network)   →   FLAT artifacts    →   nest (pure)    →   NESTED artifacts
+vocab_sources.py        *_flat.{json,csv}     vocab_manager      *_nested.json
+```
+
+[`vocab_sources.py`](vocab_sources.py) 📎 harvests two controlled vocabularies:
+
+| Source               | How                                                                                                                                              | What comes back                                                                                                                                                                   |
+|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **AMCR** heslář      | OAI-PMH, `api.aiscr.cz/2.2/oai?set=heslo`                                                                                                        | Czech–English pairs **plus** `ident_cely`, `nazev_heslare` (which of the ~50 controlled lists the term belongs to), `popis`, `zkratka`, `razeni`, broader terms and SKOS mappings |
+| **TEATER** thesaurus | the 12 pinned `import_*.json` files in [`ARUP-CAS/aiscr-teater`](https://github.com/ARUP-CAS/aiscr-teater), or live `teater.aiscr.cz/api/export` | 4 134 concepts in 12 branches, trilingual labels, scope notes, and the real broader/narrower hierarchy                                                                            |
+
+[`vocab_manager.py`](vocab_manager.py) 📎 then groups the flat terms into the thematic
+taxonomy defined by [taxonomy_config.json](data_samples/taxonomy_config.json) 📎. Placement
+is tried in precedence order — AMCR list membership (`heslar_map`), TEATER branch
+(`teater_branch_map`), the legacy keyword match, a cross-source rescue, an opt-in LLM
+fallback, then `Other` — and **every placement records the rule that made it** in
+`*_placement_audit.csv`, so the grouping can be reviewed rather than taken on trust.
 
 ```bash
-python3 vocab_manager.py
+# stage 1 + 2, needs network access to aiscr.cz
+python3 vocab_build.py --source both --stats
+
+# stage 2 only: re-nest from the committed flat files after editing the taxonomy.
+# Pure, offline, sub-second — this is the loop for tuning the taxonomy.
+python3 vocab_build.py --from-flat --stats
+python3 vocab_build.py --from-flat --check     # exit 1 if the artifacts would change
 ```
+
+If this machine cannot reach `aiscr.cz`, run the **Vocabulary Refresh** workflow
+([.github/workflows/vocab-refresh.yml](.github/workflows/vocab-refresh.yml)) — a hosted
+runner harvests and uploads the artifacts.
+
+> [!NOTE]
+> The nested files are deliberately **not** written with `sort_keys=True`. Theme order is
+> priority-descending and load-bearing: `build_system_prompt()` iterates the file in
+> insertion order and truncates a *prefix* of the resulting term list, so alphabetising
+> the keys would silently change which themes survive a tight context budget. Determinism
+> comes from the explicit priority ordering plus a `(boilerplate, razeni, label)` sort
+> within each theme. Provenance lives in a sidecar `*.meta.json`, not inline — every
+> consumer reads the nested file as `{theme: terms}`, so an inline `_meta` key would be
+> rendered to the model as a phantom theme.
+
+`python3 vocab_manager.py` still works and still performs the legacy AMCR-only sync.
 
 **2. LLM Inference Pipeline ([llm_run.py](llm_run.py) 📎)**
 

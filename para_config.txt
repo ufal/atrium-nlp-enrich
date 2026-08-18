@@ -35,3 +35,11 @@ ker               = MIT             ; conditional ; legacy KER lemma-frequency k
 yake              = AGPL-3.0        ; conditional ; YAKE statistical keyword extraction (LIAAD/yake)
 keybert           = MIT             ; conditional ; KeyBERT embedding-based keyword extraction
 sentence_transformers = Apache-2.0  ; conditional ; sentence-transformers backbone for KeyBERT
+#   * The AMCR heslar and the TEATER thesaurus are both CC BY-NC 4.0 (AMCR's OAI
+#     Identify response carries a rightsReference to by-nc/4.0; TEATER declares the
+#     same on its home page). Conditional, because a core run
+#     (manifest -> udp -> nt -> stats) never touches the vocabulary -- only the
+#     vocabulary build and the LLM enrichment stage do. Names match
+#     atrium-translator's para_config.txt so both repos resolve the same licence.
+amcr_vocab        = CC BY-NC 4.0    ; conditional ; AMCR heslar controlled vocabulary (vocab_sources.harvest_amcr)
+teater_data       = CC BY-NC 4.0    ; conditional ; TEATER thesaurus data (vocab_sources.harvest_teater)
