@@ -15,6 +15,15 @@
 
 name: Vocabulary Refresh
 
+# Ref-less group, mirroring the hub's issue-log-refresh.yml: this workflow reaches out
+# to api.aiscr.cz and writes artifacts, so exactly one harvest runs at a time across the
+# whole repository, not one per branch. `cancel-in-progress: false` — a killed harvest
+# leaves a partial OAI-PMH walk, and being polite to a public endpoint matters more than
+# a fast queue.
+concurrency:
+  group: vocab-refresh
+  cancel-in-progress: false
+
 permissions:
   contents: write        # create-pull-request writes the branch
   pull-requests: write   # ...and opens the PR
