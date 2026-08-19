@@ -89,7 +89,7 @@ jobs:
         run: python3 vocab_build.py --from-flat --check
 
       - name: Upload vocabulary artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vocabularies
           path: |
