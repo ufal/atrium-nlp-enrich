@@ -23,5 +23,5 @@
 # `jsonschema` (the Layer D document gate, D4) comes from — it is a pipeline dependency,
 # not a serving one.
 fastapi>=0.141.1
-uvicorn[standard]>=0.52.1
+uvicorn[standard]>=0.52.3
 python-multipart>=0.0.32
