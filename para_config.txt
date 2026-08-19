@@ -4,7 +4,7 @@
 
 [tool]
 program = nlp-enrich
-version = v0.18.3
+version = v0.19.0
 repository_fallback = https://github.com/ufal/atrium-nlp-enrich
 
 [components]
