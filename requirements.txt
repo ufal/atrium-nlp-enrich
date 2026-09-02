@@ -8,7 +8,7 @@ yake
 keybert
 sentence-transformers
 tenacity
-pydantic>=2.13.4
+pydantic>=2.13.5
 httpx2
 lxml
 # atrium_document.validate_document() — the Layer D output gate now called from
