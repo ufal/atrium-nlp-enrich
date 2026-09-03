@@ -112,13 +112,30 @@ def build_schema(term_names: List[str]) -> type:
     return ConstrainedEnrichment
 
 
+IdList = List[Dict[str, str]]
+
+
+def _id_lookup_and_strip_map(terms: List[dict]) -> Tuple[Dict[str, IdList], Dict[str, str]]:
+    """From the final surviving term list, build the two small maps ``main()`` needs
+    after inference: which record ids back a given enum label (B2/M7), and which
+    qualified labels (B3) need the bracket stripped back off for the emitted keyword.
+
+    Keyed by the exact label the model was offered (post-truncation), so a term
+    dropped by truncation simply has no entry — ``main()`` falls back to an empty id
+    list rather than inventing one for a category the model was never shown.
+    """
+    id_lookup = {t["cs"]: t["ids"] for t in terms if t.get("ids")}
+    strip_map = {t["cs"]: t["bare_cs"] for t in terms if t.get("bare_cs")}
+    return id_lookup, strip_map
+
+
 def build_system_prompt(
     vocab_data: dict,
     tokenizer: Any,
     max_tokens: int,
     skip_truncation: bool = False,
     excluded_themes: Optional[Set[str]] = None,
-) -> Tuple[str, List[str]]:
+) -> Tuple[str, List[str], Dict[str, IdList], Dict[str, str]]:
     """Render the thematic vocabulary into a system prompt and return the term list.
 
     ``excluded_themes`` names the themes to withhold from the model, lower-cased.
@@ -128,6 +145,14 @@ def build_system_prompt(
     prompt builder. This matters: a term absent from the prompt is unreachable by
     construction, so withholding one turns "the model was wrong" and "the label was
     withheld" into the same score.
+
+    Returns ``(prompt, surviving_terms, id_lookup, strip_map)``. ``id_lookup`` maps
+    each surviving enum label to the full set of ``{source, id}`` records it stands
+    for — its own plus every one B1's dedup discarded onto it (issue #6, M7) — for
+    ``main()`` to attach as ``teater_category_ids``. ``strip_map`` maps a qualified
+    label (B3, e.g. ``"zámek (sídlo elity)"``) back to its bare form, so the emitted
+    ``teater_category`` reads ``"zámek"`` while the id set still disambiguates which
+    sense was meant. Neither map is serialised into the prompt itself.
     """
     header = (
         "You are an expert archaeological data extractor. "
@@ -183,7 +208,15 @@ def build_system_prompt(
                 for cs_key, pair in data.items():
                     en = pair.get("en", cs_key) if isinstance(pair, dict) else cs_key
                     sub = pair.get("sub", "") if isinstance(pair, dict) else ""
-                    raw_terms.append({"theme": theme, "sub": sub, "cs": cs_key, "en": en})
+                    term = {"theme": theme, "sub": sub, "cs": cs_key, "en": en}
+                    if isinstance(pair, dict) and pair.get("source") and pair.get("source_id"):
+                        term["ids"] = [{"source": pair["source"], "id": pair["source_id"]}] + [
+                            {"source": d["source"], "id": d["id"]}
+                            for d in (pair.get("discarded_ids") or [])
+                        ]
+                        if pair.get("bare_cs"):
+                            term["bare_cs"] = pair["bare_cs"]
+                    raw_terms.append(term)
 
     prioritised = raw_terms
 
@@ -225,11 +258,13 @@ def build_system_prompt(
             "[vocab] Prefix caching enabled — skipping truncation, "
             f"injecting full vocabulary ({token_count} tokens)."
         )
-        return full_prompt, [t["cs"] for t in prioritised]
+        id_lookup, strip_map = _id_lookup_and_strip_map(prioritised)
+        return full_prompt, [t["cs"] for t in prioritised], id_lookup, strip_map
 
     if token_count <= max_tokens:
         print("[vocab] Full vocabulary fits within token budget.")
-        return full_prompt, [t["cs"] for t in prioritised]
+        id_lookup, strip_map = _id_lookup_and_strip_map(prioritised)
+        return full_prompt, [t["cs"] for t in prioritised], id_lookup, strip_map
 
     print(
         f"[WARN] Vocabulary ({token_count} tokens) exceeds budget "
@@ -253,7 +288,37 @@ def build_system_prompt(
         f"[vocab] Truncated to {len(surviving_cs)} terms "
         f"({count_tokens(surviving_prompt, tokenizer)} tokens)."
     )
-    return surviving_prompt, surviving_cs
+    id_lookup, strip_map = _id_lookup_and_strip_map(surviving_terms)
+    return surviving_prompt, surviving_cs, id_lookup, strip_map
+
+
+def _attach_category_ids(
+    enriched_results: List[dict],
+    id_lookup: Dict[str, List[Dict[str, str]]],
+    strip_map: Dict[str, str],
+    emit_ids: bool,
+) -> None:
+    """Post-inference id passthrough (B2/B3/C4) — mutates each record's ``enrichment``
+    dict in place. Deliberately done here rather than inside process_document*: the
+    inference loop should not need to know about vocabulary internals to run a batch,
+    and M7 asked for this to stay easy to disable ("drop it if it will create some
+    issues") without touching either backend.
+
+    ``teater_category`` is looked up *before* stripping, since ``id_lookup`` is keyed
+    by the label the model actually selected (which may carry a B3 qualifier); the
+    output field is then rewritten to the bare label so a qualifier never leaks past
+    this pipeline into a downstream index.
+    """
+    for record in enriched_results:
+        enrichment = record.get("enrichment")
+        if not isinstance(enrichment, dict):
+            continue
+        category = enrichment.get("teater_category", "")
+        if emit_ids:
+            enrichment["teater_category_ids"] = id_lookup.get(category, [])
+        bare = strip_map.get(category)
+        if bare is not None:
+            enrichment["teater_category"] = bare
 
 
 def _write_abort_marker(
@@ -292,6 +357,11 @@ def main(config_path: str = "llm_config.txt") -> None:
     MIN_CHAR_COUNT = int(config.get("MIN_CHAR_COUNT", "3"))
     MIN_CHAR_NON_TEXT = int(config.get("MIN_CHAR_NON_TEXT", "8"))
     MIN_ALPHA_RATIO_NON_TEXT = float(config.get("MIN_ALPHA_RATIO_NON_TEXT", "0.40"))
+
+    # M7: "list them now and drop it if it will create some issues" — kept behind a
+    # config switch rather than hard-wired, so the id passthrough can be turned off
+    # without a code change if it does.
+    EMIT_CATEGORY_IDS = config.get("EMIT_CATEGORY_IDS", "true").lower() == "true"
 
     infer, sources = get_inference_defaults(MODEL_KEY, config)
 
@@ -407,7 +477,7 @@ def main(config_path: str = "llm_config.txt") -> None:
         max_input_tokens = spec["context_window"] - CONTEXT_RESERVED
 
         skip_trunc = BACKEND == "vllm" and ENABLE_PREFIX_CACHING
-        system_prompt, surviving_terms = build_system_prompt(
+        system_prompt, surviving_terms, id_lookup, strip_map = build_system_prompt(
             vocab_data,
             tokenizer,
             max_tokens=max_input_tokens,
@@ -489,6 +559,8 @@ def main(config_path: str = "llm_config.txt") -> None:
                         min_char_non_text=MIN_CHAR_NON_TEXT,
                         min_alpha_ratio_non_text=MIN_ALPHA_RATIO_NON_TEXT,
                     )
+
+                _attach_category_ids(enriched_results, id_lookup, strip_map, EMIT_CATEGORY_IDS)
 
                 was_aborted = bool(doc_stats.get("aborted"))
                 total_processed += doc_stats["processed"]

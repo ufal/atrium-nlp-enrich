@@ -63,19 +63,24 @@ def _now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _base_meta(config_path: Path) -> Dict[str, Any]:
-    return {
+def _rel(path: Path) -> str:
+    return str(path.relative_to(REPO_ROOT)) if path.is_relative_to(REPO_ROOT) else str(path)
+
+
+def _base_meta(config_path: Path, overrides_path: Optional[Path] = None) -> Dict[str, Any]:
+    meta: Dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "generator": "vocab_build.py",
         "tool_version": _tool_version(),
         "generated_utc": _now(),
-        "taxonomy_config": {
-            "path": str(config_path.relative_to(REPO_ROOT))
-            if config_path.is_relative_to(REPO_ROOT)
-            else str(config_path),
-            "sha256": _sha256(config_path),
-        },
+        "taxonomy_config": {"path": _rel(config_path), "sha256": _sha256(config_path)},
     }
+    if overrides_path is not None:
+        meta["taxonomy_overrides"] = {
+            "path": _rel(overrides_path),
+            "sha256": _sha256(overrides_path),
+        }
+    return meta
 
 
 # ── writing, with --check ─────────────────────────────────────────────────────
@@ -169,7 +174,8 @@ def _nest(
     manager: VocabularyManager,
     records: Sequence[vs.VocabRecord],
     rescue_branches: Optional[Dict[str, str]] = None,
-) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    qualifiers: Optional[Dict[Tuple[str, str], str]] = None,
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Tuple[str, str, str]]]:
     branch_map = manager.settings.get("teater_branch_map") or {}
     rescue = None
     if rescue_branches:
@@ -180,11 +186,26 @@ def _nest(
         }
     audit: List[Dict[str, Any]] = []
     collisions: List[Tuple[str, str, str]] = []
-    pairs = vs.to_term_pairs(records, collisions=collisions)
+    pairs = vs.to_term_pairs(records, collisions=collisions, qualifiers=qualifiers)
     if collisions:
         print(f"  [warn] {len(collisions)} label collision(s) dropped, e.g. {collisions[:3]}")
     nested = manager.build_nested(pairs, audit=audit, rescue=rescue)
-    return nested, audit
+    return nested, audit, collisions
+
+
+def _filter_excluded(
+    records: Sequence[vs.VocabRecord], manager: VocabularyManager
+) -> List[vs.VocabRecord]:
+    """Drop records whose own placement rule already resolves to ``__exclude__``.
+
+    Applied *before* label-collision dedup (issue #6, finding 3 of comment
+    5395681950): without this, a term whose winning record sits in an excluded list
+    is lost entirely even when a kept list also offers it under the same label — e.g.
+    "papír" would vanish once ``dokument_material`` is excluded, because that record's
+    ident happens to sort first, even though "papír" also lives in the kept Material
+    lists.
+    """
+    return [r for r in records if not manager.is_excluded(r.as_dict())]
 
 
 def _audit_text(rows: Sequence[Dict[str, Any]]) -> str:
@@ -232,6 +253,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--teater-mode", choices=("snapshot", "live"), default="snapshot")
     p.add_argument("--vocab-dir", type=Path, default=DEFAULT_VOCAB_DIR)
     p.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    p.add_argument(
+        "--overrides",
+        type=Path,
+        default=None,
+        help="per-term corrections (default: taxonomy_overrides.json next to --config)",
+    )
     p.add_argument("--delay", type=float, default=vs.DEFAULT_DELAY)
     p.add_argument(
         "--update-legacy",
@@ -266,32 +293,50 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             changed |= _emit(vocab_dir / f"{name}_flat.csv", vs.flat_csv_text(records), args.check)
 
-    merged, collisions = vs.merge(per_source)
+    # ── stage 2 setup ────────────────────────────────────────────────────────
+    manager = VocabularyManager(
+        config_path=str(args.config),
+        overrides_path=str(args.overrides) if args.overrides else None,
+    )
+    manager.validate_settings()
+    qualifiers = manager.qualifier_overrides()
+
+    # B5 (issue #6, finding 3): drop excluded records *before* any dedup, so a term
+    # whose winning record sits in an excluded list doesn't take a kept list's record
+    # down with it. Applied once, upstream of both vocabulary.csv and the nested build.
+    filtered_source: Dict[str, List[vs.VocabRecord]] = {
+        name: _filter_excluded(records, manager) for name, (records, _meta) in per_source.items()
+    }
+
+    filtered_for_merge = {
+        name: (records, per_source[name][1]) for name, records in filtered_source.items()
+    }
+    merged, _merge_collisions = vs.merge(filtered_for_merge)
     changed |= _emit(vocab_dir / "vocabulary.csv", vs.vocabulary_csv_text(merged), args.check)
 
-    # ── stage 2 artifacts ────────────────────────────────────────────────────
-    manager = VocabularyManager(config_path=str(args.config))
-    teater_records = per_source.get("teater", ([], {}))[0]
+    teater_records = filtered_source.get("teater", [])
     rescue_branches = _rescue_map(teater_records)
 
     targets: Dict[str, List[vs.VocabRecord]] = {}
-    if "amcr" in per_source:
-        targets["amcr"] = per_source["amcr"][0]
-    if "teater" in per_source:
+    if "amcr" in filtered_source:
+        targets["amcr"] = filtered_source["amcr"]
+    if "teater" in filtered_source:
         targets["teater"] = teater_records
-    if len(per_source) > 1:
-        targets["union"] = merged
+    if len(filtered_source) > 1:
+        targets["union"] = filtered_source.get("amcr", []) + teater_records
 
     last_nested: Dict[str, Any] = {}
     for name, records in targets.items():
-        nested, audit = _nest(manager, records, rescue_branches if name != "teater" else None)
+        nested, audit, collisions = _nest(
+            manager, records, rescue_branches if name != "teater" else None, qualifiers
+        )
         last_nested = nested
-        meta = _base_meta(args.config)
+        meta = _base_meta(args.config, manager.overrides_path)
         meta["sources"] = [per_source[s][1] for s in per_source if s in ("amcr", "teater")]
         meta["counts"] = {
             "total": sum(len(v) for v in nested.values()),
             "by_theme": {k: len(v) for k, v in nested.items()},
-            "collisions": collisions if name == "union" else 0,
+            "collisions": len(collisions),
         }
         # Theme order is priority-descending and load-bearing for prompt truncation, so
         # the nested file is NOT written with sort_keys.

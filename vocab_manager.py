@@ -78,11 +78,18 @@ class VocabularyManager:
         self,
         vocab_path: str = "data_samples/vocab/union_nested.json",
         config_path: str = "data_samples/taxonomy_config.json",
+        overrides_path: Optional[str] = None,
         llm_predictor: Optional[Callable[[str], str]] = None,
     ) -> None:
         self.vocab_path = Path(vocab_path)
         self.config_path = Path(config_path)
+        self.overrides_path = (
+            Path(overrides_path)
+            if overrides_path is not None
+            else self.config_path.with_name("taxonomy_overrides.json")
+        )
         self.taxonomy: Dict[str, Any] = self._load_config()
+        self.overrides: Dict[Tuple[str, str], Dict[str, Any]] = self._load_overrides()
         self.vocab_data: Dict[str, Any] = {}
         self.llm_predictor = llm_predictor
         self._prompt_string_cache: Optional[str] = None
@@ -247,6 +254,49 @@ class VocabularyManager:
             },
         }
 
+    def _load_overrides(self) -> Dict[Tuple[str, str], Dict[str, Any]]:
+        """Per-(source, id) corrections from ``taxonomy_overrides.json`` (issue #6,
+        workstream B4). Absent file means no overrides — every consumer already treats
+        ``self.overrides`` as an empty mapping in that case, so this is not an error.
+        """
+        if not self.overrides_path.exists():
+            return {}
+        with open(self.overrides_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        out: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for entry in payload.get("overrides", []):
+            match = entry.get("match") or {}
+            source = str(match.get("source") or "")
+            source_id = str(match.get("id") or "")
+            if not source or not source_id:
+                continue
+            out[(source, source_id)] = {k: v for k, v in entry.items() if k != "match"}
+        return out
+
+    def qualifier_overrides(self) -> Dict[Tuple[str, str], str]:
+        """``(source, id) -> qualifier_cs`` for records flagged to become their own
+        bracketed enum entry (B3), for :func:`vocab_sources.to_term_pairs`. Kept as a
+        plain dict rather than passing ``self`` into vocab_sources, which must stay
+        import-light (see the module docstring there)."""
+        return {
+            key: value["qualifier_cs"]
+            for key, value in self.overrides.items()
+            if value.get("qualifier_cs")
+        }
+
+    def is_excluded(self, term_pair: Dict[str, Any]) -> bool:
+        """True if this record's own placement rule — override, heslar_map, or
+        teater_branch_map — resolves to ``__exclude__``, ignoring the keyword fallback
+        and cross-source rescue (neither ever yields ``__exclude__``, both are opt-in
+        aids for a term no curated list already claims).
+
+        Used to filter records out of a source's list *before* label-collision dedup
+        (issue #6, finding 3 of comment 5395681950): without this, a term whose winning
+        record sits in an excluded list is lost entirely even when a kept list also
+        offers it under the same label.
+        """
+        return self.assign_theme(term_pair)[0] == EXCLUDE_THEME
+
     def fetch_amcr_vocab(self, delay: float = 0.3) -> Dict[str, Dict[str, str]]:
         term_mapping: Dict[str, Dict[str, str]] = {}
         url = f"{self.AMCR_OAI_BASE}?verb=ListRecords&metadataPrefix=oai_amcr&set=heslo"
@@ -336,6 +386,9 @@ class VocabularyManager:
         which is what makes the result reviewable by a domain expert rather than
         something an LLM produced and nobody can audit.
 
+          override the term's own (source, id) in taxonomy_overrides.json — checked
+                   first, since it exists precisely to correct one record's placement
+                   without changing the list/branch rule every other member follows
           heslar   the AMCR controlled list the term came from (nazev_heslare)
           teater   the term's TEATER top-level branch
           keyword  the legacy substring match against taxonomy_config keywords
@@ -343,6 +396,11 @@ class VocabularyManager:
         """
         scheme = str(term_pair.get("scheme") or "")
         source = str(term_pair.get("source") or "")
+        source_id = str(term_pair.get("source_id") or "")
+
+        override = self.overrides.get((source, source_id))
+        if override and override.get("facet"):
+            return override["facet"], f"override:{source}:{source_id}"
 
         if scheme and source == "amcr":
             mapped = (self.settings.get("heslar_map") or {}).get(scheme)
@@ -411,6 +469,10 @@ class VocabularyManager:
             for key, value in (self.settings.get(map_name) or {}).items():
                 if value not in known:
                     bad.append(f"{map_name}[{key!r}] -> {value!r}")
+        for (source, source_id), override in self.overrides.items():
+            facet = override.get("facet")
+            if facet is not None and facet not in known:
+                bad.append(f"overrides[{source}:{source_id}] -> {facet!r}")
         if bad:
             raise ValueError(
                 "taxonomy_config.json maps terms to undeclared facets: "
@@ -422,7 +484,15 @@ class VocabularyManager:
         self,
         raw_terms: Dict[str, Dict[str, Any]],
         use_llm_fallback: bool = False,
-        keep: Optional[Sequence[str]] = ("cs", "en", "sub"),
+        keep: Optional[Sequence[str]] = (
+            "cs",
+            "en",
+            "sub",
+            "source",
+            "source_id",
+            "discarded_ids",
+            "bare_cs",
+        ),
         audit: Optional[List[Dict[str, Any]]] = None,
         rescue: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Dict[str, Any]]:
@@ -431,10 +501,17 @@ class VocabularyManager:
         ``keep`` limits which keys survive into each entry. The default adds ``sub`` —
         the source's own second level — to the ``cs``/``en`` pair every consumer already
         reads; an extra key is inert to them (they all go through ``pair.get("en", …)``)
-        and it is what lets the prompt render facets with sub-headers. ``audit``,
-        when given, receives one row per term recording the rule that placed it.
-        ``rescue`` maps a normalised Czech label to a theme, used to place AMCR terms
-        that only a cross-source TEATER match can explain.
+        and it is what lets the prompt render facets with sub-headers. ``source``/
+        ``source_id`` identify the surviving record itself, and ``discarded_ids`` lists
+        every other record :func:`vocab_sources.to_term_pairs` absorbed into it (issue
+        #6, M7) — together these let ``build_system_prompt`` assemble the full id set
+        for ``teater_category_ids``. ``bare_cs`` is present only on a qualifier-split
+        entry (B3) and names the unqualified label, so the enrichment output can strip
+        the bracket back off after inference without touching a term that carries a
+        parenthesis as part of its actual, source-authored label. ``audit``, when given,
+        receives one row per term recording the rule that placed it. ``rescue`` maps a
+        normalised Czech label to a theme, used to place AMCR terms that only a
+        cross-source TEATER match can explain.
 
         Theme order is priority-descending (never alphabetical): ``build_system_prompt``
         iterates this dict in insertion order and truncates a *prefix* of the resulting

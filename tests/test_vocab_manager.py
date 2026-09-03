@@ -15,10 +15,14 @@ TAXONOMY = {
 }
 
 
-def _mgr(tmp_path, taxonomy=TAXONOMY, llm_predictor=None):
+def _mgr(tmp_path, taxonomy=TAXONOMY, llm_predictor=None, overrides=None):
     cfg = tmp_path / "taxonomy.json"
     cfg.write_text(json.dumps(taxonomy), encoding="utf-8")
     vocab = tmp_path / "vocab.json"
+    if overrides is not None:
+        (tmp_path / "taxonomy_overrides.json").write_text(
+            json.dumps({"overrides": overrides}), encoding="utf-8"
+        )
     return VocabularyManager(str(vocab), str(cfg), llm_predictor=llm_predictor)
 
 
@@ -190,7 +194,17 @@ def test_keep_limits_the_on_disk_entry_shape(tmp_path):
     m = _nesting_mgr(tmp_path)
     rich = _pair("starý hrad", source="amcr", scheme="lokalita_typ", source_id="HES-1")
     built = m.build_nested({"starý hrad": rich})
-    assert built["Site Types"]["starý hrad"] == {"cs": "starý hrad", "en": "x"}
+    # default keep: cs/en/sub plus the id-tracking fields build_system_prompt needs for
+    # teater_category_ids (source/source_id/discarded_ids) and B3 stripping (bare_cs) —
+    # not "scheme", which is only a placement input, never surfaced. discarded_ids and
+    # bare_cs are absent here because this hand-built pair (unlike a real
+    # to_term_pairs() output) never sets them.
+    assert built["Site Types"]["starý hrad"] == {
+        "cs": "starý hrad",
+        "en": "x",
+        "source": "amcr",
+        "source_id": "HES-1",
+    }
     full = m.build_nested({"starý hrad": rich}, keep=None)
     assert full["Site Types"]["starý hrad"]["scheme"] == "lokalita_typ"
 
@@ -290,6 +304,93 @@ def test_a_map_pointing_at_an_undeclared_facet_is_a_hard_error(tmp_path):
 
 def test_exclude_is_always_a_valid_map_target(tmp_path):
     _facet_mgr(tmp_path).validate_settings()  # must not raise
+
+
+# ── taxonomy_overrides.json: per-term facet/qualifier corrections (B4) ──────────
+
+
+def _facet_mgr_with_overrides(tmp_path, overrides):
+    return _mgr(tmp_path, taxonomy=FACET_TAXONOMY, overrides=overrides)
+
+
+def test_override_facet_wins_over_heslar_map(tmp_path):
+    """kostel/kaple/mlýn/cesta: a single mis-sorted record inside an otherwise-correct
+    list, fixed per-id rather than by touching the list's own placement."""
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [{"match": {"source": "amcr", "id": "HES-1"}, "facet": "Artefact", "reason": "x"}],
+    )
+    term = _pair("hrad eneolitický", source="amcr", scheme="obdobi", source_id="HES-1")
+    assert m.assign_theme(term) == ("Artefact", "override:amcr:HES-1")
+    # a different id from the same list is unaffected
+    other = _pair("jiný", source="amcr", scheme="obdobi", source_id="HES-2")
+    assert m.assign_theme(other) == ("Chronology", "heslar:obdobi")
+
+
+def test_override_without_facet_does_not_change_placement(tmp_path):
+    """A qualifier-only override (B3) is consumed by to_term_pairs, not assign_theme —
+    the record still resolves to its normal facet via heslar_map/teater_branch_map."""
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [{"match": {"source": "teater", "id": "9"}, "qualifier_cs": "sídlo elity", "reason": "x"}],
+    )
+    term = _pair("zámek", source="teater", source_id="9", broader=["1050"])
+    assert m.assign_theme(term) == ("Chronology", "teater:1050")
+
+
+def test_qualifier_overrides_extracts_only_qualifier_entries(tmp_path):
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [
+            {
+                "match": {"source": "teater", "id": "1439"},
+                "qualifier_cs": "sídlo elity",
+                "reason": "x",
+            },
+            {"match": {"source": "amcr", "id": "HES-1"}, "facet": "Artefact", "reason": "x"},
+        ],
+    )
+    assert m.qualifier_overrides() == {("teater", "1439"): "sídlo elity"}
+
+
+def test_is_excluded_ignores_keyword_fallback_and_rescue(tmp_path):
+    """is_excluded must answer purely from the curated placement rules, since it gates
+    which records even reach dedup (finding 3) — a keyword or rescue match is an aid
+    for an unclassified term, never a reason to treat a term as excluded."""
+    m = _facet_mgr(tmp_path)
+    excluded = _pair("Avaři", source="teater", source_id="8", broader=["2557", "2560"])
+    kept = _pair("Achájové", source="teater", source_id="9", broader=["2557", "2900"])
+    unmatched = _pair("nesmysl")
+    assert m.is_excluded(excluded) is True
+    assert m.is_excluded(kept) is False
+    assert m.is_excluded(unmatched) is False  # falls through to Other, not excluded
+
+
+def test_override_facet_can_itself_be_exclude(tmp_path):
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [{"match": {"source": "amcr", "id": "HES-1"}, "facet": "__exclude__", "reason": "x"}],
+    )
+    term = _pair("x", source="amcr", scheme="obdobi", source_id="HES-1")
+    assert m.is_excluded(term) is True
+
+
+def test_override_facet_must_be_a_declared_theme(tmp_path):
+    import pytest
+
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [{"match": {"source": "amcr", "id": "HES-1"}, "facet": "Nonexistent", "reason": "x"}],
+    )
+    with pytest.raises(ValueError, match="overrides"):
+        m.validate_settings()
+
+
+def test_missing_overrides_file_is_not_an_error(tmp_path):
+    m = _facet_mgr(tmp_path)  # no overrides= passed, no file written
+    assert m.overrides == {}
+    assert m.qualifier_overrides() == {}
+    m.validate_settings()  # must not raise
 
 
 # ── the shipped config, not a synthetic one ─────────────────────────────────
