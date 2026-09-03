@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import vocab_sources as vs
-from vocab_manager import VocabularyManager
+from vocab_manager import VocabularyManager, attach_same_as
 
 REPO_ROOT = Path(__file__).resolve().parent
 DEFAULT_VOCAB_DIR = REPO_ROOT / "data_samples" / "vocab"
@@ -330,6 +330,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         nested, audit, collisions = _nest(
             manager, records, rescue_branches if name != "teater" else None, qualifiers
         )
+        # Track 3 / O1 / F: link "X/Y" composites to a standalone X or Y also offered.
+        # Scoring-time equivalence only (vocab_manager.attach_same_as docstring) — run
+        # after nesting, since a pair can span two facets or two sources and is only
+        # resolvable once dedup and placement have already happened.
+        same_as_links = attach_same_as(nested)
         last_nested = nested
         meta = _base_meta(args.config, manager.overrides_path)
         meta["sources"] = [per_source[s][1] for s in per_source if s in ("amcr", "teater")]
@@ -337,6 +342,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "total": sum(len(v) for v in nested.values()),
             "by_theme": {k: len(v) for k, v in nested.items()},
             "collisions": len(collisions),
+            "same_as_links": same_as_links,
         }
         # Theme order is priority-descending and load-bearing for prompt truncation, so
         # the nested file is NOT written with sort_keys.

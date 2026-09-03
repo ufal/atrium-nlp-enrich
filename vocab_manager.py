@@ -635,6 +635,98 @@ class VocabularyManager:
         return self._prompt_string_cache
 
 
+# ── composite-label equivalence (issue #6, finding 2 / workstream F, O1) ───────────
+#
+# AMCR packs related concepts into one entry — "most/brod", "muzeum/skanzen",
+# "budova/stavba" — and where a component also exists as its own standalone entry,
+# both are offered to the model as distinct, independently selectable answers to the
+# same line. Under P1 dropping either is not an option (it would be editing what a
+# source vocabulary offers), so the two are linked instead: `same_as` records that a
+# term stands in for the same real-world thing another term does, purely so a scorer
+# can treat either as correct. It changes nothing about the prompt or the schema —
+# both entries were already independently selectable before this ran.
+#
+# Pure functions of the already-built nested shape, not of the flat records: a
+# composite-component match can span two different source lists or even two
+# different sources (AMCR "most/brod" vs. AMCR "most"; "muzeum/skanzen" vs. TEATER
+# "skanzen"), so it can only be found once nesting has already resolved dedup and
+# placement. find_composite_links() is the single definition both the actual
+# attachment (below) and vocab_review.py's reviewable CSV read from, so the report
+# a human reads and the vocabulary a model is offered can never quietly disagree
+# about what counts as a pair.
+
+
+def find_composite_links(
+    nested: Dict[str, Dict[str, Any]],
+) -> List[Tuple[str, str, str, str]]:
+    """Every offered ``"X/Y[/Z]"`` label paired with a component also offered as its
+    own standalone entry. Returns ``(composite_facet, composite_cs, component_facet,
+    component_cs)`` tuples, one per pair, deduplicated and ordered by label so the
+    result is deterministic regardless of dict iteration order.
+    """
+    by_label: Dict[str, Tuple[str, str]] = {}
+    for facet, terms in nested.items():
+        if facet.startswith("_"):
+            continue
+        for cs in terms:
+            by_label[_norm(cs)] = (facet, cs)
+
+    seen: set = set()
+    links: List[Tuple[str, str, str, str]] = []
+    for facet, terms in nested.items():
+        if facet.startswith("_"):
+            continue
+        for cs in terms:
+            if "/" not in cs:
+                continue
+            parts = [p.strip() for p in cs.split("/") if p.strip()]
+            if len(parts) < 2:
+                continue
+            for part in parts:
+                key = _norm(part)
+                if key not in by_label or key == _norm(cs):
+                    continue
+                comp_facet, comp_cs = by_label[key]
+                pair = (facet, cs, comp_facet, comp_cs)
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                links.append(pair)
+
+    links.sort(key=lambda t: (t[1], t[3]))
+    return links
+
+
+def attach_same_as(nested: Dict[str, Dict[str, Any]]) -> int:
+    """Mutate ``nested`` in place: for every pair :func:`find_composite_links` finds,
+    add a bidirectional ``same_as`` list of ``{source, id}`` to both entries. Returns
+    the number of links attached (0 on a build with no composite/component overlap
+    at all, e.g. a single-source nesting that never sees both sides of a pair).
+
+    Reversible by construction: this only ever appends to a ``same_as`` list nothing
+    else reads yet, so removing the call site drops the field from the next rebuild
+    with no other change required — the same reversibility M7 asked for on
+    ``discarded_ids``, extended to this field on the same reasoning.
+    """
+    count = 0
+    for facet_a, cs_a, facet_b, cs_b in find_composite_links(nested):
+        entry_a = nested[facet_a][cs_a]
+        entry_b = nested[facet_b][cs_b]
+        id_a = {"source": entry_a.get("source", ""), "id": entry_a.get("source_id", "")}
+        id_b = {"source": entry_b.get("source", ""), "id": entry_b.get("source_id", "")}
+
+        same_a = entry_a.setdefault("same_as", [])
+        if id_b not in same_a:
+            same_a.append(id_b)
+            count += 1
+
+        same_b = entry_b.setdefault("same_as", [])
+        if id_a not in same_b:
+            same_b.append(id_a)
+
+    return count
+
+
 if __name__ == "__main__":
     manager = VocabularyManager(
         vocab_path="data_samples/vocab/union_nested.json",

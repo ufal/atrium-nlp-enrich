@@ -655,6 +655,29 @@ def _term_pair(
     return pair
 
 
+def group_by_label(records: Iterable[VocabRecord]) -> Dict[str, List[VocabRecord]]:
+    """Group records that would collide under the same ``cs`` enum key.
+
+    This is the single definition of "what counts as a collision group" — the same
+    grouping :func:`to_term_pairs` dedups or splits, and what ``vocab_review.py``
+    reports on for human review. Records without ``cs``/``en``, and TEATER depth-1
+    branch roots (numbered section titles, not concepts — "5) Chronologie"), never
+    enter a group at all, matching what actually reaches the vocabulary.
+
+    Sorted by :func:`record_sort_key` before grouping, so the group's own member
+    order — and therefore which member :func:`to_term_pairs` picks as its default
+    winner — never depends on harvest order.
+    """
+    groups: Dict[str, List[VocabRecord]] = {}
+    for r in sorted(records, key=record_sort_key):
+        if not r.cs or not r.en:
+            continue
+        if r.source == "teater" and not r.broader:
+            continue
+        groups.setdefault(norm_label(r.cs), []).append(r)
+    return groups
+
+
 def to_term_pairs(
     records: Iterable[VocabRecord],
     collisions: Optional[List[Tuple[str, str, str]]] = None,
@@ -690,17 +713,7 @@ def to_term_pairs(
         collisions = []
     qualifiers = qualifiers or {}
 
-    groups: Dict[str, List["VocabRecord"]] = {}
-    for r in sorted(records, key=record_sort_key):
-        if not r.cs or not r.en:
-            continue
-        if r.source == "teater" and not r.broader:
-            # A depth-1 branch root — "5) Chronologie", "8) Předmět". These are numbered
-            # section titles in the thesaurus, not concepts, and offering them to the
-            # model as categories invites a shrug-answer that is technically in-vocabulary.
-            continue
-        groups.setdefault(norm_label(r.cs), []).append(r)
-
+    groups = group_by_label(records)
     pairs: Dict[str, Dict[str, Any]] = {}
     for members in groups.values():
         flagged = [m for m in members if (m.source, m.source_id) in qualifiers]

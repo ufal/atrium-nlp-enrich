@@ -63,10 +63,15 @@ MODEL_KEY=qwen-3.6-27b-it
 # =============================================================================
 # Paths
 # =============================================================================
-INPUT_DIR=data_samples/DOC_LINE_LANG_CLASS
+INPUT_DIR=data_samples/DOC_LINE_CATEG
 OUTPUT_DIR=data_samples/KW_PER_DOC_LLM
 VOCAB_PATH=data_samples/vocab/union_nested.json
 PARADATA_DIR=paradata
+
+# Attach the surviving vocabulary term's source record id(s) to each enrichment as
+# teater_category_ids (issue #6, M7). Kept behind a switch since it was agreed to be
+# reversible: "list them now and drop it if it will create some issues."
+EMIT_CATEGORY_IDS=true
 
 # =============================================================================
 # Line-quality filter

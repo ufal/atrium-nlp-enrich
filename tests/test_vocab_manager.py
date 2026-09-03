@@ -7,7 +7,7 @@ never exercised — every test provides an on-disk vocab file or a mock predicto
 
 import json
 
-from vocab_manager import VocabularyManager
+from vocab_manager import VocabularyManager, attach_same_as, find_composite_links
 
 TAXONOMY = {
     "Site Types": {"priority": 10, "keywords": {"cs": ["hrad", "mohyla"]}},
@@ -438,3 +438,99 @@ def test_shipped_vocabulary_has_no_unplaced_terms():
     if not m.vocab_path.exists():
         return
     assert m.load(auto_sync=False).get("Other", {}) == {}
+
+
+# ── composite links / same_as (issue #6, O1 / F) ────────────────────────────────
+
+NESTED_WITH_COMPOSITE = {
+    "Activity Area": {
+        "most/brod": {"cs": "most/brod", "en": "bridge/ford", "source": "amcr", "source_id": "A1"},
+    },
+    "Feature": {
+        "most": {"cs": "most", "en": "bridge", "source": "amcr", "source_id": "A2"},
+        "hrad": {"cs": "hrad", "en": "castle", "source": "teater", "source_id": "T9"},
+    },
+}
+
+
+def _nested_copy():
+    return json.loads(json.dumps(NESTED_WITH_COMPOSITE))
+
+
+def test_find_composite_links_pairs_a_composite_with_its_standalone_component():
+    links = find_composite_links(_nested_copy())
+    assert links == [("Activity Area", "most/brod", "Feature", "most")]
+
+
+def test_find_composite_links_ignores_a_component_nobody_offers():
+    """"brod" is not a standalone entry here, so only the "most" half is a pair —
+    a composite whose components are all unoffered produces nothing at all."""
+    nested = _nested_copy()
+    del nested["Feature"]["most"]
+    assert find_composite_links(nested) == []
+
+
+def test_find_composite_links_never_pairs_a_label_with_itself():
+    for _f1, cs1, _f2, cs2 in find_composite_links(_nested_copy()):
+        assert cs1 != cs2
+
+
+def test_attach_same_as_links_both_directions():
+    """A scorer may hold either side as the gold label, so the link has to be
+    findable from either entry without a second lookup table."""
+    nested = _nested_copy()
+    assert attach_same_as(nested) == 1
+
+    composite = nested["Activity Area"]["most/brod"]
+    component = nested["Feature"]["most"]
+    assert composite["same_as"] == [{"source": "amcr", "id": "A2"}]
+    assert component["same_as"] == [{"source": "amcr", "id": "A1"}]
+    # an unrelated term is untouched
+    assert "same_as" not in nested["Feature"]["hrad"]
+
+
+def test_attach_same_as_is_idempotent():
+    """vocab_build runs this on every build; running it twice must not double the
+    links (the committed artifact would then differ from a fresh build and trip
+    the --from-flat --check drift gate)."""
+    nested = _nested_copy()
+    attach_same_as(nested)
+    first = json.loads(json.dumps(nested))
+    assert attach_same_as(nested) == 0
+    assert nested == first
+
+
+def test_attach_same_as_is_a_noop_without_any_composite_overlap():
+    nested = {"Feature": {"most": {"cs": "most", "en": "bridge", "source": "a", "source_id": "1"}}}
+    assert attach_same_as(nested) == 0
+    assert "same_as" not in nested["Feature"]["most"]
+
+
+def test_shipped_vocabulary_same_as_links_are_symmetric():
+    """Every same_as link in the committed artifact must be answered by one pointing
+    back — a one-way link would score correct in one direction only, depending on
+    which side the annotator happened to write down as gold."""
+    m = _shipped()
+    if not m.vocab_path.exists():
+        return
+    nested = m.load(auto_sync=False)
+
+    by_id = {}
+    for terms in nested.values():
+        if not isinstance(terms, dict):
+            continue
+        for entry in terms.values():
+            if isinstance(entry, dict) and entry.get("source_id"):
+                by_id[(entry.get("source"), entry["source_id"])] = entry
+
+    for terms in nested.values():
+        if not isinstance(terms, dict):
+            continue
+        for cs, entry in terms.items():
+            if not isinstance(entry, dict):
+                continue
+            for link in entry.get("same_as") or []:
+                other = by_id.get((link["source"], link["id"]))
+                assert other is not None, f"{cs}: same_as points at a term not offered"
+                back = {"source": entry.get("source"), "id": entry.get("source_id")}
+                assert back in (other.get("same_as") or []), f"{cs}: one-way same_as link"
