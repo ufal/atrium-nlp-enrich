@@ -6,7 +6,6 @@ areál vojenských aktivit,military site,amcr,HES-000041,areal,Activity Area,hes
 areál zemědělské výroby,agricultural production site,amcr,HES-000036,areal,Activity Area,heslar:areal
 boj,fighting activity,amcr,HES-000008,aktivita,Activity Area,heslar:aktivita
 bojiště,battlefield,amcr,HES-000042,areal,Activity Area,heslar:areal
-cesta,roads,amcr,HES-000048,areal,Activity Area,heslar:areal
 dehtárna,tar kiln,amcr,HES-000079,areal,Activity Area,heslar:areal
 deponování,deposition activity,amcr,HES-000007,aktivita,Activity Area,heslar:aktivita
 depot,hoard,amcr,HES-000051,areal,Activity Area,heslar:areal
@@ -21,10 +20,8 @@ izolovaný pohřeb,isolated grave,amcr,HES-000026,areal,Activity Area,heslar:are
 jez,weir,amcr,HES-000052,areal,Activity Area,heslar:areal
 jiná aktivita,other activity,amcr,HES-000009,aktivita,Activity Area,heslar:aktivita
 kanál/náhon,channel/millrace,amcr,HES-000053,areal,Activity Area,heslar:areal
-kaple,chapel,amcr,HES-000020,areal,Activity Area,heslar:areal
 klášter,monastery,amcr,HES-000073,areal,Activity Area,heslar:areal
 komunikace,transportation activity,amcr,HES-000006,aktivita,Activity Area,heslar:aktivita
-kostel,church,amcr,HES-000021,areal,Activity Area,heslar:areal
 krajina,landscape,amcr,HES-000117,lokalita_druh,Activity Area,heslar:lokalita_druh
 kult,ritual activity,amcr,HES-000005,aktivita,Activity Area,heslar:aktivita
 kultovní areál,ritual site,amcr,HES-000019,areal,Activity Area,heslar:areal
@@ -32,7 +29,6 @@ kultovní místo,ritual place,amcr,HES-000023,areal,Activity Area,heslar:areal
 kříž/boží muka,cross/calvary,amcr,HES-000022,areal,Activity Area,heslar:areal
 lom,quarry,amcr,HES-000034,areal,Activity Area,heslar:areal
 milířiště,charcoal kiln,amcr,HES-000029,areal,Activity Area,heslar:areal
-mlýn,mill,amcr,HES-000028,areal,Activity Area,heslar:areal
 most/brod,bridge/ford,amcr,HES-000049,areal,Activity Area,heslar:areal
 muzeum/skanzen,museum/open-air museum,amcr,HES-000129,lokalita_druh,Activity Area,heslar:lokalita_druh
 místo sběru,collection site,amcr,HES-000057,areal,Activity Area,heslar:areal
@@ -93,6 +89,7 @@ vodní dílo,hydraulic structure,amcr,HES-000082,areal,Activity Area,heslar:area
 vojenský tábor,military camp,amcr,HES-000046,areal,Activity Area,heslar:areal
 výroba,production activity,amcr,HES-000003,aktivita,Activity Area,heslar:aktivita
 výšinné sídliště,hill settlement,amcr,HES-000069,areal,Activity Area,heslar:areal
+zahrada,garden,amcr,HES-000526,objekt_druh,Activity Area,override:amcr:HES-000526
 zahrada/sad,garden,amcr,HES-000040,areal,Activity Area,heslar:areal
 zaniklý/historický areál,deserted/historical site,amcr,HES-000134,lokalita_druh_kat,Activity Area,heslar:lokalita_druh_kat
 zničený prostor,destroyed site,amcr,HES-000063,areal,Activity Area,heslar:areal
@@ -453,113 +450,6 @@ zemědělský pravěk,farming prehistory,amcr,HES-000304,obdobi,Chronology,hesla
 štítarská kultura,Štítary Culture,amcr,HES-000297,obdobi,Chronology,heslar:obdobi
 šárecký typ,Šárka Type,amcr,HES-000394,obdobi,Chronology,heslar:obdobi
 želiezovská skupina,Želizovce Group,amcr,HES-000340,obdobi,Chronology,heslar:obdobi
-3D dokumentace,3D documentation,amcr,HES-001114,dokument_typ,Documentation,heslar:dokument_typ
-3D rekonstrukce,3D reconstruction,amcr,HES-001113,dokument_typ,Documentation,heslar:dokument_typ
-3D textura,3D texture,amcr,HES-001115,dokument_typ,Documentation,heslar:dokument_typ
-archiv ARÚ,IAP archive,amcr,HES-001168,dokument_ulozeni,Documentation,heslar:dokument_ulozeni
-archiv ARÚB,IAB archive,amcr,HES-001167,dokument_ulozeni,Documentation,heslar:dokument_ulozeni
-archiv autora,author's archive,amcr,HES-001170,dokument_ulozeni,Documentation,heslar:dokument_ulozeni
-archiv jiné organizace,other institutional archive,amcr,HES-001169,dokument_ulozeni,Documentation,heslar:dokument_ulozeni
-astralon,astralon (transparent foil),amcr,HES-000218,dokument_material,Documentation,heslar:dokument_material
-bromkopie,hectograph copy,amcr,HES-000219,dokument_material,Documentation,heslar:dokument_material
-data,data,amcr,HES-000871,dokument_rada,Documentation,heslar:dokument_rada
-data 3D,data 3D,amcr,HES-000870,dokument_rada,Documentation,heslar:dokument_rada
-data GNSS,GNSS data,amcr,HES-001085,dokument_typ,Documentation,heslar:dokument_typ
-data analýzy ekofaktů,ecofact analysis data,amcr,HES-001082,dokument_typ,Documentation,heslar:dokument_typ
-data geodetická,geodetic data,amcr,HES-001083,dokument_typ,Documentation,heslar:dokument_typ
-data geofyzikální,geophysical data,amcr,HES-001084,dokument_typ,Documentation,heslar:dokument_typ
-data terénního výzkumu,fieldwork data,amcr,HES-001086,dokument_typ,Documentation,heslar:dokument_typ
-data vektorového plánu,vector plan data,amcr,HES-001087,dokument_typ,Documentation,heslar:dokument_typ
-diapozitiv barevný,colour photoslide,amcr,HES-000220,dokument_material,Documentation,heslar:dokument_material
-diapozitiv černobílý (film),black-and-white photoslide (film),amcr,HES-000221,dokument_material,Documentation,heslar:dokument_material
-diapozitiv černobílý (sklo),black-and-white photoslide (glass),amcr,HES-000222,dokument_material,Documentation,heslar:dokument_material
-digitální soubor,digital file,amcr,HES-000217,dokument_material,Documentation,heslar:dokument_material
-duplicita,duplicate,amcr,HES-001177,dokument_zachovalost,Documentation,heslar:dokument_zachovalost
-expertní posudek,expert report,amcr,HES-001077,dokument_typ,Documentation,heslar:dokument_typ
-fotografie barevná,colour photograph,amcr,HES-000225,dokument_material,Documentation,heslar:dokument_material
-fotografie diapozitivy,photoslides,amcr,HES-000876,dokument_rada,Documentation,heslar:dokument_rada
-fotografie jiné/osobní,other/personal photographs,amcr,HES-000877,dokument_rada,Documentation,heslar:dokument_rada
-fotografie konzervace,photograph of conservation,amcr,HES-001097,dokument_typ,Documentation,heslar:dokument_typ
-fotografie krajiny,photograph of landscape,amcr,HES-001088,dokument_typ,Documentation,heslar:dokument_typ
-fotografie letecké (diapozitivy),aerial photoslides,amcr,HES-000880,dokument_rada,Documentation,heslar:dokument_rada
-fotografie letecké (digitální),aerial photographs (digital),amcr,HES-000872,dokument_rada,Documentation,heslar:dokument_rada
-fotografie letecké (negativy),aerial photographs (negatives),amcr,HES-000882,dokument_rada,Documentation,heslar:dokument_rada
-fotografie lokality,photograph of site,amcr,HES-001089,dokument_typ,Documentation,heslar:dokument_typ
-fotografie objektu,photograph of feature,amcr,HES-001094,dokument_typ,Documentation,heslar:dokument_typ
-fotografie osobní,photograph of person,amcr,HES-001091,dokument_typ,Documentation,heslar:dokument_typ
-fotografie pracovní,photograph of fieldwork,amcr,HES-001093,dokument_typ,Documentation,heslar:dokument_typ
-fotografie předmětu,photograph of object,amcr,HES-001095,dokument_typ,Documentation,heslar:dokument_typ
-fotografie předmětů,photographs of objects,amcr,HES-000878,dokument_rada,Documentation,heslar:dokument_rada
-fotografie předmětů (digitální),photographs of objects (digital),amcr,HES-000873,dokument_rada,Documentation,heslar:dokument_rada
-fotografie terénu,photographs of fieldwork,amcr,HES-000879,dokument_rada,Documentation,heslar:dokument_rada
-fotografie terénu (digitální),photographs of fieldwork (digital),amcr,HES-000874,dokument_rada,Documentation,heslar:dokument_rada
-fotografie události,photograph of event,amcr,HES-001092,dokument_typ,Documentation,heslar:dokument_typ
-fotografie výzkumu/sondy,photograph of excavation/trench,amcr,HES-001090,dokument_typ,Documentation,heslar:dokument_typ
-fotografie černobílá,black-and-white photograph,amcr,HES-000223,dokument_material,Documentation,heslar:dokument_material
-fotoplán,photogrammetric plan,amcr,HES-000224,dokument_material,Documentation,heslar:dokument_material
-hlášení,brief report,amcr,HES-001080,dokument_typ,Documentation,heslar:dokument_typ
-investorská zpráva,client report,amcr,HES-001079,dokument_typ,Documentation,heslar:dokument_typ
-jiná událost,other event,amcr,HES-001156,udalost_typ,Documentation,heslar:udalost_typ
-jiný text,other text,amcr,HES-001081,dokument_typ,Documentation,heslar:dokument_typ
-jiný zdroj,other source,amcr,HES-001121,ext_zdroj_typ,Documentation,heslar:ext_zdroj_typ
-karton,cardboard,amcr,HES-000226,dokument_material,Documentation,heslar:dokument_material
-konference,conference,amcr,HES-001152,udalost_typ,Documentation,heslar:udalost_typ
-kresba předmětu,object drawing,amcr,HES-001110,dokument_typ,Documentation,heslar:dokument_typ
-letecká fotografie krajiny,aerial photograph of landscape,amcr,HES-001098,dokument_typ,Documentation,heslar:dokument_typ
-letecká fotografie lokality,aerial photograph of site,amcr,HES-001099,dokument_typ,Documentation,heslar:dokument_typ
-letecká fotografie metody,aerial photograph of method,amcr,HES-001116,dokument_typ,Documentation,heslar:dokument_typ
-letecká fotografie půdních příznaků,aerial photograph of soil marks,amcr,HES-001103,dokument_typ,Documentation,heslar:dokument_typ
-letecká fotografie sněžných příznaků,aerial photograph of snow marks,amcr,HES-001104,dokument_typ,Documentation,heslar:dokument_typ
-letecká fotografie stínových příznaků,aerial photograph of shadow marks,amcr,HES-001105,dokument_typ,Documentation,heslar:dokument_typ
-letecká fotografie vegetačních příznaků,aerial photograph of vegetation marks,amcr,HES-001102,dokument_typ,Documentation,heslar:dokument_typ
-letecká fotografie výzkumu,aerial photograph of fieldwork,amcr,HES-001100,dokument_typ,Documentation,heslar:dokument_typ
-mapa,map,amcr,HES-001111,dokument_typ,Documentation,heslar:dokument_typ
-mikrofotografie,microphotograph,amcr,HES-001096,dokument_typ,Documentation,heslar:dokument_typ
-mikroštítek,microfiche,amcr,HES-000241,dokument_nahrada,Documentation,heslar:dokument_nahrada
-negativ barevný,colour negative,amcr,HES-000227,dokument_material,Documentation,heslar:dokument_material
-negativ černobílý (film),black-and-white negative (film),amcr,HES-000228,dokument_material,Documentation,heslar:dokument_material
-negativ černobílý (sklo),black-and-white negative (glass),amcr,HES-000229,dokument_material,Documentation,heslar:dokument_material
-"není, nezjištěno",unavailable/unknown,amcr,HES-000240,dokument_nahrada,Documentation,heslar:dokument_nahrada
-neurčený dokument,unspecified document,amcr,HES-001112,dokument_typ,Documentation,heslar:dokument_typ
-neurčený materiál,unspecified material,amcr,HES-000232,dokument_material,Documentation,heslar:dokument_material
-neznámé uložení,unknown deposition,amcr,HES-001172,dokument_ulozeni,Documentation,heslar:dokument_ulozeni
-nálezová zpráva,fieldwork report,amcr,HES-001075,dokument_typ,Documentation,heslar:dokument_typ
-nízká kvalita,poor quality,amcr,HES-000239,dokument_nahrada,Documentation,heslar:dokument_nahrada
-nízká výpovědní hodnota,low relevancy,amcr,HES-001178,dokument_zachovalost,Documentation,heslar:dokument_zachovalost
-originál ztracen/zničen,original lost/destroyed,amcr,HES-001171,dokument_ulozeni,Documentation,heslar:dokument_ulozeni
-papír,paper,amcr,HES-000230,dokument_material,Documentation,heslar:dokument_material
-papír kladívkový,drawing paper,amcr,HES-000231,dokument_material,Documentation,heslar:dokument_material
-papír milimetrový,graph paper,amcr,HES-000212,dokument_material,Documentation,heslar:dokument_material
-papír s fotografiemi,paper with photographs,amcr,HES-000213,dokument_material,Documentation,heslar:dokument_material
-papír sešit,booklet,amcr,HES-000214,dokument_material,Documentation,heslar:dokument_material
-papír vázaný,bounded paper,amcr,HES-000215,dokument_material,Documentation,heslar:dokument_material
-pauzák,tracing paper,amcr,HES-000216,dokument_material,Documentation,heslar:dokument_material
-plán lokality,plan of site,amcr,HES-001106,dokument_typ,Documentation,heslar:dokument_typ
-plán objektu,plan of feature,amcr,HES-001109,dokument_typ,Documentation,heslar:dokument_typ
-plán regionu,plan of region,amcr,HES-001101,dokument_typ,Documentation,heslar:dokument_typ
-plán sondy,plan of trench,amcr,HES-001108,dokument_typ,Documentation,heslar:dokument_typ
-plán výzkumu,plan of fieldwork,amcr,HES-001107,dokument_typ,Documentation,heslar:dokument_typ
-plány,plans,amcr,HES-000881,dokument_rada,Documentation,heslar:dokument_rada
-plány (digitální),plans (digital),amcr,HES-000875,dokument_rada,Documentation,heslar:dokument_rada
-použitelný,useable,amcr,HES-000238,dokument_nahrada,Documentation,heslar:dokument_nahrada
-primárně digitální dokument,born digital document,amcr,HES-001166,dokument_ulozeni,Documentation,heslar:dokument_ulozeni
-příloha zprávy/hlášení,report annex,amcr,HES-001076,dokument_typ,Documentation,heslar:dokument_typ
-společenská akce,social event,amcr,HES-001155,udalost_typ,Documentation,heslar:udalost_typ
-tisk,print,amcr,HES-000233,dokument_material,Documentation,heslar:dokument_material
-tisková fólie,printing foil,amcr,HES-000234,dokument_material,Documentation,heslar:dokument_material
-tisková kvalita,print quality,amcr,HES-000237,dokument_nahrada,Documentation,heslar:dokument_nahrada
-xerokopie barevná,colour xerographic copy,amcr,HES-000235,dokument_material,Documentation,heslar:dokument_material
-xerokopie černobílá,black-and-white xerographic copy,amcr,HES-000236,dokument_material,Documentation,heslar:dokument_material
-zachováno 0–30 %,0–30% preserved,amcr,HES-001175,dokument_zachovalost,Documentation,heslar:dokument_zachovalost
-zachováno 30–80 %,30–80% preserved,amcr,HES-001174,dokument_zachovalost,Documentation,heslar:dokument_zachovalost
-zachováno 80–100 %,80–100% preserved,amcr,HES-001173,dokument_zachovalost,Documentation,heslar:dokument_zachovalost
-zahraniční cesta,travel abroad,amcr,HES-001153,udalost_typ,Documentation,heslar:udalost_typ
-zahraniční výzkum,fieldwork abroad,amcr,HES-001154,udalost_typ,Documentation,heslar:udalost_typ
-zprávy a hlášení,reports,amcr,HES-000883,dokument_rada,Documentation,heslar:dokument_rada
-ztraceno/skartováno,lost/discarded,amcr,HES-001176,dokument_zachovalost,Documentation,heslar:dokument_zachovalost
-článek v novinách,newspaper article,amcr,HES-001120,ext_zdroj_typ,Documentation,heslar:ext_zdroj_typ
-článek v časopise,journal paper,amcr,HES-001119,ext_zdroj_typ,Documentation,heslar:ext_zdroj_typ
-část knihy,book chapter,amcr,HES-001118,ext_zdroj_typ,Documentation,heslar:ext_zdroj_typ
 (polo)zemnice,pit house,amcr,HES-000497,objekt_druh,Feature,heslar:objekt_druh
 bastion/reduta,bastion/redoubt,amcr,HES-000468,objekt_druh,Feature,heslar:objekt_druh
 bašta,wall tower,amcr,HES-000528,objekt_druh,Feature,heslar:objekt_druh
@@ -567,6 +457,7 @@ brána,gate,amcr,HES-000529,objekt_druh,Feature,heslar:objekt_druh
 budova hospodářská,non-residential building,amcr,HES-000440,objekt_druh,Feature,heslar:objekt_druh
 budova obytná,residential building,amcr,HES-000439,objekt_druh,Feature,heslar:objekt_druh
 budova/stavba,building/structure,amcr,HES-000438,objekt_druh,Feature,heslar:objekt_druh
+cesta,roads,amcr,HES-000048,areal,Feature,override:amcr:HES-000048
 chodba,corridor,amcr,HES-000494,objekt_druh,Feature,heslar:objekt_druh
 cisterna,cistern,amcr,HES-000445,objekt_druh,Feature,heslar:objekt_druh
 destrukční vrstva/souvrství,destruction layer/sequence,amcr,HES-000454,objekt_druh,Feature,heslar:objekt_druh
@@ -592,10 +483,12 @@ jáma stavební,construction pit,amcr,HES-000443,objekt_druh,Feature,heslar:obje
 jáma zásobní,storage pit,amcr,HES-000444,objekt_druh,Feature,heslar:objekt_druh
 kamna,stove,amcr,HES-000422,objekt_druh,Feature,heslar:objekt_druh
 kanalizace,sewer,amcr,HES-000464,objekt_druh,Feature,heslar:objekt_druh
+kaple,chapel,amcr,HES-000020,areal,Feature,override:amcr:HES-000020
 kašna,fountain,amcr,HES-000479,objekt_druh,Feature,heslar:objekt_druh
 klenba,vaults,amcr,HES-000495,objekt_druh,Feature,heslar:objekt_druh
 kolektor,collector,amcr,HES-000516,objekt_druh,Feature,heslar:objekt_druh
 konstrukční prvek,architectural element,amcr,HES-000491,objekt_druh,Feature,heslar:objekt_druh
+kostel,church,amcr,HES-000021,areal,Feature,override:amcr:HES-000021
 kostnice,ossuary,amcr,HES-000432,objekt_druh,Feature,heslar:objekt_druh
 kovárna,blacksmith,amcr,HES-000546,objekt_druh,Feature,heslar:objekt_druh
 kovářská výheň,forge,amcr,HES-000557,objekt_druh,Feature,heslar:objekt_druh
@@ -610,6 +503,7 @@ menhir,menhir,amcr,HES-000500,objekt_druh,Feature,heslar:objekt_druh
 mezní pás,field boundary,amcr,HES-000503,objekt_druh,Feature,heslar:objekt_druh
 mezník/patník,milestone/boundary stone,amcr,HES-000522,objekt_druh,Feature,heslar:objekt_druh
 milíř,charcoal kiln,amcr,HES-000554,objekt_druh,Feature,heslar:objekt_druh
+mlýn,mill,amcr,HES-000028,areal,Feature,override:amcr:HES-000028
 mohyla,burial mound,amcr,HES-000431,objekt_druh,Feature,heslar:objekt_druh
 most,bridge,amcr,HES-000523,objekt_druh,Feature,heslar:objekt_druh
 motte,motte,amcr,HES-000531,objekt_druh,Feature,heslar:objekt_druh
@@ -661,7 +555,6 @@ pramen,spring,amcr,HES-000473,objekt_druh,Feature,heslar:objekt_druh
 pyrotechnologické zařízení,pyrotechnological device,amcr,HES-000476,objekt_druh,Feature,heslar:objekt_druh
 převýšená plocha,mound,amcr,HES-000536,objekt_druh,Feature,heslar:objekt_druh
 příkop,moat,amcr,HES-000508,objekt_druh,Feature,heslar:objekt_druh
-přírodní útvar,natural landform,amcr,HES-000470,objekt_druh,Feature,heslar:objekt_druh
 rybník/nádrž,pond/water tank,amcr,HES-000505,objekt_druh,Feature,heslar:objekt_druh
 schodiště,staircase,amcr,HES-000452,objekt_druh,Feature,heslar:objekt_druh
 sejp/halda,spoil heap,amcr,HES-000563,objekt_druh,Feature,heslar:objekt_druh
@@ -695,7 +588,6 @@ věž,tower,amcr,HES-000509,objekt_druh,Feature,heslar:objekt_druh
 věžice,half tower,amcr,HES-000510,objekt_druh,Feature,heslar:objekt_druh
 zahloubená plocha,depression,amcr,HES-000537,objekt_druh,Feature,heslar:objekt_druh
 zahloubený objekt,sunken feature,amcr,HES-000486,objekt_druh,Feature,heslar:objekt_druh
-zahrada,garden,amcr,HES-000526,objekt_druh,Feature,heslar:objekt_druh
 zemědělský objekt,agricultural structure,amcr,HES-000466,objekt_druh,Feature,heslar:objekt_druh
 zvonice,bell tower,amcr,HES-000485,objekt_druh,Feature,heslar:objekt_druh
 základy,foundations,amcr,HES-000498,objekt_druh,Feature,heslar:objekt_druh
@@ -714,10 +606,13 @@ ornice,arable topsoil,amcr,HES-000243,nalezove_okolnosti,Finds Context,heslar:na
 podorničí/podloží,subsoil,amcr,HES-000248,nalezove_okolnosti,Finds Context,heslar:nalezove_okolnosti
 povrch,surface,amcr,HES-000242,nalezove_okolnosti,Finds Context,heslar:nalezove_okolnosti
 přirozený půdní horizont,natural topsoil,amcr,HES-000246,nalezove_okolnosti,Finds Context,heslar:nalezove_okolnosti
+přírodní útvar,natural landform,amcr,HES-000470,objekt_druh,Finds Context,override:amcr:HES-000470
 vodní plocha/tok,water body/stream,amcr,HES-000249,nalezove_okolnosti,Finds Context,heslar:nalezove_okolnosti
 bez ochrany,unprotected,amcr,HES-000175,pamatkova_ochrana,Location & Admin,heslar:pamatkova_ochrana
 historická budova/komplex,historical building/complex,amcr,HES-001457,stav_dochovani,Location & Admin,heslar:stav_dochovani
 jiná organizace,other organisation,amcr,HES-001128,organizace_typ,Location & Admin,heslar:organizace_typ
+jiná událost,other event,amcr,HES-001156,udalost_typ,Location & Admin,heslar:udalost_typ
+konference,conference,amcr,HES-001152,udalost_typ,Location & Admin,heslar:udalost_typ
 kulturní památka,listed monument,amcr,HES-000177,pamatkova_ochrana,Location & Admin,heslar:pamatkova_ochrana
 lokalita pod zástavbou,site in built environment,amcr,HES-001454,stav_dochovani,Location & Admin,heslar:stav_dochovani
 muzeum,museum,amcr,HES-001127,organizace_typ,Location & Admin,heslar:organizace_typ
@@ -726,9 +621,12 @@ národní kulturní památka,listed national monument,amcr,HES-000178,pamatkova_
 památková rezervace,heritage reserve,amcr,HES-000180,pamatkova_ochrana,Location & Admin,heslar:pamatkova_ochrana
 památková zóna,heritage zone,amcr,HES-000179,pamatkova_ochrana,Location & Admin,heslar:pamatkova_ochrana
 ruina,ruin,amcr,HES-001456,stav_dochovani,Location & Admin,heslar:stav_dochovani
+společenská akce,social event,amcr,HES-001155,udalost_typ,Location & Admin,heslar:udalost_typ
 terénní pracoviště,fieldwork unit,amcr,HES-001129,organizace_typ,Location & Admin,heslar:organizace_typ
 univerzita,university,amcr,HES-001132,organizace_typ,Location & Admin,heslar:organizace_typ
 výzkumná instituce,research organisation,amcr,HES-001131,organizace_typ,Location & Admin,heslar:organizace_typ
+zahraniční cesta,travel abroad,amcr,HES-001153,udalost_typ,Location & Admin,heslar:udalost_typ
+zahraniční výzkum,fieldwork abroad,amcr,HES-001154,udalost_typ,Location & Admin,heslar:udalost_typ
 zaniklá lokalita,buried site,amcr,HES-001453,stav_dochovani,Location & Admin,heslar:stav_dochovani
 ústav památkové péče,heritage organisation,amcr,HES-001130,organizace_typ,Location & Admin,heslar:organizace_typ
 barvivo,colourant,amcr,HES-000903,objekt_specifikace,Material,heslar:objekt_specifikace
@@ -774,6 +672,7 @@ mosaz,brass,amcr,HES-000913,objekt_specifikace,Material,heslar:objekt_specifikac
 měď,copper,amcr,HES-000912,objekt_specifikace,Material,heslar:objekt_specifikace
 obilky/semena,caryopses/seeds,amcr,HES-000914,objekt_specifikace,Material,heslar:objekt_specifikace
 olovo,lead,amcr,HES-000915,objekt_specifikace,Material,heslar:objekt_specifikace
+papír,paper,amcr,HES-000917,objekt_specifikace,Material,heslar:objekt_specifikace
 paroh,antler,amcr,HES-000918,objekt_specifikace,Material,heslar:objekt_specifikace
 pecka,fruit stone,amcr,HES-000919,objekt_specifikace,Material,heslar:objekt_specifikace
 perla,pearl,amcr,HES-000920,objekt_specifikace,Material,heslar:objekt_specifikace
@@ -877,391 +776,3 @@ vizuální/geodetický průzkum,visual/geodetic survey,amcr,HES-001044,akce_typ,
 vrt,sediment core sample,amcr,HES-001146,adb_typ,Methods,heslar:adb_typ
 výzkum povrchové vrstvy,topsoil sampling,amcr,HES-001064,akce_typ_kat,Methods,heslar:akce_typ_kat
 řez,linear trench,amcr,HES-001148,adb_typ,Methods,heslar:adb_typ
-10–20 km,10–20 km,amcr,HES-000101,dohlednost,__exclude__,heslar:dohlednost
-20–30 km,20–30 km,amcr,HES-000102,dohlednost,__exclude__,heslar:dohlednost
-30–40 km,30–40 km,amcr,HES-000103,dohlednost,__exclude__,heslar:dohlednost
-3D – 3D Printing (*.3mf),3D – 3D Printing (*.3mf),amcr,HES-000158,dokument_format,__exclude__,heslar:dokument_format
-"3D – 3D Studio Max (*.max, *.3ds)","3D – 3D Studio Max (*.max, *.3ds)",amcr,HES-000164,dokument_format,__exclude__,heslar:dokument_format
-3D – Autocad (*.dwg),3D – Autocad (*.dwg),amcr,HES-000152,dokument_format,__exclude__,heslar:dokument_format
-3D – Autodesk Exchange (*.fbx),3D – Autodesk Exchange (*.fbx),amcr,HES-000153,dokument_format,__exclude__,heslar:dokument_format
-3D – Blender (*.blend),3D – Blender (*.blend),amcr,HES-000154,dokument_format,__exclude__,heslar:dokument_format
-3D – Collada (*.dae),3D – Collada (*.dae),amcr,HES-000155,dokument_format,__exclude__,heslar:dokument_format
-"3D – Leica (*.pts, *.ptx)","3D – Leica (*.pts, *.ptx)",amcr,HES-000156,dokument_format,__exclude__,heslar:dokument_format
-3D – OBJ (*.obj),3D – OBJ (*.obj),amcr,HES-000157,dokument_format,__exclude__,heslar:dokument_format
-3D – Revit (*.rvt),3D – Revit (*.rvt),amcr,HES-000159,dokument_format,__exclude__,heslar:dokument_format
-3D – Sketchup (*.skp),3D – Sketchup (*.skp),amcr,HES-000160,dokument_format,__exclude__,heslar:dokument_format
-3D – Stanford PLY (*.ply),3D – Stanford PLY (*.ply),amcr,HES-000161,dokument_format,__exclude__,heslar:dokument_format
-3D – Stereo Litography (*.stl),3D – Stereo Litography (*.stl),amcr,HES-000163,dokument_format,__exclude__,heslar:dokument_format
-3D – Universal (*.u3d),3D – Universal (*.u3d),amcr,HES-000162,dokument_format,__exclude__,heslar:dokument_format
-3D – jiný,3D – other,amcr,HES-000166,dokument_format,__exclude__,heslar:dokument_format
-3D – VRML (*.wrl),3D – VRML (*.wrl),amcr,HES-000165,dokument_format,__exclude__,heslar:dokument_format
-40–50 km,40–50 km,amcr,HES-000104,dohlednost,__exclude__,heslar:dohlednost
-50–60 km,50–60 km,amcr,HES-000105,dohlednost,__exclude__,heslar:dohlednost
-6 x 6 cm,6 x 6 cm,amcr,HES-000142,dokument_format,__exclude__,heslar:dokument_format
-6 x 9 cm,6 x 9 cm,amcr,HES-000143,dokument_format,__exclude__,heslar:dokument_format
-60–70 km,60–70 km,amcr,HES-000106,dohlednost,__exclude__,heslar:dohlednost
-70–80 km,70–80 km,amcr,HES-000107,dohlednost,__exclude__,heslar:dohlednost
-80–90 km,80–90 km,amcr,HES-000108,dohlednost,__exclude__,heslar:dohlednost
-9 x 12 cm,9 x 12 cm,amcr,HES-000144,dokument_format,__exclude__,heslar:dokument_format
-90–100 km,90–100 km,amcr,HES-000109,dohlednost,__exclude__,heslar:dohlednost
-<10 km,<10 km,amcr,HES-000100,dohlednost,__exclude__,heslar:dohlednost
->100 km,>100 km,amcr,HES-000110,dohlednost,__exclude__,heslar:dohlednost
->A0,>A0,amcr,HES-000151,dokument_format,__exclude__,heslar:dokument_format
-A0 (84 x 119 cm),A0 (84 x 119 cm),amcr,HES-000150,dokument_format,__exclude__,heslar:dokument_format
-A1 (59 x 84 cm),A1 (59 x 84 cm),amcr,HES-000149,dokument_format,__exclude__,heslar:dokument_format
-A2 (42 x 59 cm),A2 (42 x 59 cm),amcr,HES-000148,dokument_format,__exclude__,heslar:dokument_format
-A3 (30 x 42 cm),A3 (30 x 42 cm),amcr,HES-000147,dokument_format,__exclude__,heslar:dokument_format
-A4 (21 x 30 cm),A4 (21 x 30 cm),amcr,HES-000146,dokument_format,__exclude__,heslar:dokument_format
-A5 (15 x 21 cm),A5 (15 x 21 cm),amcr,HES-000145,dokument_format,__exclude__,heslar:dokument_format
-Afghánistán,Afghanistan,amcr,HES-001179,zeme,__exclude__,heslar:zeme
-Alandy,Åland Islands,amcr,HES-001180,zeme,__exclude__,heslar:zeme
-Albánie,Albania,amcr,HES-001181,zeme,__exclude__,heslar:zeme
-Alžírsko,Algeria,amcr,HES-001182,zeme,__exclude__,heslar:zeme
-Americká Samoa,American Samoa,amcr,HES-001183,zeme,__exclude__,heslar:zeme
-Americké Panenské ostrovy,Virgin Islands (U.S.),amcr,HES-001184,zeme,__exclude__,heslar:zeme
-Andorra,Andorra,amcr,HES-001185,zeme,__exclude__,heslar:zeme
-Angola,Angola,amcr,HES-001186,zeme,__exclude__,heslar:zeme
-Anguilla,Anguilla,amcr,HES-001187,zeme,__exclude__,heslar:zeme
-Antarktida,Antarctica,amcr,HES-001188,zeme,__exclude__,heslar:zeme
-Antigua a Barbuda,Antigua and Barbuda,amcr,HES-001189,zeme,__exclude__,heslar:zeme
-Argentina,Argentina,amcr,HES-001190,zeme,__exclude__,heslar:zeme
-Arménie,Armenia,amcr,HES-001191,zeme,__exclude__,heslar:zeme
-Aruba,Aruba,amcr,HES-001192,zeme,__exclude__,heslar:zeme
-Austrálie,Australia,amcr,HES-001193,zeme,__exclude__,heslar:zeme
-Bahamy,Bahamas (the),amcr,HES-001195,zeme,__exclude__,heslar:zeme
-Bahrajn,Bahrain,amcr,HES-001196,zeme,__exclude__,heslar:zeme
-Bangladéš,Bangladesh,amcr,HES-001197,zeme,__exclude__,heslar:zeme
-Barbados,Barbados,amcr,HES-001402,zeme,__exclude__,heslar:zeme
-Belgie,Belgium,amcr,HES-001202,zeme,__exclude__,heslar:zeme
-Belize,Belize,amcr,HES-001334,zeme,__exclude__,heslar:zeme
-Benešov-Nesvačily,Benešov-Nesvačily,amcr,HES-000193,letiste,__exclude__,heslar:letiste
-Benin,Benin,amcr,HES-001207,zeme,__exclude__,heslar:zeme
-Bermudy,Bermuda,amcr,HES-001330,zeme,__exclude__,heslar:zeme
-Bhútán,Bhutan,amcr,HES-001395,zeme,__exclude__,heslar:zeme
-Bolívie,Bolivia (Plurinational State of),amcr,HES-001396,zeme,__exclude__,heslar:zeme
-"Bonaire, Svatý Eustach a Saba","Bonaire, Sint Eustatius and Saba",amcr,HES-001328,zeme,__exclude__,heslar:zeme
-Bosna a Hercegovina,Bosnia and Herzegovina,amcr,HES-001282,zeme,__exclude__,heslar:zeme
-Botswana,Botswana,amcr,HES-001377,zeme,__exclude__,heslar:zeme
-Bouvetův ostrov,Bouvet Island,amcr,HES-001347,zeme,__exclude__,heslar:zeme
-Brazílie,Brazil,amcr,HES-001252,zeme,__exclude__,heslar:zeme
-Britské Panenské ostrovy,Virgin Islands (British),amcr,HES-001333,zeme,__exclude__,heslar:zeme
-Britské indickooceánské území,British Indian Ocean Territory (the),amcr,HES-001285,zeme,__exclude__,heslar:zeme
-Brno-Tuřany,Brno-Tuřany,amcr,HES-000184,letiste,__exclude__,heslar:letiste
-Brno-Černovice,Brno-Černovice,amcr,HES-000182,letiste,__exclude__,heslar:letiste
-Brunej,Brunei Darussalam,amcr,HES-001359,zeme,__exclude__,heslar:zeme
-Bulharsko,Bulgaria,amcr,HES-001360,zeme,__exclude__,heslar:zeme
-Burkina Faso,Burkina Faso,amcr,HES-001361,zeme,__exclude__,heslar:zeme
-Burundi,Burundi,amcr,HES-001362,zeme,__exclude__,heslar:zeme
-Bělorusko,Belarus,amcr,HES-001329,zeme,__exclude__,heslar:zeme
-Chile,Chile,amcr,HES-001338,zeme,__exclude__,heslar:zeme
-Choceň,Choceň,amcr,HES-000188,letiste,__exclude__,heslar:letiste
-Chomutov,Chomutov,amcr,HES-000189,letiste,__exclude__,heslar:letiste
-Chomutov-Pesvice,Chomutov-Pesvice,amcr,HES-000190,letiste,__exclude__,heslar:letiste
-Chorvatsko,Croatia,amcr,HES-001339,zeme,__exclude__,heslar:zeme
-Cookovy ostrovy,Cook Islands (the),amcr,HES-001283,zeme,__exclude__,heslar:zeme
-Creative Commons Uveďte původ 4.0 Mezinárodní,Creative Commons Attribution 4.0 International,amcr,HES-001496,dokument_licence,__exclude__,heslar:dokument_licence
-Creative Commons Uveďte původ-Neužívejte komerčně 4.0 Mezinárodní,Creative Commons Attribution-NonCommercial 4.0 International,amcr,HES-001489,dokument_licence,__exclude__,heslar:dokument_licence
-Creative Commons Uveďte původ-Neužívejte komerčně-Nezpracovávejte 4.0 Mezinárodní,Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International,amcr,HES-001500,dokument_licence,__exclude__,heslar:dokument_licence
-Creative Commons Uveďte původ-Neužívejte komerčně-Zachovejte licenci 4.0 Mezinárodní,Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International,amcr,HES-001499,dokument_licence,__exclude__,heslar:dokument_licence
-Creative Commons Uveďte původ-Nezpracovávejte 4.0 Mezinárodní,Creative Commons Attribution-NoDerivatives 4.0 International,amcr,HES-001498,dokument_licence,__exclude__,heslar:dokument_licence
-Creative Commons Uveďte původ-Zachovejte licenci 4.0 Mezinárodní,Creative Commons Attribution-ShareAlike 4.0 International,amcr,HES-001497,dokument_licence,__exclude__,heslar:dokument_licence
-Curaçao,Curaçao,amcr,HES-001243,zeme,__exclude__,heslar:zeme
-Czestochowa,Czestochowa,amcr,HES-000185,letiste,__exclude__,heslar:letiste
-Czestochowa-Rudniky,Czestochowa-Rudniky,amcr,HES-000186,letiste,__exclude__,heslar:letiste
-Dominika,Dominica,amcr,HES-001309,zeme,__exclude__,heslar:zeme
-Dominikánská republika,Dominican Republic (the),amcr,HES-001350,zeme,__exclude__,heslar:zeme
-Dánsko,Denmark,amcr,HES-001250,zeme,__exclude__,heslar:zeme
-Džibutsko,Djibouti,amcr,HES-001317,zeme,__exclude__,heslar:zeme
-Egypt,Egypt,amcr,HES-001246,zeme,__exclude__,heslar:zeme
-Ekvádor,Ecuador,amcr,HES-001354,zeme,__exclude__,heslar:zeme
-Eritrea,Eritrea,amcr,HES-001394,zeme,__exclude__,heslar:zeme
-Estonsko,Estonia,amcr,HES-001232,zeme,__exclude__,heslar:zeme
-Etiopie,Ethiopia,amcr,HES-001335,zeme,__exclude__,heslar:zeme
-Faerské ostrovy,Faroe Islands (the),amcr,HES-001336,zeme,__exclude__,heslar:zeme
-Falklandy (Malvíny),Falkland Islands (the) (Malvinas),amcr,HES-001227,zeme,__exclude__,heslar:zeme
-Fidži,Fiji,amcr,HES-001337,zeme,__exclude__,heslar:zeme
-Filipíny,Philippines (the),amcr,HES-001261,zeme,__exclude__,heslar:zeme
-Finsko,Finland,amcr,HES-001262,zeme,__exclude__,heslar:zeme
-Francie,France,amcr,HES-001349,zeme,__exclude__,heslar:zeme
-Francouzská Guyana,French Guiana,amcr,HES-001404,zeme,__exclude__,heslar:zeme
-Francouzská Polynésie,French Polynesia,amcr,HES-001399,zeme,__exclude__,heslar:zeme
-Francouzská jižní a antarktická území,French Southern Territories (the),amcr,HES-001228,zeme,__exclude__,heslar:zeme
-Gabon,Gabon,amcr,HES-001400,zeme,__exclude__,heslar:zeme
-Gambie,Gambia (the),amcr,HES-001256,zeme,__exclude__,heslar:zeme
-Ghana,Ghana,amcr,HES-001242,zeme,__exclude__,heslar:zeme
-Gibraltar,Gibraltar,amcr,HES-001264,zeme,__exclude__,heslar:zeme
-Grenada,Grenada,amcr,HES-001265,zeme,__exclude__,heslar:zeme
-Gruzie,Georgia,amcr,HES-001391,zeme,__exclude__,heslar:zeme
-Grónsko,Greenland,amcr,HES-001266,zeme,__exclude__,heslar:zeme
-Guadeloupe,Guadeloupe,amcr,HES-001203,zeme,__exclude__,heslar:zeme
-Guam,Guam,amcr,HES-001217,zeme,__exclude__,heslar:zeme
-Guatemala,Guatemala,amcr,HES-001218,zeme,__exclude__,heslar:zeme
-Guernsey,Guernsey,amcr,HES-001301,zeme,__exclude__,heslar:zeme
-Guinea,Guinea,amcr,HES-001219,zeme,__exclude__,heslar:zeme
-Guinea-Bissau,Guinea-Bissau,amcr,HES-001302,zeme,__exclude__,heslar:zeme
-Guyana,Guyana,amcr,HES-001401,zeme,__exclude__,heslar:zeme
-Haiti,Haiti,amcr,HES-001214,zeme,__exclude__,heslar:zeme
-Heardův ostrov a MacDonaldovy ostrovy,Heard Island and McDonald Islands,amcr,HES-001275,zeme,__exclude__,heslar:zeme
-Honduras,Honduras,amcr,HES-001276,zeme,__exclude__,heslar:zeme
-Hongkong,Hong Kong,amcr,HES-001277,zeme,__exclude__,heslar:zeme
-Indie,India,amcr,HES-001340,zeme,__exclude__,heslar:zeme
-Indonésie,Indonesia,amcr,HES-001199,zeme,__exclude__,heslar:zeme
-Irsko,Ireland,amcr,HES-001344,zeme,__exclude__,heslar:zeme
-Irák,Iraq,amcr,HES-001260,zeme,__exclude__,heslar:zeme
-Island,Iceland,amcr,HES-001278,zeme,__exclude__,heslar:zeme
-Itálie,Italy,amcr,HES-001319,zeme,__exclude__,heslar:zeme
-Izrael,Israel,amcr,HES-001320,zeme,__exclude__,heslar:zeme
-Jamajka,Jamaica,amcr,HES-001245,zeme,__exclude__,heslar:zeme
-Japonsko,Japan,amcr,HES-001353,zeme,__exclude__,heslar:zeme
-Jaroměř,Jaroměř,amcr,HES-000191,letiste,__exclude__,heslar:letiste
-Jemen,Yemen,amcr,HES-001313,zeme,__exclude__,heslar:zeme
-Jersey,Jersey,amcr,HES-001364,zeme,__exclude__,heslar:zeme
-Jihlava-Henčov,Jihlava-Henčov,amcr,HES-000195,letiste,__exclude__,heslar:letiste
-Jičín,Jičín,amcr,HES-000192,letiste,__exclude__,heslar:letiste
-Jižní Afrika,South Africa,amcr,HES-001381,zeme,__exclude__,heslar:zeme
-Jižní Georgie a Jižní Sandwichovy ostrovy,South Georgia and the South Sandwich Islands,amcr,HES-001382,zeme,__exclude__,heslar:zeme
-Jižní Súdán,South Sudan,amcr,HES-001318,zeme,__exclude__,heslar:zeme
-Jordánsko,Jordan,amcr,HES-001383,zeme,__exclude__,heslar:zeme
-Kajmanské ostrovy,Cayman Islands (the),amcr,HES-001345,zeme,__exclude__,heslar:zeme
-Kambodža,Cambodia,amcr,HES-001291,zeme,__exclude__,heslar:zeme
-Kamerun,Cameroon,amcr,HES-001292,zeme,__exclude__,heslar:zeme
-Kanada,Canada,amcr,HES-001293,zeme,__exclude__,heslar:zeme
-Kapverdy,Cape Verde,amcr,HES-001343,zeme,__exclude__,heslar:zeme
-Karlovy Vary,Karlovy Vary,amcr,HES-000196,letiste,__exclude__,heslar:letiste
-Katar,Qatar,amcr,HES-001286,zeme,__exclude__,heslar:zeme
-Kazachstán,Kazakhstan,amcr,HES-001316,zeme,__exclude__,heslar:zeme
-Keňa,Kenya,amcr,HES-001398,zeme,__exclude__,heslar:zeme
-Kiribati,Kiribati,amcr,HES-001233,zeme,__exclude__,heslar:zeme
-Kladno,Kladno,amcr,HES-000197,letiste,__exclude__,heslar:letiste
-Kokosové (Keelingovy) ostrovy,Cocos (Keeling) Islands (the),amcr,HES-001259,zeme,__exclude__,heslar:zeme
-Kolumbie,Colombia,amcr,HES-001284,zeme,__exclude__,heslar:zeme
-Kolín,Kolín,amcr,HES-000198,letiste,__exclude__,heslar:letiste
-Komory,Comoros (the),amcr,HES-001384,zeme,__exclude__,heslar:zeme
-Konžská demokratická republika,Congo (the Democratic Republic of the),amcr,HES-001251,zeme,__exclude__,heslar:zeme
-Konžská republika,Congo (the),amcr,HES-001385,zeme,__exclude__,heslar:zeme
-Korejská lidově demokratická republika,Korea (the Democratic People's Republic of),amcr,HES-001373,zeme,__exclude__,heslar:zeme
-Korejská republika,Korea (the Republic of),amcr,HES-001225,zeme,__exclude__,heslar:zeme
-Kosovo,Kosovo,amcr,HES-001200,zeme,__exclude__,heslar:zeme
-Kostarika,Costa Rica,amcr,HES-001271,zeme,__exclude__,heslar:zeme
-Krakow,Krakow,amcr,HES-000199,letiste,__exclude__,heslar:letiste
-Krakow-Balice,Krakow-Balice,amcr,HES-000200,letiste,__exclude__,heslar:letiste
-Kuba,Cuba,amcr,HES-001234,zeme,__exclude__,heslar:zeme
-Kuvajt,Kuwait,amcr,HES-001201,zeme,__exclude__,heslar:zeme
-Kypr,Cyprus,amcr,HES-001237,zeme,__exclude__,heslar:zeme
-Kyrgyzstán,Kyrgyzstan,amcr,HES-001297,zeme,__exclude__,heslar:zeme
-Laos,Lao People's Democratic Republic (the),amcr,HES-001298,zeme,__exclude__,heslar:zeme
-Lesotho,Lesotho,amcr,HES-001299,zeme,__exclude__,heslar:zeme
-Leszno,Leszno,amcr,HES-000201,letiste,__exclude__,heslar:letiste
-Libanon,Lebanon,amcr,HES-001239,zeme,__exclude__,heslar:zeme
-Libye,Libya,amcr,HES-001308,zeme,__exclude__,heslar:zeme
-Libérie,Liberia,amcr,HES-001314,zeme,__exclude__,heslar:zeme
-Lichtenštejnsko,Liechtenstein,amcr,HES-001371,zeme,__exclude__,heslar:zeme
-Litva,Lithuania,amcr,HES-001372,zeme,__exclude__,heslar:zeme
-Lotyšsko,Latvia,amcr,HES-001288,zeme,__exclude__,heslar:zeme
-Lucembursko,Luxembourg,amcr,HES-001289,zeme,__exclude__,heslar:zeme
-Macao,Macao,amcr,HES-001351,zeme,__exclude__,heslar:zeme
-Madagaskar,Madagascar,amcr,HES-001352,zeme,__exclude__,heslar:zeme
-Malajsie,Malaysia,amcr,HES-001327,zeme,__exclude__,heslar:zeme
-Malawi,Malawi,amcr,HES-001310,zeme,__exclude__,heslar:zeme
-Maledivy,Maldives,amcr,HES-001397,zeme,__exclude__,heslar:zeme
-Mali,Mali,amcr,HES-001205,zeme,__exclude__,heslar:zeme
-Man,Isle of Man,amcr,HES-001206,zeme,__exclude__,heslar:zeme
-Maroko,Morocco,amcr,HES-001208,zeme,__exclude__,heslar:zeme
-Marshallovy ostrovy,Marshall Islands (the),amcr,HES-001267,zeme,__exclude__,heslar:zeme
-Martinik,Martinique,amcr,HES-001403,zeme,__exclude__,heslar:zeme
-Mauricius,Mauritius,amcr,HES-001238,zeme,__exclude__,heslar:zeme
-Mauritánie,Mauritania,amcr,HES-001325,zeme,__exclude__,heslar:zeme
-Mayotte,Mayotte,amcr,HES-001389,zeme,__exclude__,heslar:zeme
-Maďarsko,Hungary,amcr,HES-001374,zeme,__exclude__,heslar:zeme
-Menší odlehlé ostrovy USA,United States Minor Outlying Islands (the),amcr,HES-001247,zeme,__exclude__,heslar:zeme
-Mexiko,Mexico,amcr,HES-001210,zeme,__exclude__,heslar:zeme
-Mikronésie,Micronesia (Federated States of),amcr,HES-001211,zeme,__exclude__,heslar:zeme
-Mnichovo Hradiště,Mnichovo Hradiště,amcr,HES-000203,letiste,__exclude__,heslar:letiste
-Moldavsko,Moldova (the Republic of),amcr,HES-001269,zeme,__exclude__,heslar:zeme
-Monako,Monaco,amcr,HES-001270,zeme,__exclude__,heslar:zeme
-Mongolsko,Mongolia,amcr,HES-001240,zeme,__exclude__,heslar:zeme
-Montserrat,Montserrat,amcr,HES-001241,zeme,__exclude__,heslar:zeme
-Mosambik,Mozambique,amcr,HES-001294,zeme,__exclude__,heslar:zeme
-Myanmar,Myanmar,amcr,HES-001356,zeme,__exclude__,heslar:zeme
-Mělník-Hořín,Mělník-Hořín,amcr,HES-000202,letiste,__exclude__,heslar:letiste
-Namibie,Namibia,amcr,HES-001213,zeme,__exclude__,heslar:zeme
-Nauru,Nauru,amcr,HES-001346,zeme,__exclude__,heslar:zeme
-Nepál,Nepal,amcr,HES-001204,zeme,__exclude__,heslar:zeme
-Niger,Niger (the),amcr,HES-001273,zeme,__exclude__,heslar:zeme
-Nigérie,Nigeria,amcr,HES-001274,zeme,__exclude__,heslar:zeme
-Nikaragua,Nicaragua,amcr,HES-001229,zeme,__exclude__,heslar:zeme
-Niue,Niue,amcr,HES-001279,zeme,__exclude__,heslar:zeme
-Nizozemsko,Netherlands (the),amcr,HES-001230,zeme,__exclude__,heslar:zeme
-Norfolk,Norfolk Island,amcr,HES-001231,zeme,__exclude__,heslar:zeme
-Norsko,Norway,amcr,HES-001290,zeme,__exclude__,heslar:zeme
-Nová Kaledonie,New Caledonia,amcr,HES-001263,zeme,__exclude__,heslar:zeme
-Nový Zéland,New Zealand,amcr,HES-001209,zeme,__exclude__,heslar:zeme
-Německo,Germany,amcr,HES-001358,zeme,__exclude__,heslar:zeme
-Omán,Oman,amcr,HES-001223,zeme,__exclude__,heslar:zeme
-Palau,Palau,amcr,HES-001387,zeme,__exclude__,heslar:zeme
-Palestina,"Palestine, State of",amcr,HES-001368,zeme,__exclude__,heslar:zeme
-Panama,Panama,amcr,HES-001369,zeme,__exclude__,heslar:zeme
-Papua Nová Guinea,Papua New Guinea,amcr,HES-001370,zeme,__exclude__,heslar:zeme
-Paraguay,Paraguay,amcr,HES-001363,zeme,__exclude__,heslar:zeme
-Peru,Peru,amcr,HES-001296,zeme,__exclude__,heslar:zeme
-Pitcairn,Pitcairn,amcr,HES-001287,zeme,__exclude__,heslar:zeme
-Plasy,Plasy,amcr,HES-000204,letiste,__exclude__,heslar:letiste
-Pobřeží slonoviny,Côte d'Ivoire,amcr,HES-001226,zeme,__exclude__,heslar:zeme
-Polsko,Poland,amcr,HES-001220,zeme,__exclude__,heslar:zeme
-Portoriko,Puerto Rico,amcr,HES-001221,zeme,__exclude__,heslar:zeme
-Portugalsko,Portugal,amcr,HES-001222,zeme,__exclude__,heslar:zeme
-Praha-Kbely,Praha-Kbely,amcr,HES-000205,letiste,__exclude__,heslar:letiste
-Praha-Letňany,Praha-Letňany,amcr,HES-000206,letiste,__exclude__,heslar:letiste
-Pákistán,Pakistan,amcr,HES-001224,zeme,__exclude__,heslar:zeme
-Rakousko,Austria,amcr,HES-001295,zeme,__exclude__,heslar:zeme
-Rovníková Guinea,Equatorial Guinea,amcr,HES-001235,zeme,__exclude__,heslar:zeme
-Rumunsko,Romania,amcr,HES-001236,zeme,__exclude__,heslar:zeme
-Rusko,Russian Federation (the),amcr,HES-001392,zeme,__exclude__,heslar:zeme
-Rwanda,Rwanda,amcr,HES-001393,zeme,__exclude__,heslar:zeme
-Réunion,Réunion,amcr,HES-001303,zeme,__exclude__,heslar:zeme
-Saint Pierre a Miquelon,Saint Pierre and Miquelon,amcr,HES-001280,zeme,__exclude__,heslar:zeme
-Salvador,El Salvador,amcr,HES-001281,zeme,__exclude__,heslar:zeme
-Samoa,Samoa,amcr,HES-001321,zeme,__exclude__,heslar:zeme
-San Marino,San Marino,amcr,HES-001376,zeme,__exclude__,heslar:zeme
-Sazená,Sazená,amcr,HES-000207,letiste,__exclude__,heslar:letiste
-Saúdská Arábie,Saudi Arabia,amcr,HES-001380,zeme,__exclude__,heslar:zeme
-Senegal,Senegal,amcr,HES-001215,zeme,__exclude__,heslar:zeme
-Severní Makedonie,North Macedonia,amcr,HES-001375,zeme,__exclude__,heslar:zeme
-Severní Mariany,Northern Mariana Islands (the),amcr,HES-001216,zeme,__exclude__,heslar:zeme
-Seychely,Seychelles,amcr,HES-001307,zeme,__exclude__,heslar:zeme
-Sierra Leone,Sierra Leone,amcr,HES-001257,zeme,__exclude__,heslar:zeme
-Singapur,Singapore,amcr,HES-001255,zeme,__exclude__,heslar:zeme
-Slovensko,Slovakia,amcr,HES-001367,zeme,__exclude__,heslar:zeme
-Slovinsko,Slovenia,amcr,HES-001312,zeme,__exclude__,heslar:zeme
-Somálsko,Somalia,amcr,HES-001326,zeme,__exclude__,heslar:zeme
-Spojené arabské emiráty,United Arab Emirates (the),amcr,HES-001322,zeme,__exclude__,heslar:zeme
-Spojené státy,United States of America (the),amcr,HES-001323,zeme,__exclude__,heslar:zeme
-Srbsko,Serbia,amcr,HES-001357,zeme,__exclude__,heslar:zeme
-Strunkovice,Strunkovice,amcr,HES-000208,letiste,__exclude__,heslar:letiste
-Středoafrická republika,Central African Republic (the),amcr,HES-001386,zeme,__exclude__,heslar:zeme
-Surinam,Suriname,amcr,HES-001348,zeme,__exclude__,heslar:zeme
-Svatá Helena,"Saint Helena, Ascension and Tristan da Cunha",amcr,HES-001258,zeme,__exclude__,heslar:zeme
-Svatá Lucie,Saint Lucia,amcr,HES-001332,zeme,__exclude__,heslar:zeme
-Svatý Bartoloměj,Saint Barthélemy,amcr,HES-001355,zeme,__exclude__,heslar:zeme
-Svatý Kryštof a Nevis,Saint Kitts and Nevis,amcr,HES-001305,zeme,__exclude__,heslar:zeme
-Svatý Martin (FR),Saint Martin (French part),amcr,HES-001268,zeme,__exclude__,heslar:zeme
-Svatý Martin (NL),Sint Maarten (Dutch part),amcr,HES-001315,zeme,__exclude__,heslar:zeme
-Svatý Tomáš a Princův ostrov,Sao Tome and Principe,amcr,HES-001212,zeme,__exclude__,heslar:zeme
-Svatý Vincenc a Grenadiny,Saint Vincent and the Grenadines,amcr,HES-001378,zeme,__exclude__,heslar:zeme
-Svazijsko,Eswatini,amcr,HES-001388,zeme,__exclude__,heslar:zeme
-Súdán,Sudan (the),amcr,HES-001272,zeme,__exclude__,heslar:zeme
-Sýrie,Syrian Arab Republic,amcr,HES-001379,zeme,__exclude__,heslar:zeme
-Tanzanie,"Tanzania, United Republic of",amcr,HES-001244,zeme,__exclude__,heslar:zeme
-Tchaj-wan,Taiwan (Province of China),amcr,HES-001306,zeme,__exclude__,heslar:zeme
-Thajsko,Thailand,amcr,HES-001341,zeme,__exclude__,heslar:zeme
-Togo,Togo,amcr,HES-001342,zeme,__exclude__,heslar:zeme
-Tokelau,Tokelau,amcr,HES-001406,zeme,__exclude__,heslar:zeme
-Tonga,Tonga,amcr,HES-001407,zeme,__exclude__,heslar:zeme
-Trinidad a Tobago,Trinidad and Tobago,amcr,HES-001408,zeme,__exclude__,heslar:zeme
-Tunisko,Tunisia,amcr,HES-001409,zeme,__exclude__,heslar:zeme
-Turecko,Turkey,amcr,HES-001410,zeme,__exclude__,heslar:zeme
-Turkmenistán,Turkmenistan,amcr,HES-001411,zeme,__exclude__,heslar:zeme
-Turks a Caicos,Turks and Caicos Islands (the),amcr,HES-001412,zeme,__exclude__,heslar:zeme
-Tuvalu,Tuvalu,amcr,HES-001413,zeme,__exclude__,heslar:zeme
-Tádžikistán,Tajikistan,amcr,HES-001390,zeme,__exclude__,heslar:zeme
-Uganda,Uganda,amcr,HES-001414,zeme,__exclude__,heslar:zeme
-Ukrajina,Ukraine,amcr,HES-001415,zeme,__exclude__,heslar:zeme
-Uruguay,Uruguay,amcr,HES-001416,zeme,__exclude__,heslar:zeme
-Uzbekistán,Uzbekistan,amcr,HES-001417,zeme,__exclude__,heslar:zeme
-Vanuatu,Vanuatu,amcr,HES-001419,zeme,__exclude__,heslar:zeme
-Vatikán,Holy See (the),amcr,HES-001420,zeme,__exclude__,heslar:zeme
-Velká Británie,United Kingdom of Great Britain and Northern Ireland (the),amcr,HES-001421,zeme,__exclude__,heslar:zeme
-Velká Dobrá,Velká Dobrá,amcr,HES-000209,letiste,__exclude__,heslar:letiste
-Venezuela,Venezuela (Bolivarian Republic of),amcr,HES-001422,zeme,__exclude__,heslar:zeme
-Vietnam,Viet Nam,amcr,HES-001423,zeme,__exclude__,heslar:zeme
-Vlašim,Vlašim,amcr,HES-000210,letiste,__exclude__,heslar:letiste
-Vrchlabí,Vrchlabí,amcr,HES-000211,letiste,__exclude__,heslar:letiste
-Vánoční ostrov,Christmas Island,amcr,HES-001418,zeme,__exclude__,heslar:zeme
-Východní Timor,Timor-Leste,amcr,HES-001424,zeme,__exclude__,heslar:zeme
-Wallis a Futuna,Wallis and Futuna,amcr,HES-001425,zeme,__exclude__,heslar:zeme
-Zambie,Zambia,amcr,HES-001426,zeme,__exclude__,heslar:zeme
-Zimbabwe,Zimbabwe,amcr,HES-001428,zeme,__exclude__,heslar:zeme
-Znojmo,Znojmo,amcr,HES-000194,letiste,__exclude__,heslar:letiste
-Západní Sahara,Western Sahara,amcr,HES-001427,zeme,__exclude__,heslar:zeme
-angličtina,English,amcr,HES-000169,jazyk,__exclude__,heslar:jazyk
-anonym,anonymous,amcr,HES-000865,pristupnost,__exclude__,heslar:pristupnost
-archeolog,archaeologist,amcr,HES-000867,pristupnost,__exclude__,heslar:pristupnost
-archivář,archivist,amcr,HES-000868,pristupnost,__exclude__,heslar:pristupnost
-badatel,researcher,amcr,HES-000866,pristupnost,__exclude__,heslar:pristupnost
-badatelský,research,amcr,HES-001137,projekt_typ,__exclude__,heslar:projekt_typ
-bod,point,amcr,HES-001133,pian_typ,__exclude__,heslar:pian_typ
-bodové objekty uspořádané,organized point features,amcr,HES-001030,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-bodový objekt,point feature,amcr,HES-001028,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-celek akce,fieldwork extent,amcr,HES-001070,dok_jednotka_typ,__exclude__,heslar:dok_jednotka_typ
-deštivo,rainy,amcr,HES-000587,pocasi,__exclude__,heslar:pocasi
-dno sondy,trench bottom,amcr,HES-001158,vyskovy_bod_typ,__exclude__,heslar:vyskovy_bod_typ
-domnělé (5–50 %),alleged (5–50%),amcr,HES-001451,jistota_urceni,__exclude__,heslar:jistota_urceni
-francouzština,French,amcr,HES-000170,jazyk,__exclude__,heslar:jazyk
-industriál,Industrial,amcr,HES-001165,vyskovy_bod_typ,__exclude__,heslar:vyskovy_bod_typ
-italština,Italian,amcr,HES-001448,jazyk,__exclude__,heslar:jazyk
-jisté (> 95 %),certain (> 95%),amcr,HES-001449,jistota_urceni,__exclude__,heslar:jistota_urceni
-katastrální území,cadastral area,amcr,HES-001073,dok_jednotka_typ,__exclude__,heslar:dok_jednotka_typ
-kinofilm (24 x 36 mm),cine film (24 x 36 mm),amcr,HES-000141,dokument_format,__exclude__,heslar:dokument_format
-latina,Latin,amcr,HES-000172,jazyk,__exclude__,heslar:jazyk
-lineární systém,system of linear features,amcr,HES-001034,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-linie,linear feature,amcr,HES-001032,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-linie ohrazující,delimiting line,amcr,HES-001033,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-lokalita,site,amcr,HES-001074,dok_jednotka_typ,__exclude__,heslar:dok_jednotka_typ
-nejisté (50–95 %),uncertain (50–95%),amcr,HES-001450,jistota_urceni,__exclude__,heslar:jistota_urceni
-nerelevantní,irrelevant,amcr,HES-000174,jazyk,__exclude__,heslar:jazyk
-neznámá,unknown,amcr,HES-000099,dohlednost,__exclude__,heslar:dohlednost
-neznámé počasí,unknown weather,amcr,HES-000586,pocasi,__exclude__,heslar:pocasi
-někdy v letech,approximate years,amcr,HES-000889,datum_specifikace,__exclude__,heslar:datum_specifikace
-němčina,German,amcr,HES-000168,jazyk,__exclude__,heslar:jazyk
-objekt,feature,amcr,HES-001125,nalez_typ,__exclude__,heslar:nalez_typ
-oblačno,cloudy,amcr,HES-000588,pocasi,__exclude__,heslar:pocasi
-"oblačno, zataženo","cloudy, overcast",amcr,HES-000589,pocasi,__exclude__,heslar:pocasi
-odchylka desítky metrů,deviation in tens of meters,amcr,HES-000862,pian_presnost,__exclude__,heslar:pian_presnost
-odchylka jednotky metrů,deviation in meters,amcr,HES-000861,pian_presnost,__exclude__,heslar:pian_presnost
-odchylka stovky metrů,deviation in hundreds of meters,amcr,HES-000863,pian_presnost,__exclude__,heslar:pian_presnost
-ohrazení kruhové malé,circular enclosure (small),amcr,HES-001035,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-ohrazení kruhové střední,circular enclosure (medium),amcr,HES-001036,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-ohrazení kruhové velké,circular enclosure (large),amcr,HES-001037,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-ohrazení polygonální malé,polygonal enclosure (small),amcr,HES-001041,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-ohrazení polygonální střední,polygonal enclosure (medium),amcr,HES-001042,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-ohrazení polygonální velké,polygonal enclosure (large),amcr,HES-001043,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-ohrazení pravoúhlé malé,rectangular enclosure (small),amcr,HES-001038,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-ohrazení pravoúhlé střední,rectangular enclosure (medium),amcr,HES-001039,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-ohrazení pravoúhlé velké,rectangular enclosure (large),amcr,HES-001040,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-plošný objekt,polygonal feature,amcr,HES-001031,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-podloží,subsoil,amcr,HES-001159,vyskovy_bod_typ,__exclude__,heslar:vyskovy_bod_typ
-poloha podle katastru,location by cadastral area,amcr,HES-000864,pian_presnost,__exclude__,heslar:pian_presnost
-polygon,polygon,amcr,HES-001135,pian_typ,__exclude__,heslar:pian_typ
-povrch sondy,trench surface,amcr,HES-001157,vyskovy_bod_typ,__exclude__,heslar:vyskovy_bod_typ
-průzkum,survey,amcr,HES-001138,projekt_typ,__exclude__,heslar:projekt_typ
-pseudolokalita (< 5 %),pseudo-site (< 5%),amcr,HES-001452,jistota_urceni,__exclude__,heslar:jistota_urceni
-předmět,object,amcr,HES-001126,nalez_typ,__exclude__,heslar:nalez_typ
-přesné datum,exact date,amcr,HES-000887,datum_specifikace,__exclude__,heslar:datum_specifikace
-přesně v letech,exact years,amcr,HES-000886,datum_specifikace,__exclude__,heslar:datum_specifikace
-ruština,Russian,amcr,HES-000173,jazyk,__exclude__,heslar:jazyk
-shluk bodových objektů,group of point features,amcr,HES-001029,letfoto_tvar,__exclude__,heslar:letfoto_tvar
-slovenština,Slovak,amcr,HES-000171,jazyk,__exclude__,heslar:jazyk
-slunečno,sunny,amcr,HES-000590,pocasi,__exclude__,heslar:pocasi
-"slunečno, oblačno","sunny, cloudy",amcr,HES-000591,pocasi,__exclude__,heslar:pocasi
-"slunečno, oblačno, zataženo","sunny, cloudy, overcast",amcr,HES-000592,pocasi,__exclude__,heslar:pocasi
-snížené podloží,levelled subsoil,amcr,HES-001160,vyskovy_bod_typ,__exclude__,heslar:vyskovy_bod_typ
-těžený/zpracovávaný materiál,extracted/processed material,amcr,HES-000964,objekt_specifikace_kat,__exclude__,heslar:objekt_specifikace_kat
-zataženo,overcast,amcr,HES-000593,pocasi,__exclude__,heslar:pocasi
-způsob provedení,construction type,amcr,HES-000963,objekt_specifikace_kat,__exclude__,heslar:objekt_specifikace_kat
-záchranný,rescue,amcr,HES-001136,projekt_typ,__exclude__,heslar:projekt_typ
-Ázerbájdžán,Azerbaijan,amcr,HES-001194,zeme,__exclude__,heslar:zeme
-Írán,Iran (Islamic Republic of),amcr,HES-001324,zeme,__exclude__,heslar:zeme
-Čad,Chad,amcr,HES-001405,zeme,__exclude__,heslar:zeme
-Černá Hora,Montenegro,amcr,HES-001248,zeme,__exclude__,heslar:zeme
-Česko,Czechia,amcr,HES-001198,zeme,__exclude__,heslar:zeme
-České Budějovice-Hosín,České Budějovice-Hosín,amcr,HES-000187,letiste,__exclude__,heslar:letiste
-Čína,China,amcr,HES-001249,zeme,__exclude__,heslar:zeme
-čeština,Czech,amcr,HES-000167,jazyk,__exclude__,heslar:jazyk
-část akce,fieldwork segment,amcr,HES-001071,dok_jednotka_typ,__exclude__,heslar:dok_jednotka_typ
-Řecko,Greece,amcr,HES-001304,zeme,__exclude__,heslar:zeme
-Šalomounovy ostrovy,Solomon Islands,amcr,HES-001311,zeme,__exclude__,heslar:zeme
-Španělsko,Spain,amcr,HES-001300,zeme,__exclude__,heslar:zeme
-Špicberky a Jan Mayen,Svalbard and Jan Mayen,amcr,HES-001253,zeme,__exclude__,heslar:zeme
-Šrí Lanka,Sri Lanka,amcr,HES-001254,zeme,__exclude__,heslar:zeme
-Švédsko,Sweden,amcr,HES-001331,zeme,__exclude__,heslar:zeme
-Švýcarsko,Switzerland,amcr,HES-001365,zeme,__exclude__,heslar:zeme
