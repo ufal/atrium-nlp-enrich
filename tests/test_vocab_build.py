@@ -152,3 +152,23 @@ def test_no_unplaced_terms_after_the_rebuild():
 
 def test_shipped_overrides_file_validates():
     _shipped_manager().validate_settings()  # must not raise
+
+
+# ── drift guard: the committed artifacts must match a fresh build ───────────────
+
+
+def test_committed_artifacts_match_a_fresh_build():
+    """Config and artifact must move together, or a decision exists in code without
+    being in force at runtime — exactly what happened between commit a5e3c8a (config
+    edits only) and the follow-up that actually rebuilt data_samples/vocab/. --check
+    never writes (see _emit in vocab_build.py), so this only reads the real tree; it
+    does not need a tmp_path the way a build test would."""
+    if not (VOCAB_DIR / "amcr_flat.json").exists() or not (VOCAB_DIR / "teater_flat.json").exists():
+        pytest.skip("flat artifacts not present in this checkout")
+
+    exit_code = vb.main(["--from-flat", "--check"])
+    assert exit_code == 0, (
+        "data_samples/vocab/*.json and *.csv are stale relative to "
+        "taxonomy_config.json/taxonomy_overrides.json — run "
+        "`python3 vocab_build.py --from-flat` and commit the result."
+    )

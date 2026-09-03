@@ -344,7 +344,7 @@ def main(config_path: str = "llm_config.txt") -> None:
 
     MODEL_KEY = config.get("MODEL_KEY", "qwen-3.6-27b-it")
     HF_TOKEN = config.get("HF_TOKEN", os.environ.get("HF_TOKEN", None))
-    INPUT_DIR = Path(config.get("INPUT_DIR", "data_samples/DOC_LINE_LANG_CLASS"))
+    INPUT_DIR = Path(config.get("INPUT_DIR", "data_samples/DOC_LINE_CATEG"))
     VOCAB_PATH = config.get("VOCAB_PATH", "data_samples/vocab/union_nested.json")
     PARADATA_DIR = config.get("PARADATA_DIR", "paradata")
 

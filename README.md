@@ -852,10 +852,15 @@ MODEL_KEY=qwen-3.6-27b-it
 # Only needed for gated models: gemma-4-*, llama4-maverick, llama3.1-70b
 # HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
 
-INPUT_DIR=data_samples/DOC_LINE_LANG_CLASS
+INPUT_DIR=data_samples/DOC_LINE_CATEG
 OUTPUT_DIR=data_samples/KW_PER_DOC_LLM
-VOCAB_PATH=data_samples/teater_nested_vocab.json
+VOCAB_PATH=data_samples/vocab/union_nested.json
 PARADATA_DIR=paradata
+
+# Attach the surviving vocabulary term's source record id(s) to each enrichment as
+# teater_category_ids (issue #6, M7). Kept behind a switch since it was agreed to be
+# reversible: "list them now and drop it if it will create some issues."
+EMIT_CATEGORY_IDS=true
 
 INCLUDE_NON_TEXT=true
 MIN_CHAR_COUNT=3
@@ -898,10 +903,21 @@ vocab_sources.py        *_flat.{json,csv}     vocab_manager      *_nested.json
 
 [`vocab_manager.py`](vocab_manager.py) 📎 then groups the flat terms into the thematic
 taxonomy defined by [taxonomy_config.json](data_samples/taxonomy_config.json) 📎. Placement
-is tried in precedence order — AMCR list membership (`heslar_map`), TEATER branch
-(`teater_branch_map`), the legacy keyword match, a cross-source rescue, an opt-in LLM
-fallback, then `Other` — and **every placement records the rule that made it** in
-`*_placement_audit.csv`, so the grouping can be reviewed rather than taken on trust.
+is tried in precedence order — a per-term correction in
+[taxonomy_overrides.json](data_samples/taxonomy_overrides.json) 📎, AMCR list membership
+(`heslar_map`), TEATER branch (`teater_branch_map`, resolved most-specific-first so a
+depth-2 sub-branch like `muzeum` can be moved without moving its whole parent branch),
+the legacy keyword match, a cross-source rescue, an opt-in LLM fallback, then `Other` —
+and **every placement records the rule that made it** in `*_placement_audit.csv`, so the
+grouping can be reviewed rather than taken on trust.
+
+Two labels can collide (AMCR and TEATER both use `zámek` for "lock" *and* "château").
+`vocab_sources.to_term_pairs()` treats a same-label group as one concept by default —
+the winning record's id survives, every other one is listed on it as `discarded_ids`
+(issue #6, M7) — and only pulls a record into its own bracketed entry
+(`"zámek (sídlo elity)"`) when `taxonomy_overrides.json` explicitly flags it as a
+genuine homonym (M8). Guessing that from a differing English gloss alone would mistake
+ordinary translation variance for a real split far more often than it would catch one.
 
 ```bash
 # stage 1 + 2, needs network access to aiscr.cz
@@ -1012,7 +1028,7 @@ All VRAM figures assume BnB 4-bit for the transformers backend and FP8/BF16 for 
 
 ### 📁 Inputs and Outputs
 
-* **Input:** `DOC_LINE_LANG_CLASS/*.csv` (contains `file_id`, `page_num`, `line_num`,
+* **Input:** `DOC_LINE_CATEG/*.csv` (contains `file_id`, `page_num`, `line_num`,
   `categ`, `quality_score`, and raw `text`).
 * **Output:** `KW_PER_DOC_LLM_<model_suffix>/*_enriched.json` — one file per document,
   containing an array of JSON objects that merge CSV metadata with the LLM's semantic
@@ -1035,10 +1051,24 @@ All VRAM figures assume BnB 4-bit for the transformers backend and FP8/BF16 for 
     "extracted_keywords_cs": ["základy", "gotický kostel"],
     "extracted_keywords_en": ["foundations", "gothic church"],
     "teater_category": "kostel",
+    "teater_category_ids": [
+      { "source": "amcr", "id": "HES-000021" },
+      { "source": "amcr", "id": "HES-000465" },
+      { "source": "teater", "id": "1333" }
+    ],
     "confidence_score": 0.95
   }
 }
 ```
+
+`teater_category_ids` (present when `EMIT_CATEGORY_IDS=true`, the default) lists every
+source record the selected vocabulary term absorbed during dedup — issue #6, M7. It is
+attached after inference, from the vocabulary's own `discarded_ids`; the prompt and
+schema are unaffected. When the selected term was a bracketed disambiguation (B3, e.g.
+`"zámek (sídlo elity)"`), `teater_category` is stripped back to the bare label
+(`"zámek"`) before it is written, and `teater_category_ids` carries the id that
+disambiguates which sense was meant — a term that legitimately contains parentheses in
+its own source label (e.g. `"GPS (navigační systém)"`) is never touched.
 
 **Abort sidecar format (`*_enriched.abort.json`):**
 ```json
