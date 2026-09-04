@@ -215,13 +215,17 @@ def test_corpus_branch_evidence_finds_stredovek_under_vyskovy_bod_typ():
     _require_corpus()
     manager = _shipped_manager()
     per_source = vb._load_flat(VOCAB_DIR)
-    rows = cr.corpus_branch_evidence_rows(per_source, manager, UDP_DIR)
+    nested = cr.shipped_nested(VOCAB_DIR, manager)
+    rows = cr.corpus_branch_evidence_rows(per_source, manager, UDP_DIR, nested=nested)
     row = next(r for r in rows if r["rule"] == "heslar:vyskovy_bod_typ")
     # Floors, not exact counts: the claim under test is that the collision is
     # DETECTED, and 'středověk' occurs more often the more real reports are present.
     assert row["occurrences"] >= 1
     assert row["doc_count"] >= 1
-    assert "středověk" in row["sample_hit_terms"]
+    # 'středověk' is ALSO an offered Chronology term, so it is shared, not unique --
+    # this excluded list earns no evidence from it.
+    assert "středověk" in row["sample_shared_terms"]
+    assert row["shared_occurrences"] >= 1
 
 
 # ── gold_workbook_rows ────────────────────────────────────────────────────────────
@@ -358,3 +362,270 @@ def test_main_handles_missing_corpus_directories_gracefully(tmp_path, capsys):
 
     rows = list(csv.DictReader(open(vocab_dest / "corpus_term_evidence.csv", encoding="utf-8")))
     assert all(int(r["occurrences"]) == 0 for r in rows)
+
+
+# ── the unique/shared split (the heslar:zeme "malta" trap) ──────────────────────
+
+
+def _malta_corpus(tmp_path):
+    """The three real corpus lines where 'malta' means MORTAR, with a CoNLL-U that
+    lemmatises maltu/malty/maltou -> malta the way UDPipe does."""
+    udp, lines = tmp_path / "UDP", tmp_path / "LINES"
+    udp.mkdir()
+    lines.mkdir()
+    real = [
+        (
+            "CTX198402945",
+            "1",
+            "26",
+            "z lomového zdivá nasucho a jen místy na maltu, ve spodní části",
+        ),
+        ("CTX199603106", "3", "3", "charakteru s příměsí malty a úlomků opuky a cihel"),
+        (
+            "CTX199603106",
+            "3",
+            "6",
+            "nevelkých rozměrů, spojovaných vápennou maltou z hrubého říčního",
+        ),
+    ]
+    import csv as _csv
+
+    by_doc = {}
+    for f, pg, ln, txt in real:
+        by_doc.setdefault(f, []).append((pg, ln, txt))
+    for doc, rows in by_doc.items():
+        with open(lines / f"{doc}.csv", "w", encoding="utf-8", newline="") as fh:
+            w = _csv.DictWriter(fh, fieldnames=["file", "page_num", "line_num", "text", "categ"])
+            w.writeheader()
+            for pg, ln, txt in rows:
+                w.writerow(
+                    {"file": doc, "page_num": pg, "line_num": ln, "text": txt, "categ": "Clear"}
+                )
+        with open(udp / f"{doc}.conllu", "w", encoding="utf-8") as fh:
+            for _pg, _ln, txt in rows:
+                fh.write(f"# text = {txt}\n")
+                for i, word in enumerate(txt.replace(",", " ").split(), start=1):
+                    bare = word.strip(",.").lower()
+                    lemma = "malta" if bare in ("maltu", "malty", "maltou") else bare
+                    fh.write(f"{i}\t{word}\t{lemma}\tNOUN\t_\t_\t_\t_\t_\t_\n")
+                fh.write("\n")
+    return udp, lines
+
+
+def test_branch_evidence_does_not_credit_zeme_for_the_mortar_homograph(tmp_path):
+    """The single most consequential row in this sheet. `malta` is MORTAR in these
+    lines (an offered Material term: AMCR HES-000910/HES-000992, TEATER 2499), but
+    norm_label's casefold makes it identical to the country `Malta` (HES-001366) in
+    the excluded `zeme` list. Credited to zeme, it reads as evidence that country
+    names appear in archaeological reports -- on exactly the branch O3/O4 Q1 and the
+    geographic guardrail turn on. It must land in shared, never unique."""
+    _require_flat()
+    udp, lines = _malta_corpus(tmp_path)
+    manager = _shipped_manager()
+    nested = cr.shipped_nested(VOCAB_DIR, manager)
+    per_source = vb._load_flat(VOCAB_DIR)
+
+    rows = cr.corpus_branch_evidence_rows(per_source, manager, udp, nested=nested)
+    zeme = next(r for r in rows if r["rule"] == "heslar:zeme")
+
+    assert zeme["occurrences"] == 3  # the raw signal is real...
+    assert zeme["unique_occurrences"] == 0  # ...but none of it is zeme's own
+    assert zeme["unique_hit_term_count"] == 0
+    assert zeme["shared_occurrences"] == 3
+    assert "malta" in zeme["sample_shared_terms"]
+    assert zeme["sample_unique_terms"] == ""
+
+
+def test_branch_evidence_sorts_by_unique_not_total_occurrences(tmp_path):
+    """A branch whose every hit is explained by an already-offered label must not
+    outrank one with genuine unique evidence, however large its raw total."""
+    _require_flat()
+    udp, lines = _malta_corpus(tmp_path)
+    manager = _shipped_manager()
+    nested = cr.shipped_nested(VOCAB_DIR, manager)
+    per_source = vb._load_flat(VOCAB_DIR)
+    rows = cr.corpus_branch_evidence_rows(per_source, manager, udp, nested=nested)
+
+    uniq = [r["unique_occurrences"] for r in rows]
+    assert uniq == sorted(uniq, reverse=True)
+
+
+def test_branch_evidence_without_nested_reports_everything_as_unique(tmp_path):
+    """Documented fallback: with no offered vocabulary to compare against, nothing
+    CAN be classified as shared, so callers wanting the split must pass nested."""
+    _require_flat()
+    udp, _lines = _malta_corpus(tmp_path)
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    rows = cr.corpus_branch_evidence_rows(per_source, manager, udp)
+    zeme = next(r for r in rows if r["rule"] == "heslar:zeme")
+    assert zeme["shared_hit_term_count"] == 0
+    assert zeme["unique_occurrences"] == zeme["occurrences"] == 3
+
+
+def test_branch_evidence_unique_plus_shared_reconciles_with_the_total(tmp_path):
+    _require_flat()
+    udp, _lines = _malta_corpus(tmp_path)
+    manager = _shipped_manager()
+    nested = cr.shipped_nested(VOCAB_DIR, manager)
+    per_source = vb._load_flat(VOCAB_DIR)
+    for row in cr.corpus_branch_evidence_rows(per_source, manager, udp, nested=nested):
+        assert row["unique_hit_term_count"] + row["shared_hit_term_count"] == row["hit_term_count"]
+        assert row["unique_occurrences"] + row["shared_occurrences"] == row["occurrences"]
+
+
+# ── the overwrite guard ─────────────────────────────────────────────────────────
+
+
+def _corpus_doc_count():
+    """However many documents this checkout actually has — 3 on a clean clone, 19 with
+    the real reports restored. Every guard assertion below is derived from this rather
+    than hardcoded: the guard's behaviour depends on the RELATIVE size of the recorded
+    corpus vs the one on disk, never on an absolute number."""
+    return len(list(UDP_DIR.glob("*.conllu")))
+
+
+def _vocab_copy(tmp_path):
+    import shutil
+
+    dest = tmp_path / "vocab"
+    dest.mkdir()
+    for name in ("amcr_flat.json", "teater_flat.json"):
+        shutil.copy(VOCAB_DIR / name, dest / name)
+    return dest
+
+
+def test_refuses_to_overwrite_sheets_built_from_a_larger_corpus(tmp_path):
+    """The real reports are untracked (issue #19 attachment), so a clean checkout has
+    only the three demo documents. Running the generator there used to silently
+    replace real evidence with placeholder numbers."""
+    _require_flat()
+    _require_corpus()
+    import json
+
+    dest = _vocab_copy(tmp_path)
+    bigger = _corpus_doc_count() + 5
+    (dest / "corpus_review.meta.json").write_text(
+        json.dumps({"documents": bigger, "total_tokens": 999999, "distinct_lemmas": 99999}) + "\n",
+        encoding="utf-8",
+    )
+    (dest / "corpus_term_evidence.csv").write_text("REAL EVIDENCE\n", encoding="utf-8")
+
+    rc = cr.main(
+        [
+            "--all",
+            "--vocab-dir",
+            str(dest),
+            "--config",
+            str(CONFIG),
+            "--udp-dir",
+            str(UDP_DIR),
+            "--lines-dir",
+            str(LINES_DIR),
+        ]
+    )
+    assert rc == 1
+    assert (dest / "corpus_term_evidence.csv").read_text(encoding="utf-8") == "REAL EVIDENCE\n"
+
+
+def test_force_overrides_the_guard(tmp_path):
+    _require_flat()
+    _require_corpus()
+    import json
+
+    dest = _vocab_copy(tmp_path)
+    (dest / "corpus_review.meta.json").write_text(
+        json.dumps({"documents": _corpus_doc_count() + 5}) + "\n", encoding="utf-8"
+    )
+    (dest / "corpus_term_evidence.csv").write_text("REAL EVIDENCE\n", encoding="utf-8")
+
+    rc = cr.main(
+        [
+            "--all",
+            "--force",
+            "--vocab-dir",
+            str(dest),
+            "--config",
+            str(CONFIG),
+            "--udp-dir",
+            str(UDP_DIR),
+            "--lines-dir",
+            str(LINES_DIR),
+        ]
+    )
+    assert rc == 0
+    assert (dest / "corpus_term_evidence.csv").read_text(encoding="utf-8").startswith("cs,en,")
+    meta = json.loads((dest / "corpus_review.meta.json").read_text(encoding="utf-8"))
+    assert meta["documents"] == _corpus_doc_count()
+
+
+def test_a_same_size_or_larger_corpus_is_never_refused(tmp_path):
+    _require_flat()
+    _require_corpus()
+    import json
+
+    dest = _vocab_copy(tmp_path)
+    (dest / "corpus_review.meta.json").write_text(
+        json.dumps({"documents": _corpus_doc_count()}) + "\n", encoding="utf-8"
+    )
+    rc = cr.main(
+        [
+            "--all",
+            "--vocab-dir",
+            str(dest),
+            "--config",
+            str(CONFIG),
+            "--udp-dir",
+            str(UDP_DIR),
+            "--lines-dir",
+            str(LINES_DIR),
+        ]
+    )
+    assert rc == 0
+
+
+def test_corpus_meta_records_provenance_and_merges_sheet_list(tmp_path):
+    """Running one report must not drop the provenance of sheets an earlier run
+    wrote from the same corpus."""
+    _require_flat()
+    _require_corpus()
+    import json
+
+    dest = _vocab_copy(tmp_path)
+    common = [
+        "--vocab-dir",
+        str(dest),
+        "--config",
+        str(CONFIG),
+        "--udp-dir",
+        str(UDP_DIR),
+        "--lines-dir",
+        str(LINES_DIR),
+    ]
+    assert cr.main(["--gold-workbook", *common]) == 0
+    assert cr.main(["--branch-evidence", *common]) == 0
+
+    meta = json.loads((dest / "corpus_review.meta.json").read_text(encoding="utf-8"))
+    assert meta["documents"] == _corpus_doc_count()
+    assert set(meta["sheets"]) == {"gold_workbook.csv", "corpus_branch_evidence.csv"}
+
+
+def test_corrupt_meta_sidecar_does_not_block_a_rebuild(tmp_path):
+    _require_flat()
+    _require_corpus()
+    dest = _vocab_copy(tmp_path)
+    (dest / "corpus_review.meta.json").write_text("{not json", encoding="utf-8")
+    rc = cr.main(
+        [
+            "--term-evidence",
+            "--vocab-dir",
+            str(dest),
+            "--config",
+            str(CONFIG),
+            "--udp-dir",
+            str(UDP_DIR),
+            "--lines-dir",
+            str(LINES_DIR),
+        ]
+    )
+    assert rc == 0

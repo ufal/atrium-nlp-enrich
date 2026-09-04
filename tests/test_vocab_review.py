@@ -8,6 +8,7 @@ test_exclusion_impact_settled_and_open_totals_reconcile) -- that bug was invisib
 made-up data and only showed up once the real term counts stopped adding up to 2930.
 """
 
+import csv
 from pathlib import Path
 
 import pytest
@@ -562,3 +563,72 @@ def test_reinstatement_preview_would_be_facet_is_left_blank_for_the_reviewer():
 def test_approx_prompt_chars_matches_the_rendered_shape():
     assert vr._approx_prompt_chars("kostel", "church") == len("kostel (church)") + 2
     assert vr._approx_prompt_chars("x", None) == len("x ()") + 2
+
+
+# ── drift guard: committed review sheets must match a fresh generation ──────────
+
+
+def test_committed_review_sheets_match_a_fresh_generation():
+    """The same failure mode as commit a5e3c8a, one level up: a taxonomy_config.json
+    or taxonomy_overrides.json edit changes what these sheets should say, and nothing
+    re-runs vocab_review.py, so a reviewer opens a stale CSV and rules on it. The
+    vocabulary artifacts have had a drift gate since the artifact/config split bit us;
+    the REVIEW sheets a domain expert actually reads had none.
+
+    Only the corpus-INDEPENDENT sheets are covered. corpus_term_evidence.csv,
+    corpus_branch_evidence.csv and gold_workbook.csv are deliberately excluded: they
+    are built from data_samples/UDP + DOC_LINE_CATEG, and the real reports are not
+    tracked in git (issue #19 attachment), so a fresh run here would legitimately
+    differ from sheets generated against the full corpus. corpus_review.py's own
+    --force guard is what protects those.
+    """
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    filtered = {name: vb._filter_excluded(recs, manager) for name, (recs, _m) in per_source.items()}
+    records = filtered.get("amcr", []) + filtered.get("teater", [])
+
+    qualifiers = manager.qualifier_overrides()
+    nested, _audit, _collisions = vb._nest(manager, records, qualifiers=qualifiers)
+
+    expected = {
+        "collision_review.csv": (
+            vr.collision_review_rows(records, manager, label_index=vr._label_index(per_source)),
+            vr.COLLISION_COLUMNS,
+        ),
+        "composite_pairs.csv": (vr.composite_pair_rows(nested), vr.COMPOSITE_COLUMNS),
+        "exclusion_impact.csv": (
+            vr.exclusion_impact_rows(per_source, manager),
+            vr.EXCLUSION_COLUMNS,
+        ),
+        "teater_subbranch_impact.csv": (
+            vr.teater_subbranch_impact_rows(per_source, manager),
+            vr.SUBBRANCH_COLUMNS,
+        ),
+        "reinstatement_preview.csv": (
+            vr.reinstatement_preview_rows(per_source, manager),
+            vr.REINSTATEMENT_COLUMNS,
+        ),
+    }
+
+    import io
+
+    stale = []
+    for name, (rows, columns) in expected.items():
+        path = VOCAB_DIR / name
+        if not path.exists():
+            stale.append(f"{name} (missing)")
+            continue
+        buf = io.StringIO(newline="")
+        writer = csv.DictWriter(buf, fieldnames=list(columns), lineterminator="\n")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+        if buf.getvalue() != path.read_text(encoding="utf-8"):
+            stale.append(name)
+
+    assert not stale, (
+        "committed review sheets are stale relative to the current taxonomy config: "
+        + ", ".join(stale)
+        + " — run `python3 vocab_review.py --all` and commit the result."
+    )

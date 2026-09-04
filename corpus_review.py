@@ -46,12 +46,13 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import json
 import re
 import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import vocab_build as vb
 import vocab_review as vr
@@ -274,14 +275,38 @@ def corpus_branch_evidence_rows(
     per_source: Dict[str, Tuple[List[vs.VocabRecord], Any]],
     manager: VocabularyManager,
     udp_dir: Path,
+    nested: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """The same lemma evidence, rolled up per currently-EXCLUDED rule instead of per
-    offered term — this is the shape Q1/Q2 actually needs: "does this branch's content
-    show up in real reports at all". Reuses :func:`vocab_review._excluded_buckets` so
-    this can never disagree with ``exclusion_impact.csv``/``reinstatement_preview.csv``
-    about which records a rule covers.
+    offered term — the shape Q1/Q2 actually needs: "does this branch's content show up
+    in real reports at all". Reuses :func:`vocab_review._excluded_buckets` so this can
+    never disagree with ``exclusion_impact.csv``/``reinstatement_preview.csv`` about
+    which records a rule covers.
+
+    **The unique/shared split is the whole point, and it is not cosmetic.** A branch is
+    only credited with evidence for a label no kept list already offers. Without that
+    split the sheet argues the opposite of the truth on the single most sensitive row:
+    ``heslar:zeme`` (the 249 country names, O3/O4 Q1, the branch the geographic
+    guardrail exists for) scores 7 occurrences on the real corpus — every one of them
+    the word ``malta``. In those lines ``malta`` is *mortar*
+    ("spojovaných vápennou maltou"), an offered Material term (AMCR HES-000910 /
+    HES-000992, TEATER 2499); the excluded record it is being credited to is the
+    country ``Malta`` (HES-001366), which ``norm_label``'s casefold makes
+    indistinguishable. Read raw, that row says country names are attested in
+    archaeological reports. They are not.
+
+    So ``unique_*`` is the honest headline and the sort key; ``shared_*`` is retained
+    beside it because a reviewer should be able to see the contamination rather than
+    take its removal on trust. Same trap, milder, in ``heslar:letiste``
+    (``kladno``/``kolín`` are towns) and ``heslar:nalez_typ``
+    (``objekt``/``předmět`` — the two most generic words in the domain).
+
+    ``nested`` is the currently-offered vocabulary; when omitted nothing can be
+    classified as shared and every hit is reported as unique, so callers that want the
+    split must pass it (``main()`` always does).
     """
     buckets = vr._excluded_buckets(per_source, manager)
+    offered = set(_single_word_terms(nested)) if nested else set()
 
     conllu_files = sorted(udp_dir.glob("*.conllu")) if udp_dir.exists() else []
     lemma_occurrences: Counter = Counter()
@@ -294,15 +319,23 @@ def corpus_branch_evidence_rows(
                 lemma_occurrences[key] += 1
                 lemma_docs[key].add(doc_id)
 
+    def _tally(keys: Sequence[str]) -> Tuple[int, int]:
+        docs: set = set()
+        for k in keys:
+            docs |= lemma_docs.get(k, set())
+        return sum(lemma_occurrences.get(k, 0) for k in keys), len(docs)
+
     labels = manager.settings.get("teater_branch_labels") or {}
     rows: List[Dict[str, Any]] = []
     for rule, members in buckets.items():
         single_word = {vs.norm_label(m.cs) for m in members if m.cs and len(m.cs.split()) == 1}
         hit_terms = sorted(k for k in single_word if lemma_occurrences.get(k, 0) > 0)
-        occurrences = sum(lemma_occurrences.get(k, 0) for k in hit_terms)
-        docs: set = set()
-        for k in hit_terms:
-            docs |= lemma_docs.get(k, set())
+        unique_terms = [k for k in hit_terms if k not in offered]
+        shared_terms = [k for k in hit_terms if k in offered]
+
+        occurrences, doc_count = _tally(hit_terms)
+        unique_occurrences, unique_doc_count = _tally(unique_terms)
+        shared_occurrences, _shared_docs = _tally(shared_terms)
 
         kind, ident = rule.split(":", 1)
         label = labels.get(ident, "") if kind == "teater" else ident
@@ -311,12 +344,21 @@ def corpus_branch_evidence_rows(
                 "rule": rule,
                 "label": label or ident,
                 "branch_single_word_terms": len(single_word),
+                "hit_term_count": len(hit_terms),
+                "unique_hit_term_count": len(unique_terms),
+                "unique_occurrences": unique_occurrences,
+                "unique_doc_count": unique_doc_count,
+                "shared_hit_term_count": len(shared_terms),
+                "shared_occurrences": shared_occurrences,
                 "occurrences": occurrences,
-                "doc_count": len(docs),
-                "sample_hit_terms": "; ".join(hit_terms[:10]),
+                "doc_count": doc_count,
+                "sample_unique_terms": "; ".join(unique_terms[:10]),
+                "sample_shared_terms": "; ".join(shared_terms[:10]),
             }
         )
-    rows.sort(key=lambda r: -r["occurrences"])
+    # Sorted by the unique figure: a branch whose every hit is explained by an
+    # already-offered label must not head the sheet.
+    rows.sort(key=lambda r: (-r["unique_occurrences"], -r["occurrences"], r["rule"]))
     return rows
 
 
@@ -324,9 +366,20 @@ BRANCH_EVIDENCE_COLUMNS = [
     "rule",
     "label",
     "branch_single_word_terms",
+    # Read these first: hits on labels no kept list already offers.
+    "unique_hit_term_count",
+    "unique_occurrences",
+    "unique_doc_count",
+    # Retained so the contamination is visible rather than silently removed.
+    "shared_hit_term_count",
+    "shared_occurrences",
+    # Totals, kept last: unique + shared. Quoting these alone is how heslar:zeme
+    # ends up looking like evidence that country names appear in reports.
+    "hit_term_count",
     "occurrences",
     "doc_count",
-    "sample_hit_terms",
+    "sample_unique_terms",
+    "sample_shared_terms",
 ]
 
 
@@ -407,6 +460,44 @@ GOLD_WORKBOOK_COLUMNS = [
 # ── shared CSV writer (same shape as vocab_review._write_csv) ───────────────────
 
 
+CORPUS_META_NAME = "corpus_review.meta.json"
+
+
+def _read_corpus_meta(vocab_dir: Path) -> Optional[Dict[str, Any]]:
+    """Corpus provenance of the sheets currently on disk, or None if unrecorded."""
+    path = vocab_dir / CORPUS_META_NAME
+    if not path.exists():
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (json.JSONDecodeError, OSError):
+        # A corrupt sidecar must not block a rebuild — it only guards, it is not data.
+        return None
+
+
+def _write_corpus_meta(vocab_dir: Path, stats: Dict[str, Any], sheets: Sequence[str]) -> None:
+    """Record which corpus these sheets came from, so a later run over a smaller one
+    is refused rather than silently overwriting real evidence with placeholder
+    numbers (the real reports are untracked, so a clean checkout has only the three
+    demo documents — running the generator there used to destroy the committed
+    sheets). ``generated_utc`` is deliberately absent: it would make every rebuild a
+    diff, the same reason vocab_build.py normalises timestamps out of its --check.
+    """
+    payload = {
+        "documents": stats["documents"],
+        "total_tokens": stats["total_tokens"],
+        "distinct_lemmas": stats["distinct_lemmas"],
+        "terms_with_hits": stats["terms_with_hits"],
+        "vocabulary_single_word_terms": stats["vocabulary_single_word_terms"],
+        "sheets": sorted(sheets),
+    }
+    path = vocab_dir / CORPUS_META_NAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"  [write] {path}")
+
+
 def _write_csv(path: Path, rows: Sequence[Dict[str, Any]], columns: Sequence[str]) -> None:
     buf = io.StringIO(newline="")
     writer = csv.DictWriter(buf, fieldnames=list(columns), lineterminator="\n")
@@ -442,6 +533,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--udp-dir", type=Path, default=DEFAULT_UDP_DIR)
     p.add_argument("--lines-dir", type=Path, default=DEFAULT_LINES_DIR)
     p.add_argument("--top-n", type=int, default=5, help="candidate terms per gold-workbook line")
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "overwrite sheets even when the corpus on disk is smaller than the one "
+            "they were built from"
+        ),
+    )
     return p
 
 
@@ -483,17 +582,45 @@ def main(argv: Any = None) -> int:
         "single-word terms hit"
     )
 
+    if not args.force:
+        previous = _read_corpus_meta(args.vocab_dir)
+        if previous and previous.get("documents", 0) > stats["documents"]:
+            print(
+                f"[refuse] the committed sheets were built from "
+                f"{previous['documents']} document(s); only {stats['documents']} "
+                f"are on disk now.\n"
+                f"         Writing would replace real evidence with a smaller "
+                f"corpus's numbers.\n"
+                f"         The real reports are not tracked in git (issue #19 "
+                f"attachment) — restore them to\n"
+                f"         {args.udp_dir} and {args.lines_dir}, or pass --force if "
+                f"shrinking is intended."
+            )
+            return 1
+
+    written: List[str] = []
+
     if args.term_evidence or args.all:
         _write_csv(args.vocab_dir / "corpus_term_evidence.csv", rows, TERM_EVIDENCE_COLUMNS)
+        written.append("corpus_term_evidence.csv")
 
     if args.branch_evidence or args.all:
         per_source = vb._load_flat(args.vocab_dir)
-        rows = corpus_branch_evidence_rows(per_source, manager, args.udp_dir)
+        rows = corpus_branch_evidence_rows(per_source, manager, args.udp_dir, nested=nested)
         _write_csv(args.vocab_dir / "corpus_branch_evidence.csv", rows, BRANCH_EVIDENCE_COLUMNS)
+        written.append("corpus_branch_evidence.csv")
 
     if args.gold_workbook or args.all:
         rows = gold_workbook_rows(nested, args.lines_dir, args.udp_dir, top_n=args.top_n)
         _write_csv(args.vocab_dir / "gold_workbook.csv", rows, GOLD_WORKBOOK_COLUMNS)
+        written.append("gold_workbook.csv")
+
+    # Merged with any previously recorded sheet list: running one report must not
+    # drop the provenance of sheets an earlier run wrote from the same corpus.
+    previous = _read_corpus_meta(args.vocab_dir) or {}
+    if previous.get("documents") == stats["documents"]:
+        written = list(set(written) | set(previous.get("sheets") or []))
+    _write_corpus_meta(args.vocab_dir, stats, written)
 
     return 0
 
