@@ -463,7 +463,7 @@ def test_find_composite_links_pairs_a_composite_with_its_standalone_component():
 
 
 def test_find_composite_links_ignores_a_component_nobody_offers():
-    """"brod" is not a standalone entry here, so only the "most" half is a pair —
+    """ "brod" is not a standalone entry here, so only the "most" half is a pair —
     a composite whose components are all unoffered produces nothing at all."""
     nested = _nested_copy()
     del nested["Feature"]["most"]

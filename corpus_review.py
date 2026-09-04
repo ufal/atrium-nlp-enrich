@@ -5,15 +5,20 @@ questions, and the annotation workbook the D1/D2 evaluation rubric needs.
 
 @motyc's own standard for excluding a TEATER branch is evidence from enrichment
 results, not a priori judgement ("I would exclude branches primarily on the basis of
-evidence from the enrichment results" — M3). There is currently no such evidence, and
-no way to produce it against real data in this checkout: it carries three synthetic
-demo documents (``data_samples/{ALTO,DOC_LINE_CATEG,UDP,...}/CTX00000000{1,2,3}``),
-not the 16 real reports / ~618 lines the thread's own numbers refer to
-(``agent_dev_logs/issues/2026-07-17.19.issue.open.md``). Those exist only as a zip
-attachment on issue #19 and in a gitignored ``TEMP/`` tree — not in this repository.
+evidence from the enrichment results" — M3). This module produces exactly that
+evidence, from whatever corpus is on disk when it runs.
 
-So this is a GENERATOR, not evidence. It is built and unit-tested against the
-synthetic corpus now, ready to run the moment the real documents are committed:
+How much that is worth depends entirely on what is present. The repository itself
+tracks only three synthetic demo documents
+(``data_samples/{ALTO,DOC_LINE_CATEG,UDP,...}/CTX00000000{1,2,3}`` — 69 words), on
+which these reports are a smoke test and nothing more. The real reports
+(``CTX192100040``, ``CTX195603828``, … — the 16 documents / ~618 lines the thread's
+numbers refer to, ``agent_dev_logs/issues/2026-07-17.19.issue.open.md``) arrive as a
+zip attachment on issue #19 and land in ``data_samples/DOC_LINE_CATEG`` +
+``data_samples/UDP`` without being committed. When they are present the same commands
+produce real evidence over the full corpus; nothing here needs changing between the
+two cases, and no report states a fixed hit count, precisely so a number computed
+over three placeholders can never be mistaken for one computed over real reports.
 
     python3 corpus_review.py --term-evidence     # per-term corpus hits
     python3 corpus_review.py --branch-evidence   # per-excluded-branch roll-up (O3/O4)
@@ -26,14 +31,14 @@ compute this. Surface matching would both miss real hits (Czech is heavily infle
 "středověku" never equals the vocabulary's "středověk") and risks manufacturing false
 ones on a larger corpus by substring luck. See :func:`_form_lemma_map` for the
 mechanism, and single-word vocabulary terms only — phrase-level matching
-("zlomek keramiky") is future work once the real corpus exists and the effort is
-worth it; that limitation is reported in the output, not hidden.
+("zlomek keramiky") is future work; that limitation is reported in the output, not
+hidden.
 
-On the committed synthetic corpus (69 words, 61 distinct non-punctuation lemmas) this
-currently finds exactly 4 hits: hradiště, keramika, sonda, středověk. That is the
-honest ceiling of what "evidence" can mean here until the real documents land —
-running these reports against three placeholder documents and calling the result
-"evidence" would be worse than not having a number at all.
+Every run prints its own corpus size (documents, tokens, distinct lemmas, terms hit)
+before writing anything, so any figure taken from these sheets can be quoted together
+with the corpus it came from. Read that line first: the same sheet over three
+placeholder documents and over the full 19-document set are not comparable numbers,
+and only the second is evidence in the sense M3 means.
 """
 
 from __future__ import annotations
@@ -466,14 +471,19 @@ def main(argv: Any = None) -> int:
 
     nested = shipped_nested(args.vocab_dir, manager)
 
+    # Printed for EVERY report, not just --term-evidence: a figure from any of these
+    # sheets is only interpretable next to the corpus it was computed over, and the
+    # difference between three placeholder documents and the full report set is the
+    # difference between a smoke test and the evidence M3 asks for.
+    rows, stats = corpus_term_evidence_rows(nested, args.udp_dir, args.lines_dir)
+    print(
+        f"  [corpus] {stats['documents']} document(s), {stats['total_tokens']} tokens, "
+        f"{stats['distinct_lemmas']} distinct lemmas, "
+        f"{stats['terms_with_hits']}/{stats['vocabulary_single_word_terms']} "
+        "single-word terms hit"
+    )
+
     if args.term_evidence or args.all:
-        rows, stats = corpus_term_evidence_rows(nested, args.udp_dir, args.lines_dir)
-        print(
-            f"  [corpus] {stats['documents']} document(s), {stats['total_tokens']} tokens, "
-            f"{stats['distinct_lemmas']} distinct lemmas, "
-            f"{stats['terms_with_hits']}/{stats['vocabulary_single_word_terms']} "
-            "single-word terms hit"
-        )
         _write_csv(args.vocab_dir / "corpus_term_evidence.csv", rows, TERM_EVIDENCE_COLUMNS)
 
     if args.branch_evidence or args.all:
