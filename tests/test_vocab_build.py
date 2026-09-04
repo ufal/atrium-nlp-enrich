@@ -172,3 +172,73 @@ def test_committed_artifacts_match_a_fresh_build():
         "taxonomy_config.json/taxonomy_overrides.json — run "
         "`python3 vocab_build.py --from-flat` and commit the result."
     )
+
+
+# ── audit/nested split: sub and same_as_count close the hand-join gap ───────────────
+
+
+def test_audit_row_carries_the_relabelled_sub():
+    """The audit used to have `theme`/`placed_by` but not `sub`, while the nested JSON
+    had `sub` but not the placement reason — a reviewer had to join the two files by
+    hand to see both. `sub` in the audit must be the *relabelled* sub-header the prompt
+    actually renders (via `heslar_labels`), not the raw heslar/scheme name, so it reads
+    identically to `nested[theme][cs]["sub"]`."""
+    nested, audit = _built_union()
+    row = next(r for r in audit if r["cs"] == "kostel")
+    assert row["sub"] == nested["Feature"]["kostel"]["sub"]
+    assert row["sub"], "sub must be non-empty for a term with a heslar/scheme"
+
+
+def test_audit_same_as_count_matches_the_attached_links():
+    """`same_as_count` cannot be known inside build_nested() — composite links are only
+    resolved by attach_same_as() after nesting (they can span two facets or two
+    sources). vb._with_same_as_counts() joins the two back together on (theme, cs),
+    which is exact because audit and nested are 1:1 by construction."""
+    from vocab_manager import attach_same_as
+
+    nested, audit = _built_union()
+    same_as_links = attach_same_as(nested)
+    assert same_as_links > 0
+
+    enriched = vb._with_same_as_counts(audit, nested)
+    assert len(enriched) == len(audit)
+
+    for row in enriched:
+        entry = nested[row["theme"]][row["cs"]]
+        assert row["same_as_count"] == len(entry.get("same_as") or [])
+
+    # A known composite pair: "most/brod" links to standalone "most".
+    most_brod = next(r for r in enriched if r["cs"] == "most/brod")
+    assert most_brod["same_as_count"] >= 1
+
+
+def test_audit_text_defaults_same_as_count_when_absent():
+    """A caller that builds an audit list straight from build_nested() and never calls
+    _with_same_as_counts() (e.g. a test, or a future report) must still get a valid CSV
+    — same_as_count defaults to 0 rather than raising KeyError."""
+    row = {
+        "cs": "x",
+        "en": "y",
+        "source": "amcr",
+        "source_id": "1",
+        "scheme": "s",
+        "sub": "",
+        "theme": "Feature",
+        "placed_by": "heslar:s",
+    }
+    text = vb._audit_text([row])
+    assert text.splitlines()[0] == ",".join(vb._AUDIT_COLUMNS)
+    assert text.splitlines()[1].endswith(",0")
+
+
+def test_shipped_audit_csv_has_sub_and_same_as_count():
+    """Integration check against the real committed artifact, not just the in-memory
+    rebuild — this is the file a reviewer actually opens."""
+    import csv
+
+    if not (VOCAB_DIR / "union_placement_audit.csv").exists():
+        pytest.skip("union_placement_audit.csv not present in this checkout")
+    with open(VOCAB_DIR / "union_placement_audit.csv", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert set(vb._AUDIT_COLUMNS) <= set(rows[0].keys())
+    assert sum(1 for r in rows if int(r["same_as_count"]) > 0) > 0

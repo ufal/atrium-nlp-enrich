@@ -208,17 +208,58 @@ def _filter_excluded(
     return [r for r in records if not manager.is_excluded(r.as_dict())]
 
 
+_AUDIT_COLUMNS = (
+    "cs",
+    "en",
+    "source",
+    "source_id",
+    "scheme",
+    "sub",
+    "theme",
+    "placed_by",
+    "same_as_count",
+)
+
+
 def _audit_text(rows: Sequence[Dict[str, Any]]) -> str:
+    """``sub`` (added alongside ``theme``/``placed_by`` in ``build_nested``) and
+    ``same_as_count`` close the audit/nested split a reviewer used to have to bridge by
+    hand: before this, the audit CSV had the placement *reason* but not the sub-header
+    a term actually renders under, and the nested JSON had ``sub``/``same_as`` but not
+    the reason. ``same_as_count`` defaults to 0 via ``.get`` — ``build_nested`` cannot
+    know it (composite links are only resolved after nesting, by
+    :func:`vocab_manager.attach_same_as`; see ``main()`` below), so callers that build
+    an audit list directly from ``build_nested`` and never enrich it still get a valid
+    CSV rather than a ``KeyError``.
+    """
     import io
 
     buf = io.StringIO(newline="")
     writer = csv.writer(buf, lineterminator="\n")
-    writer.writerow(["cs", "en", "source", "source_id", "scheme", "theme", "placed_by"])
+    writer.writerow(_AUDIT_COLUMNS)
     for row in sorted(rows, key=lambda r: (r["source"], r["theme"], r["cs"])):
         writer.writerow(
-            [row[c] for c in ("cs", "en", "source", "source_id", "scheme", "theme", "placed_by")]
+            [row.get(c, "") if c != "same_as_count" else row.get(c, 0) for c in _AUDIT_COLUMNS]
         )
     return buf.getvalue()
+
+
+def _with_same_as_counts(
+    audit: Sequence[Dict[str, Any]], nested: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """Join each audit row to its ``same_as`` link count in the just-nested vocabulary.
+
+    Keyed on ``(theme, cs)`` — audit's ``theme`` is exactly which facet the term landed
+    in and ``cs`` is the enum key (post-qualifier-split), so ``nested[theme][cs]`` is
+    the same entry the row describes; audit and nested are 1:1 by construction (every
+    surviving term gets exactly one audit row and one nested entry). Must run after
+    :func:`vocab_manager.attach_same_as`, which is what populates ``same_as`` at all.
+    """
+    out = []
+    for row in audit:
+        entry = nested.get(row["theme"], {}).get(row["cs"], {})
+        out.append({**row, "same_as_count": len(entry.get("same_as") or [])})
+    return out
 
 
 def _stats(nested: Dict[str, Any], audit: Sequence[Dict[str, Any]]) -> None:
@@ -335,6 +376,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # after nesting, since a pair can span two facets or two sources and is only
         # resolvable once dedup and placement have already happened.
         same_as_links = attach_same_as(nested)
+        audit = _with_same_as_counts(audit, nested)
         last_nested = nested
         meta = _base_meta(args.config, manager.overrides_path)
         meta["sources"] = [per_source[s][1] for s in per_source if s in ("amcr", "teater")]

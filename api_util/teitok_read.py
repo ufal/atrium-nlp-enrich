@@ -92,7 +92,12 @@ def read_teitok_tokens(path: str | Path) -> list[dict]:
                 {
                     "form": tok.text or "",
                     "lemma": tok.get("lemma", ""),
-                    "upos": tok.get("pos", tok.get("type", "")),
+                    # Real TEITOK output (data_samples/TEITOK/*.teitok.xml) spells this
+                    # `upos=`, not `pos=`/`type=` -- `type` is "w"/"pc" (word vs.
+                    # punctuation), never a UPOS tag. The old fallback chain always hit
+                    # `type` and returned "w"/"pc" for every token, so keywords.py's
+                    # NOUN/PROPN/ADJ filter silently matched nothing on this path.
+                    "upos": tok.get("upos", ""),
                     "space_after": tok.get("join") != "right" and tok.get("spaceAfter") != "No",
                 }
             )

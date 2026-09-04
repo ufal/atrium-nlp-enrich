@@ -537,6 +537,12 @@ class VocabularyManager:
                     print(f"  [LLM] Re-classified '{cs_key}' → {theme}")
 
             if audit is not None:
+                # Relabelled the same way `entry["sub"]` is below, so a reviewer reading
+                # the audit CSV sees the same sub-header the prompt actually renders,
+                # not the raw heslar/scheme name it started from. Recorded here (not
+                # copied from `entry`) because `entry` is only built past the
+                # EXCLUDE_THEME guard below, and this stays correct either way.
+                raw_sub = pair.get("sub") or ""
                 audit.append(
                     {
                         "cs": cs_key,
@@ -544,6 +550,7 @@ class VocabularyManager:
                         "source": pair.get("source", ""),
                         "source_id": pair.get("source_id", ""),
                         "scheme": pair.get("scheme", ""),
+                        "sub": heslar_labels.get(raw_sub, raw_sub),
                         "theme": theme,
                         "placed_by": rule,
                     }

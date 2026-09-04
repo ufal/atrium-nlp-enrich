@@ -74,7 +74,9 @@ def test_gloss_similarity_matches_regardless_of_which_side_a_set_iterates_first(
     search depend on argument order); group_dissimilarity iterates a *set* of
     glosses, whose iteration order Python does not guarantee, so gloss_similarity
     itself must not depend on which argument comes first."""
-    assert vr.gloss_similarity("hearth", "fire place") == vr.gloss_similarity("fire place", "hearth")
+    assert vr.gloss_similarity("hearth", "fire place") == vr.gloss_similarity(
+        "fire place", "hearth"
+    )
 
 
 def test_group_dissimilarity_single_gloss_group_is_not_flagged():
@@ -243,3 +245,320 @@ def test_main_all_writes_three_csvs(tmp_path, monkeypatch):
 
 def test_main_with_no_flags_is_a_usage_error(capsys):
     assert vr.main([]) == 2
+
+
+# ── collision_review_rows enrichment: source metadata + aat_verdict ─────────────
+
+
+def test_collision_review_carries_source_metadata_columns():
+    """The flat harvests hold note_cs/alt_cs/alt_en/de/uri/exact_match on every
+    VocabRecord, and none of it reached a review sheet before this — a homonym
+    verdict was being issued from a bare EN gloss while a disambiguating scope note
+    sat in the committed flat file. zámek's TEATER 2358 record is the concrete case:
+    its note_cs is what actually explains why it means "lock", not "châteaux"."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    filtered = [
+        r for name, (recs, _m) in per_source.items() for r in vb._filter_excluded(recs, manager)
+    ]
+    label_index = vr._label_index(per_source)
+    rows = vr.collision_review_rows(filtered, manager, label_index=label_index)
+
+    for col in ("note_cs", "alt_cs", "alt_en", "de", "uri", "broader_labels", "exact_match"):
+        assert col in rows[0]
+
+    lock = next(
+        r for r in rows if r["cs"] == "zámek" and r["source"] == "teater" and r["id"] == "2358"
+    )
+    assert "uzavírání dveří" in lock["note_cs"]
+    assert lock["de"] == "Schloss (s)"
+
+
+def test_collision_review_aat_verdict_distribution_reconciles():
+    """Verified against the shipped union vocabulary's 127 differing-gloss groups.
+    Only conflicting/agreeing are strong signal; a regression in _aat_verdict's
+    threshold would silently change which ~20 groups a reviewer can bulk-handle."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    filtered = [
+        r for name, (recs, _m) in per_source.items() for r in vb._filter_excluded(recs, manager)
+    ]
+    rows = vr.collision_review_rows(filtered, manager)
+
+    import collections
+
+    by_group = collections.OrderedDict()
+    for r in rows:
+        by_group.setdefault(r["cs"], r["aat_verdict"])
+    counts = collections.Counter(by_group.values())
+    assert counts == {"agreeing": 17, "none": 46, "one_sided": 61, "conflicting": 3}
+
+
+def test_aat_verdict_conflicting_when_getty_alignments_disagree():
+    a = vs.VocabRecord(
+        cs="x", en="p", source="amcr", source_id="1", exact_match=("http://getty/A",)
+    )
+    b = vs.VocabRecord(
+        cs="x", en="q", source="teater", source_id="2", exact_match=("http://getty/B",)
+    )
+    assert vr._aat_verdict([a, b]) == "conflicting"
+
+
+def test_aat_verdict_agreeing_when_getty_alignments_share_a_uri():
+    a = vs.VocabRecord(
+        cs="x",
+        en="p",
+        source="amcr",
+        source_id="1",
+        exact_match=("http://getty/A", "http://getty/shared"),
+    )
+    b = vs.VocabRecord(
+        cs="x", en="q", source="teater", source_id="2", exact_match=("http://getty/shared",)
+    )
+    assert vr._aat_verdict([a, b]) == "agreeing"
+
+
+def test_aat_verdict_one_sided_and_none():
+    a = vs.VocabRecord(
+        cs="x", en="p", source="amcr", source_id="1", exact_match=("http://getty/A",)
+    )
+    b = vs.VocabRecord(cs="x", en="q", source="teater", source_id="2")
+    assert vr._aat_verdict([a, b]) == "one_sided"
+    assert vr._aat_verdict([b]) == "none"
+
+
+def test_render_broader_uses_labels_and_falls_back_to_ids():
+    r = vs.VocabRecord(cs="x", en="y", source="teater", source_id="9", broader=("1267", "999"))
+    index = {("teater", "1267"): "6) Areál aktivity / Activity area"}
+    assert vr._render_broader(r, index) == "6) Areál aktivity / Activity area > 999"
+    assert vr._render_broader(r, {}) == "1267 > 999"
+
+
+def test_render_broader_empty_when_no_ancestors():
+    r = vs.VocabRecord(cs="x", en="y", source="amcr", source_id="1")
+    assert vr._render_broader(r, {}) == ""
+
+
+# ── exclusion_impact_rows: override-driven exclusions are not silently dropped ──
+
+
+def test_exclusion_impact_includes_override_exclusions():
+    """Defect fix: the filter used to keep only rule.startswith(('heslar:', 'teater:')),
+    so a per-term exclusion via taxonomy_overrides.json would be missing from the sheet
+    entirely — latent today (no shipped override excludes anything), so this test
+    fabricates one rather than relying on real data."""
+    manager = _shipped_manager()
+    manager.overrides[("amcr", "FAKE-999")] = {
+        "facet": "__exclude__",
+        "reason": "fabricated for the override-exclusion regression test",
+    }
+    fake = vs.VocabRecord(
+        cs="fake term", en="fake gloss", source="amcr", source_id="FAKE-999", scheme="areal"
+    )
+    per_source = {"amcr": ([fake], {})}
+
+    rows = vr.exclusion_impact_rows(per_source, manager)
+    row = next(r for r in rows if r["rule"] == "override:amcr:FAKE-999")
+    assert row["term_count"] == 1
+    assert row["status"] == "settled (per-term override)"
+    assert row["stated_reason"] == "fabricated for the override-exclusion regression test"
+
+
+def test_exclusion_impact_override_status_is_distinct_from_m4():
+    """An override-driven exclusion must never be silently folded into 'settled (M4)'
+    — M4 names a specific, already-ruled-on class of AMCR technical lists, and an
+    override could exclude anything."""
+    manager = _shipped_manager()
+    manager.overrides[("teater", "FAKE-1")] = {"facet": "__exclude__", "reason": ""}
+    fake = vs.VocabRecord(
+        cs="fake teater term",
+        en="fake gloss",
+        source="teater",
+        source_id="FAKE-1",
+        broader=("1050",),
+    )
+    per_source = {"teater": ([fake], {})}
+    rows = vr.exclusion_impact_rows(per_source, manager)
+    row = next(r for r in rows if r["rule"] == "override:teater:FAKE-1")
+    assert row["status"] != "settled (M4)"
+
+
+# ── teater_subbranch_impact_rows (O3/O4, finer grain than exclusion_impact) ─────
+
+
+def test_subbranch_impact_decomposes_only_excluded_depth1_roots():
+    """Exactly the 5 real excluded depth-1 roots (1, 288, 2557, 3094, 3549) decompose
+    into 23 sub-branch rows in total — matching the '23 deferred rows' the domain
+    review itself named. A currently-kept root (e.g. 1050 Chronology) must never
+    appear, and neither must a leaf inside an already-finest-grain sub-branch (2560
+    etnika's own ~390 individual ethnic-group names must not explode into rows)."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    rows = vr.teater_subbranch_impact_rows(per_source, manager)
+
+    assert len(rows) == 23
+    assert set(r["root"] for r in rows) == {"1", "288", "2557", "3094", "3549"}
+    # 2560 (etnika) is a sub-branch of 2557 and is included once; its own leaf
+    # children (individual ethnic-group names) must not be decomposed further.
+    assert "2560" not in {r["root"] for r in rows}
+
+
+def test_subbranch_impact_children_plus_root_reconciles_with_exclusion_impact():
+    """Sum of a root's children's term_count, plus the root's own single record
+    (which exclusion_impact_rows counts too, since it has its own cs/en), must equal
+    exclusion_impact.csv's coarser per-root figure exactly -- the two sheets describe
+    the same terms at different granularity and must never silently disagree.
+
+    2557 is the deliberate exception: unlike the other four roots, ALL five of its
+    children (2558/2560/2900/3076/3091) are THEMSELVES individually-mapped
+    teater_branch_map keys, so assign_theme's most-specific-first walk routes every
+    descendant to a child rule and never falls back to "teater:2557" -- that rule
+    then covers only 2557's own single record. Reconciling the sum-of-children with
+    that root would be reconciling against the wrong thing.
+    """
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    sub_rows = vr.teater_subbranch_impact_rows(per_source, manager)
+    root_rows = vr.exclusion_impact_rows(per_source, manager)
+    root_totals = {r["rule"]: r["term_count"] for r in root_rows}
+
+    by_root = {}
+    for r in sub_rows:
+        by_root[r["root"]] = by_root.get(r["root"], 0) + r["term_count"]
+
+    for root, children_total in by_root.items():
+        if root == "2557":
+            assert root_totals["teater:2557"] == 1
+            continue
+        assert children_total + 1 == root_totals[f"teater:{root}"], root
+
+
+def test_subbranch_impact_guardrail_conflict_matches_status_geo_ethnic():
+    """Only 2560/2900/3076 carry the guardrail conflict at sub-branch grain -- 2558
+    (battles) and 3091 (wars) sit in the same parent branch but are not geographic,
+    ethnic, or dynastic, so they must read False even though their parent (2557) is
+    the guardrail-conflicting family."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    rows = vr.teater_subbranch_impact_rows(per_source, manager)
+    by_id = {r["subbranch"]: r["guardrail_conflict"] for r in rows}
+    assert by_id["2560"] is True
+    assert by_id["2900"] is True
+    assert by_id["3076"] is True
+    assert by_id["2558"] is False
+    assert by_id["3091"] is False
+
+
+def test_teater_children_index_builds_expected_adjacency():
+    a = vs.VocabRecord(cs="root", en="root", source="teater", source_id="1")
+    b = vs.VocabRecord(cs="child", en="child", source="teater", source_id="2", broader=("1",))
+    c = vs.VocabRecord(
+        cs="grandchild", en="grandchild", source="teater", source_id="3", broader=("1", "2")
+    )
+    index = vr._teater_children_index([a, b, c])
+    assert index["1"] == ["2"]
+    assert index["2"] == ["3"]
+
+
+def test_teater_subtree_includes_the_node_itself():
+    a = vs.VocabRecord(cs="root", en="root", source="teater", source_id="1")
+    b = vs.VocabRecord(cs="child", en="child", source="teater", source_id="2", broader=("1",))
+    c = vs.VocabRecord(cs="other", en="other", source="teater", source_id="9")
+    subtree = vr._teater_subtree([a, b, c], "1")
+    assert {r.source_id for r in subtree} == {"1", "2"}
+
+
+# ── reinstatement_preview_rows (O3/O4, the go/no-go numbers) ────────────────────
+
+
+def test_reinstatement_preview_never_mutates_the_config_or_the_manager():
+    """The preview must be pure: it answers 'what if' without writing anything to
+    taxonomy_config.json or changing the manager's own settings, so a reviewer can
+    run it freely without any risk of it silently becoming the real build."""
+    _require_flat()
+    import hashlib
+
+    before = hashlib.sha256(CONFIG.read_bytes()).hexdigest()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+
+    vr.reinstatement_preview_rows(per_source, manager)
+
+    after = hashlib.sha256(CONFIG.read_bytes()).hexdigest()
+    assert before == after
+    assert manager.settings["teater_branch_map"]["2560"] == "__exclude__"
+
+
+def test_reinstatement_preview_covers_exactly_the_same_rules_as_exclusion_impact():
+    """The two O3/O4 sheets must describe the same set of excluded rules -- one at a
+    glance (exclusion_impact.csv), one with the go/no-go numbers
+    (reinstatement_preview.csv) -- or a reviewer could read one and miss a rule the
+    other one covers."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    exclusion_rules = {r["rule"] for r in vr.exclusion_impact_rows(per_source, manager)}
+    preview_rules = {r["rule"] for r in vr.reinstatement_preview_rows(per_source, manager)}
+    assert exclusion_rules == preview_rules
+
+
+def test_reinstatement_preview_raw_count_matches_exclusion_impact_term_count():
+    """The two sheets must never disagree about how big a rule's raw pool is -- they
+    are both built from the same _excluded_buckets(), so a mismatch would mean the
+    shared bucketing itself is inconsistent between calls."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    exclusion_by_rule = {
+        r["rule"]: r["term_count"] for r in vr.exclusion_impact_rows(per_source, manager)
+    }
+    for row in vr.reinstatement_preview_rows(per_source, manager):
+        assert row["raw_count"] == exclusion_by_rule[row["rule"]], row["rule"]
+
+
+def test_reinstatement_preview_usable_and_collide_never_exceed_raw():
+    """usable_count + collides_with_offered can fall short of raw_count (a branch can
+    have its own internal duplicate labels, absorbed before either bucket), but can
+    never exceed it -- every eligible record contributes to at most one bucket."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    for row in vr.reinstatement_preview_rows(per_source, manager):
+        assert row["usable_count"] + row["collides_with_offered"] <= row["raw_count"]
+        assert row["usable_count"] >= 0
+        assert row["collides_with_offered"] >= 0
+
+
+def test_reinstatement_preview_etnika_adds_the_full_391():
+    """Cross-check against the exact figure verified during investigation: 2560
+    (etnika) collides with nothing already offered, so reinstating it alone would add
+    all 391 terms net-new -- matching the in-memory reinstatement probe this sheet's
+    design was validated against."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    row = next(
+        r for r in vr.reinstatement_preview_rows(per_source, manager) if r["rule"] == "teater:2560"
+    )
+    assert row["usable_count"] == 391
+    assert row["collides_with_offered"] == 0
+    assert row["guardrail_conflict"] is True
+
+
+def test_reinstatement_preview_would_be_facet_is_left_blank_for_the_reviewer():
+    """P2: the tool never picks a facet on a reviewer's behalf."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    rows = vr.reinstatement_preview_rows(per_source, manager)
+    assert all(row["would_be_facet"] == "" for row in rows)
+
+
+def test_approx_prompt_chars_matches_the_rendered_shape():
+    assert vr._approx_prompt_chars("kostel", "church") == len("kostel (church)") + 2
+    assert vr._approx_prompt_chars("x", None) == len("x ()") + 2

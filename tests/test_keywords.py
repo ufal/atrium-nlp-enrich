@@ -14,15 +14,22 @@ TEITOK_MOCK_CONTENT = """<?xml version="1.0" encoding="UTF-8"?>
 <teiCorpus>
     <text>
         <s>
-            <tok lemma="archeologický" pos="ADJ">Archeologický</tok>
-            <tok lemma="výzkum" pos="NOUN">výzkum</tok>
-            <tok lemma="v" pos="ADP">v</tok>
-            <tok lemma="Praha" pos="PROPN">Praze</tok>
-            <tok lemma="." pos="PUNCT">.</tok>
+            <tok lemma="archeologický" upos="ADJ">Archeologický</tok>
+            <tok lemma="výzkum" upos="NOUN">výzkum</tok>
+            <tok lemma="v" upos="ADP">v</tok>
+            <tok lemma="Praha" upos="PROPN">Praze</tok>
+            <tok lemma="." upos="PUNCT">.</tok>
         </s>
     </text>
 </teiCorpus>
 """
+# `upos=`, not `pos=`: real TEITOK output (api_util/teitok_alto.py:459,
+# data_samples/TEITOK/*.teitok.xml) spells it `upos=` -- this mock used to carry the
+# wrong attribute name and still passed, because api_util/teitok_read.py's old
+# `tok.get("pos", tok.get("type", ""))` happened to read `pos` successfully here. Real
+# generated files have no `pos=` at all, so that same code silently fell through to
+# `type` ("w"/"pc") on every actual document, which is the defect this fixture change
+# and the teitok_read.py fix (issue #6 supplementary review) together catch.
 
 
 class TestTEITOKDispatch:
