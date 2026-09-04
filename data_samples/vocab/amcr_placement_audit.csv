@@ -89,7 +89,7 @@ vodní dílo,hydraulic structure,amcr,HES-000082,areal,areál aktivity,Activity 
 vojenský tábor,military camp,amcr,HES-000046,areal,areál aktivity,Activity Area,heslar:areal,0
 výroba,production activity,amcr,HES-000003,aktivita,aktivita,Activity Area,heslar:aktivita,0
 výšinné sídliště,hill settlement,amcr,HES-000069,areal,areál aktivity,Activity Area,heslar:areal,0
-zahrada,garden,amcr,HES-000526,objekt_druh,druh objektu,Activity Area,override:amcr:HES-000526,1
+zahrada,garden,amcr,HES-000526,objekt_druh,areál aktivity,Activity Area,override:amcr:HES-000526,1
 zahrada/sad,garden,amcr,HES-000040,areal,areál aktivity,Activity Area,heslar:areal,1
 zaniklý/historický areál,deserted/historical site,amcr,HES-000134,lokalita_druh_kat,druh lokality (kategorie),Activity Area,heslar:lokalita_druh_kat,0
 zničený prostor,destroyed site,amcr,HES-000063,areal,areál aktivity,Activity Area,heslar:areal,0
@@ -457,7 +457,7 @@ brána,gate,amcr,HES-000529,objekt_druh,druh objektu,Feature,heslar:objekt_druh,
 budova hospodářská,non-residential building,amcr,HES-000440,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 budova obytná,residential building,amcr,HES-000439,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 budova/stavba,building/structure,amcr,HES-000438,objekt_druh,druh objektu,Feature,heslar:objekt_druh,2
-cesta,roads,amcr,HES-000048,areal,areál aktivity,Feature,override:amcr:HES-000048,0
+cesta,roads,amcr,HES-000048,areal,druh objektu,Feature,override:amcr:HES-000048,0
 chodba,corridor,amcr,HES-000494,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 cisterna,cistern,amcr,HES-000445,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 destrukční vrstva/souvrství,destruction layer/sequence,amcr,HES-000454,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
@@ -483,12 +483,12 @@ jáma stavební,construction pit,amcr,HES-000443,objekt_druh,druh objektu,Featur
 jáma zásobní,storage pit,amcr,HES-000444,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 kamna,stove,amcr,HES-000422,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 kanalizace,sewer,amcr,HES-000464,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
-kaple,chapel,amcr,HES-000020,areal,areál aktivity,Feature,override:amcr:HES-000020,0
+kaple,chapel,amcr,HES-000020,areal,druh objektu,Feature,override:amcr:HES-000020,0
 kašna,fountain,amcr,HES-000479,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 klenba,vaults,amcr,HES-000495,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 kolektor,collector,amcr,HES-000516,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 konstrukční prvek,architectural element,amcr,HES-000491,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
-kostel,church,amcr,HES-000021,areal,areál aktivity,Feature,override:amcr:HES-000021,0
+kostel,church,amcr,HES-000021,areal,druh objektu,Feature,override:amcr:HES-000021,0
 kostnice,ossuary,amcr,HES-000432,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 kovárna,blacksmith,amcr,HES-000546,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 kovářská výheň,forge,amcr,HES-000557,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
@@ -503,7 +503,7 @@ menhir,menhir,amcr,HES-000500,objekt_druh,druh objektu,Feature,heslar:objekt_dru
 mezní pás,field boundary,amcr,HES-000503,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 mezník/patník,milestone/boundary stone,amcr,HES-000522,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 milíř,charcoal kiln,amcr,HES-000554,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
-mlýn,mill,amcr,HES-000028,areal,areál aktivity,Feature,override:amcr:HES-000028,0
+mlýn,mill,amcr,HES-000028,areal,druh objektu,Feature,override:amcr:HES-000028,0
 mohyla,burial mound,amcr,HES-000431,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
 most,bridge,amcr,HES-000523,objekt_druh,druh objektu,Feature,heslar:objekt_druh,1
 motte,motte,amcr,HES-000531,objekt_druh,druh objektu,Feature,heslar:objekt_druh,0
@@ -606,7 +606,7 @@ ornice,arable topsoil,amcr,HES-000243,nalezove_okolnosti,nálezové okolnosti,Fi
 podorničí/podloží,subsoil,amcr,HES-000248,nalezove_okolnosti,nálezové okolnosti,Finds Context,heslar:nalezove_okolnosti,0
 povrch,surface,amcr,HES-000242,nalezove_okolnosti,nálezové okolnosti,Finds Context,heslar:nalezove_okolnosti,0
 přirozený půdní horizont,natural topsoil,amcr,HES-000246,nalezove_okolnosti,nálezové okolnosti,Finds Context,heslar:nalezove_okolnosti,0
-přírodní útvar,natural landform,amcr,HES-000470,objekt_druh,druh objektu,Finds Context,override:amcr:HES-000470,0
+přírodní útvar,natural landform,amcr,HES-000470,objekt_druh,nálezové okolnosti,Finds Context,override:amcr:HES-000470,0
 vodní plocha/tok,water body/stream,amcr,HES-000249,nalezove_okolnosti,nálezové okolnosti,Finds Context,heslar:nalezove_okolnosti,0
 bez ochrany,unprotected,amcr,HES-000175,pamatkova_ochrana,památková ochrana,Location & Admin,heslar:pamatkova_ochrana,0
 historická budova/komplex,historical building/complex,amcr,HES-001457,stav_dochovani,stav dochování lokality,Location & Admin,heslar:stav_dochovani,0

@@ -15,7 +15,7 @@
     "same_as_links": 0,
     "total": 1692
   },
-  "generated_utc": "2026-09-04T07:32:19Z",
+  "generated_utc": "2026-09-04T08:46:48Z",
   "generator": "vocab_build.py",
   "schema_version": 1,
   "sources": [
@@ -44,11 +44,11 @@
   ],
   "taxonomy_config": {
     "path": "data_samples/taxonomy_config.json",
-    "sha256": "6c5272d65d40ef971e2040809ac86b1d2326fe3b3c71755be1236c89ee80ba74"
+    "sha256": "67311c309cc03923873c65cd0092562f245248dc40ca2f54d74d2bcdcee73f09"
   },
   "taxonomy_overrides": {
     "path": "data_samples/taxonomy_overrides.json",
-    "sha256": "c3516909443d41548f46aac60de8156c44168e3377a3077e3d216a506c2f370c"
+    "sha256": "64c50c7d7c6d6c9f0331132a7eeeb2677c7f1e08f032af646e622e96fb53c541"
   },
   "tool_version": "v0.19.0"
 }

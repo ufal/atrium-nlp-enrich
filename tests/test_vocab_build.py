@@ -19,6 +19,7 @@ from vocab_manager import VocabularyManager
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VOCAB_DIR = REPO_ROOT / "data_samples" / "vocab"
 CONFIG = REPO_ROOT / "data_samples" / "taxonomy_config.json"
+OVERRIDES = REPO_ROOT / "data_samples" / "taxonomy_overrides.json"
 
 
 def _shipped_manager():
@@ -93,6 +94,30 @@ def test_a4_placement_overrides_take_effect(cs, expected_theme, winner_id):
     assert nested[expected_theme][cs]["source_id"] == winner_id
     row = next(r for r in audit if r["cs"] == cs)
     assert row["placed_by"] == f"override:amcr:{winner_id}"
+
+
+@pytest.mark.parametrize(
+    "cs,expected_theme,expected_sub",
+    [
+        ("kostel", "Feature", "druh objektu"),
+        ("kaple", "Feature", "druh objektu"),
+        ("mlýn", "Feature", "druh objektu"),
+        ("cesta", "Feature", "druh objektu"),
+        ("zahrada", "Activity Area", "areál aktivity"),
+        ("přírodní útvar", "Finds Context", "nálezové okolnosti"),
+    ],
+)
+def test_placement_overrides_also_carry_their_sub_header(cs, expected_theme, expected_sub):
+    """The six A4 records were moved by `facet` but kept the sub-header of the list they
+    were moved *out* of — `kostel` rendered as "Feature / areál aktivity". Each override
+    now names the sub-header too, and the target must already be a header that facet
+    uses, so the prompt does not grow a group with one term in it."""
+    nested, audit = _built_union()
+    assert nested[expected_theme][cs]["sub"] == expected_sub
+    assert next(r for r in audit if r["cs"] == cs)["sub"] == expected_sub
+
+    siblings = sum(1 for e in nested[expected_theme].values() if e.get("sub") == expected_sub)
+    assert siblings > 1, f"{expected_sub!r} would be a one-term sub-header in {expected_theme!r}"
 
 
 def test_muzeum_and_pamatkova_pece_subbranches_move_to_location_and_admin():
@@ -172,6 +197,43 @@ def test_committed_artifacts_match_a_fresh_build():
         "taxonomy_config.json/taxonomy_overrides.json — run "
         "`python3 vocab_build.py --from-flat` and commit the result."
     )
+
+
+# ── the geographic guardrail gate (issue #6, O4 / C1) ───────────────────────────
+
+
+def test_the_build_refuses_a_vocabulary_that_contradicts_the_prompt():
+    """A reinstated geographic branch and a prompt that still forbids selecting one is
+    the failure the O3/O4 package warns about — the scores would measure the
+    contradiction rather than the model. Caught at build time, before any artifact is
+    written, rather than showing up as an unexplained score."""
+    manager = _shipped_manager()
+    assert vb._check_geo_guardrail(manager) is None  # the shipped pair agrees
+
+    manager.taxonomy["_settings"]["teater_branch_map"]["2560"] = "Location & Admin"
+    with pytest.raises(SystemExit, match="teater:2560 is offered to the model"):
+        vb._check_geo_guardrail(manager)
+
+
+def test_the_gate_runs_before_anything_is_written(tmp_path, monkeypatch):
+    """`--check` never writes, but a real build does — so the gate has to sit ahead of
+    the first _emit, or a contradictory vocabulary reaches disk before anyone is told."""
+    if not (VOCAB_DIR / "amcr_flat.json").exists():
+        pytest.skip("flat artifacts not present in this checkout")
+
+    import json
+
+    config = json.loads(CONFIG.read_text(encoding="utf-8"))
+    config["_settings"]["teater_branch_map"]["2560"] = "Location & Admin"
+    del config["_settings"]["_exclusions"]["teater:2560"]
+    broken = tmp_path / "taxonomy_config.json"
+    broken.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+
+    emitted = []
+    monkeypatch.setattr(vb, "_emit", lambda path, *a, **k: emitted.append(path))
+    with pytest.raises(SystemExit, match="guardrail"):
+        vb.main(["--from-flat", "--config", str(broken), "--overrides", str(OVERRIDES)])
+    assert not [p for p in emitted if "nested" in p.name]
 
 
 # ── audit/nested split: sub and same_as_count close the hand-join gap ───────────────

@@ -38,6 +38,9 @@ DEFAULT_CONFIG = REPO_ROOT / "data_samples" / "taxonomy_config.json"
 # The path every consumer already points at (llm_config.txt, service/api.py, the hub's
 # e2e fixture). Kept stable so there is no flag day.
 LEGACY_NESTED = REPO_ROOT / "data_samples" / "teater_nested_vocab.json"
+# The module whose system prompt carries the geographic guardrail. Read, never written:
+# the clause stays in Python and this is a gate, not a generator (issue #6, O4 / C1).
+PROMPT_SOURCE = REPO_ROOT / "llm_run.py"
 
 SCHEMA_VERSION = 1
 CHECK_PLACEHOLDER = "<checked>"
@@ -193,6 +196,30 @@ def _nest(
     return nested, audit, collisions
 
 
+def _check_geo_guardrail(manager: VocabularyManager) -> None:
+    """Refuse to build a vocabulary that contradicts the prompt's geographic guardrail.
+
+    The clause ("NEVER select a country name, language name, or geographic region
+    name") and the excluded geographic branches are one decision held in two files.
+    Change either half alone and the scores measure the contradiction rather than the
+    model — which is why the O3/O4 decision package puts the two in the same change.
+    The build is where both halves are in scope, so it is where they are checked.
+
+    A missing prompt module is not an error: this repo's vocabulary artifacts are
+    copied into atrium-llm-enrich, where the prompt lives elsewhere. The vocabulary
+    half is still checked there.
+    """
+    source = PROMPT_SOURCE.read_text(encoding="utf-8") if PROMPT_SOURCE.exists() else None
+    problems = manager.geo_guardrail_problems(source)
+    if problems:
+        raise SystemExit(
+            "[guardrail] the vocabulary and the prompt disagree:\n  - "
+            + "\n  - ".join(problems)
+            + "\nSee data_samples/vocab/6.O3O4.decision-package.md; flip both halves or "
+            "neither."
+        )
+
+
 def _filter_excluded(
     records: Sequence[vs.VocabRecord], manager: VocabularyManager
 ) -> List[vs.VocabRecord]:
@@ -339,7 +366,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         config_path=str(args.config),
         overrides_path=str(args.overrides) if args.overrides else None,
     )
-    manager.validate_settings()
+    _check_geo_guardrail(manager)
+
+    # The build is the one place that has every harvested record, so it is the one
+    # place that can tell an override whose (source, id) no longer matches anything —
+    # a list renumbered upstream, or a typo'd id that has silently done nothing since
+    # the day it was written.
+    manager.validate_settings(
+        records=[r.as_dict() for records, _meta in per_source.values() for r in records]
+    )
     qualifiers = manager.qualifier_overrides()
 
     # B5 (issue #6, finding 3): drop excluded records *before* any dedup, so a term
@@ -375,7 +410,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # Scoring-time equivalence only (vocab_manager.attach_same_as docstring) — run
         # after nesting, since a pair can span two facets or two sources and is only
         # resolvable once dedup and placement have already happened.
-        same_as_links = attach_same_as(nested)
+        # `extra`/`suppress` are the reviewer's two corrections to what the label
+        # shape alone can tell — both config, so a wrong link is a taxonomy_overrides
+        # edit rather than a code change.
+        same_as_extra, same_as_suppress = manager.same_as_overrides()
+        same_as_links = attach_same_as(
+            nested,
+            separators=manager.composite_separators(),
+            extra=same_as_extra,
+            suppress=same_as_suppress,
+        )
         audit = _with_same_as_counts(audit, nested)
         last_nested = nested
         meta = _base_meta(args.config, manager.overrides_path)

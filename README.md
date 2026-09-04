@@ -919,6 +919,34 @@ the winning record's id survives, every other one is listed on it as `discarded_
 genuine homonym (M8). Guessing that from a differing English gloss alone would mistake
 ordinary translation variance for a real split far more often than it would catch one.
 
+**Every vocabulary decision is a config edit, not a code change.** The two JSON files
+are the whole surface a domain reviewer needs; nothing below requires touching Python:
+
+| In `taxonomy_config.json` → `_settings` | Decides                                                                                                           |
+|-----------------------------------------|-------------------------------------------------------------------------------------------------------------------|
+| `heslar_map`, `teater_branch_map`       | which facet a whole AMCR list or TEATER branch lands in, or `__exclude__`                                         |
+| `_exclusions`                           | why each exclusion stands, and whether it is `settled` or still open (`open_geo_ethnic` / `open_other`)           |
+| `geo_guardrail`                         | whether the prompt's "never select a country/language/region name" clause is in force, and which rules it reaches |
+| `nested_keep`                           | which harvested keys reach the prompt payload                                                                     |
+| `admin_stop_words`                      | what sorts to the back of a facet, and so what survives prompt truncation                                         |
+| `composite_separators`                  | what splits a composite `X/Y` label                                                                               |
+| `tie_break`, per-facet `priority`       | facet order — load-bearing, since the prompt truncates a *prefix*                                                 |
+
+| In `taxonomy_overrides.json`, per `(source, id)` | Decides                                                                                     |
+|--------------------------------------------------|---------------------------------------------------------------------------------------------|
+| `facet`                                          | one term's facet, including `"__exclude__"` to drop a single term from a list worth keeping |
+| `sub`                                            | one term's sub-header — otherwise a moved term keeps the header of the list it left         |
+| `qualifier_cs`                                   | pull a confirmed homonym out of its dedup group as `"<cs> (<qualifier>)"`                   |
+| `same_as` / `same_as_suppress`                   | add or drop a composite/component equivalence link; neither changes what the prompt offers  |
+
+`validate_settings()` refuses an edit that would not do what it says — an undeclared
+facet, a relabel for a list no map places, a reason for something nobody excludes, an
+unknown override key, a stale `(source, id)`, a pair both linked and suppressed — and
+reports every problem at once rather than one per rebuild. `vocab_build.py` additionally
+refuses to build a vocabulary that contradicts the prompt's geographic guardrail.
+[`data_samples/vocab/RUNBOOK.md`](data_samples/vocab/RUNBOOK.md) 📎 has the full decision
+table and the edit → rebuild → review loop.
+
 ```bash
 # stage 1 + 2, needs network access to aiscr.cz
 python3 vocab_build.py --source both --stats

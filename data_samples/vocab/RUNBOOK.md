@@ -138,8 +138,22 @@ that refusal is correct, not a failure to work around.
 
 ## Where a decision gets recorded
 
-| Decision                                           | Goes in                                                                                                                            |
-|----------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
-| A whole AMCR list / TEATER branch in or out        | `taxonomy_config.json` → `heslar_map` / `teater_branch_map` (+ a reason in `_exclusions`)                                          |
-| One term's facet, or a bracketed homonym qualifier | `taxonomy_overrides.json`, keyed on `(source, id)` — never on the bare label                                                       |
-| Nothing                                            | a generated CSV. Every sheet in this directory is rebuilt from the two files above; hand-editing one is discarded on the next run. |
+Every decision below is a config edit. None of them needs a code change, and the build
+refuses rather than guesses when an edit would not do what it says (`validate_settings`
+reports every problem at once, not one per rebuild).
+
+| Decision                                       | Goes in                                                                                                                                                      |
+|------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| A whole AMCR list / TEATER branch in or out    | `taxonomy_config.json` → `heslar_map` / `teater_branch_map`, **plus** a `_exclusions` entry stating `status` and `reason` when the value is `__exclude__`    |
+| Whether an exclusion is still an open question | `_exclusions[rule].status` — `settled`, `open_geo_ethnic` (Q1), `open_other` (Q2). Drives the `status` column of `exclusion_impact.csv`                      |
+| One term's facet                               | `taxonomy_overrides.json` → `facet`, keyed on `(source, id)` — never on the bare label                                                                       |
+| One term's sub-header                          | `taxonomy_overrides.json` → `sub`. Give the rendered Czech label (`druh objektu`, not `objekt_druh`), and prefer one the target facet already uses           |
+| One term out, inside a list worth keeping      | `taxonomy_overrides.json` → `facet: "__exclude__"`. Applied before dedup, so a term another kept record also offers survives under that record               |
+| A bracketed homonym qualifier                  | `taxonomy_overrides.json` → `qualifier_cs`. Only after a human has confirmed the split — most same-label collisions are one concept (`collision_review.csv`) |
+| Two entries mean the same thing / do not       | `taxonomy_overrides.json` → `same_as` / `same_as_suppress`. Shows up as `link_status` in `composite_pairs.csv`; neither changes what the prompt offers       |
+| Reinstating a geographic branch                | three edits in **one** change: relax the wording in `llm_run.py`, set `geo_guardrail.active` false, flip the branch. Any one alone fails the build           |
+| What splits a composite `X/Y` label            | `taxonomy_config.json` → `composite_separators`                                                                                                              |
+| Which keys reach the prompt payload            | `taxonomy_config.json` → `nested_keep`. `discarded_ids` and `bare_cs` are read back by the enrichment output, so dropping either changes behaviour           |
+| What counts as boilerplate for truncation      | `taxonomy_config.json` → `admin_stop_words`. Sorts matching terms to the back of their facet, which decides what a small-context model still sees            |
+| Facet order and priority                       | `taxonomy_config.json` → per-facet `priority`, `tie_break`. Load-bearing: the prompt truncates a *prefix* of the flattened term list                         |
+| Nothing                                        | a generated CSV. Every sheet in this directory is rebuilt from the two files above; hand-editing one is discarded on the next run.                           |

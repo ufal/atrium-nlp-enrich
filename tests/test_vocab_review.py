@@ -172,6 +172,54 @@ def test_composite_pairs_never_matches_a_label_against_itself():
         assert r["composite_cs"] != r["component_cs"]
 
 
+def test_composite_sheet_reports_the_reviewers_own_verdicts():
+    """A reviewer rules on a pair by editing taxonomy_overrides.json; the sheet they
+    review must then show that ruling, or they cannot tell a pair they have already
+    handled from one they have not."""
+    _require_flat()
+    manager = _shipped_manager()
+    nested = _built_union()
+
+    plain = vr.composite_pair_rows(nested, manager)
+    assert {r["link_status"] for r in plain} == {"auto"}
+    most_brod = next(r for r in plain if r["composite_cs"] == "most/brod")
+
+    manager.overrides[(most_brod["composite_source"], most_brod["composite_id"])] = {
+        "same_as_suppress": [
+            {"source": most_brod["component_source"], "id": most_brod["component_id"]}
+        ],
+        "reason": "fabricated for this test",
+    }
+    after = vr.composite_pair_rows(nested, manager)
+    assert len(after) == len(plain)
+    row = next(
+        r
+        for r in after
+        if r["composite_cs"] == "most/brod" and r["component_cs"] == most_brod["component_cs"]
+    )
+    assert row["link_status"] == "suppressed"
+
+
+def test_composite_sheet_lists_a_hand_declared_pair_no_label_implies():
+    """A `same_as` link the detector cannot see has no row of its own from detection,
+    so it would be invisible on the sheet — the one place a reviewer looks."""
+    _require_flat()
+    manager = _shipped_manager()
+    nested = _built_union()
+    before = len(vr.composite_pair_rows(nested, manager))
+
+    kostel = nested["Feature"]["kostel"]
+    kaple = nested["Feature"]["kaple"]
+    manager.overrides[(kostel["source"], kostel["source_id"])] = {
+        "same_as": [{"source": kaple["source"], "id": kaple["source_id"]}],
+        "reason": "fabricated for this test",
+    }
+    rows = vr.composite_pair_rows(nested, manager)
+    assert len(rows) == before + 1
+    added = next(r for r in rows if r["link_status"] == "manual")
+    assert {added["composite_cs"], added["component_cs"]} == {"kostel", "kaple"}
+
+
 # ── exclusion_impact_rows (O3/O4 / Track 4) ──────────────────────────────────────
 
 
@@ -365,6 +413,59 @@ def test_exclusion_impact_includes_override_exclusions():
     assert row["term_count"] == 1
     assert row["status"] == "settled (per-term override)"
     assert row["stated_reason"] == "fabricated for the override-exclusion regression test"
+
+
+def test_exclusion_status_comes_from_the_config_not_from_this_module():
+    """The Q1/Q2 split used to be two hard-coded sets in vocab_review.py, so moving one
+    branch between "already ruled on" and "still open" needed a developer. It is now a
+    `status` on the `_exclusions` entry: editing the config alone must change both the
+    status column and the guardrail_conflict flag."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+
+    before = {r["rule"]: r["status"] for r in vr.exclusion_impact_rows(per_source, manager)}
+    assert before["teater:3094"] == "open: other (O4 Q2)"
+
+    manager.settings["_exclusions"]["teater:3094"]["status"] = "settled"
+    after = {r["rule"]: r["status"] for r in vr.exclusion_impact_rows(per_source, manager)}
+    assert after["teater:3094"] == "settled (M4)"
+    assert {k: v for k, v in after.items() if k != "teater:3094"} == {
+        k: v for k, v in before.items() if k != "teater:3094"
+    }
+
+
+def test_guardrail_conflict_follows_the_declared_status():
+    """The one status the tool acts on rather than prints: `guardrail_conflict` marks
+    the rows whose reinstatement also needs the prompt's geographic wording relaxed."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+
+    rows = {r["rule"]: r for r in vr.reinstatement_preview_rows(per_source, manager)}
+    assert rows["teater:2560"]["guardrail_conflict"] is True  # etnika — Q1
+    assert rows["teater:3094"]["guardrail_conflict"] is False  # povolání — Q2
+
+    # Both halves, because validate_settings now refuses to let them drift apart:
+    # `covers` is what says the wording reaches this branch at all.
+    manager.settings["_exclusions"]["teater:3094"]["status"] = "open_geo_ethnic"
+    manager.settings["geo_guardrail"]["covers"].append("teater:3094")
+    flipped = {r["rule"]: r for r in vr.reinstatement_preview_rows(per_source, manager)}
+    assert flipped["teater:3094"]["guardrail_conflict"] is True
+
+
+def test_subbranch_impact_inherits_its_roots_status_when_unkeyed():
+    """A sub-branch nobody keyed separately is covered by its root's ruling, so the
+    guardrail flag must fall back to the root rather than silently reading False."""
+    _require_flat()
+    manager = _shipped_manager()
+    notes = manager.exclusion_notes()
+    assert "teater:2560" in notes  # keyed in its own right
+    assert not any(k.startswith("teater:3095") for k in notes)  # a child of 3094, not keyed
+
+    assert vr._status_of(notes, "teater:2560", "teater:2557") == "open_geo_ethnic"
+    assert vr._status_of(notes, "teater:3095", "teater:3094") == "open_other"
+    assert vr._status_of(notes, "teater:9999") == "settled"  # unknown → the default
 
 
 def test_exclusion_impact_override_status_is_distinct_from_m4():

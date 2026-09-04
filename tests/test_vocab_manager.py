@@ -209,6 +209,79 @@ def test_keep_limits_the_on_disk_entry_shape(tmp_path):
     assert full["Site Types"]["starý hrad"]["scheme"] == "lokalita_typ"
 
 
+def test_nested_keep_comes_from_the_config(tmp_path):
+    """Which harvested keys reach an on-disk entry decides the prompt payload, so it
+    belongs in the file a curator edits — not only in a function default."""
+    taxonomy = json.loads(json.dumps(NESTED_TAXONOMY))
+    taxonomy["_settings"]["nested_keep"] = ["cs", "en", "scheme"]
+    m = _mgr(tmp_path, taxonomy=taxonomy)
+    rich = _pair("starý hrad", source="amcr", scheme="lokalita_typ", source_id="HES-1")
+    built = m.build_nested({"starý hrad": rich})
+    assert built["Site Types"]["starý hrad"] == {
+        "cs": "starý hrad",
+        "en": "x",
+        "scheme": "lokalita_typ",
+    }
+
+
+def test_an_explicit_keep_still_beats_the_config(tmp_path):
+    """The config supplies the default, it does not take the parameter away — the
+    single-source and union builds must stay free to ask for a different shape."""
+    taxonomy = json.loads(json.dumps(NESTED_TAXONOMY))
+    taxonomy["_settings"]["nested_keep"] = ["cs", "en", "scheme"]
+    m = _mgr(tmp_path, taxonomy=taxonomy)
+    rich = _pair("starý hrad", source="amcr", scheme="lokalita_typ", source_id="HES-1")
+    assert m.build_nested({"starý hrad": rich}, keep=("cs",))["Site Types"]["starý hrad"] == {
+        "cs": "starý hrad"
+    }
+    full = m.build_nested({"starý hrad": rich}, keep=None)  # None still means "every key"
+    assert full["Site Types"]["starý hrad"]["source_id"] == "HES-1"
+
+
+def test_admin_stop_words_come_from_the_config(tmp_path):
+    """Terms containing a stop word sort to the BACK of their facet and prompt
+    truncation drops a suffix — so this list decides what a small-context model still
+    sees, and which words read as boilerplate is a per-corpus judgement about report
+    language. Changing it must reorder the facet."""
+    terms = {"hrad zpráva": _pair("hrad zpráva"), "zámecký hrad": _pair("zámecký hrad")}
+
+    # default: "zpráva" is boilerplate, so "hrad zpráva" goes last
+    assert list(_nesting_mgr(tmp_path).build_nested(terms)["Site Types"]) == [
+        "zámecký hrad",
+        "hrad zpráva",
+    ]
+
+    taxonomy = json.loads(json.dumps(NESTED_TAXONOMY))
+    taxonomy["_settings"]["admin_stop_words"] = ["zámecký"]
+    m = _mgr(tmp_path, taxonomy=taxonomy)
+    assert m.admin_stop_words() == frozenset({"zámecký"})
+    assert list(m.build_nested(terms)["Site Types"]) == ["hrad zpráva", "zámecký hrad"]
+
+
+def test_an_empty_stop_word_list_falls_back_to_the_default(tmp_path):
+    """An absent or empty key means "unset", not "no boilerplate at all" — the same
+    reading every other _settings key gets, so deleting a line cannot silently change
+    what the prompt truncates."""
+    taxonomy = json.loads(json.dumps(NESTED_TAXONOMY))
+    taxonomy["_settings"]["admin_stop_words"] = []
+    from vocab_manager import ADMIN_STOP_WORDS
+
+    assert _mgr(tmp_path, taxonomy=taxonomy).admin_stop_words() == ADMIN_STOP_WORDS
+    assert _nesting_mgr(tmp_path).admin_stop_words() == ADMIN_STOP_WORDS
+
+
+def test_shipped_config_states_the_defaults_it_relies_on():
+    """nested_keep and admin_stop_words are in the shipped file so a curator can see
+    and edit them; they must state exactly what the code default is, or the file
+    documents one behaviour while the build does another."""
+    from vocab_manager import ADMIN_STOP_WORDS, DEFAULT_NESTED_KEEP
+
+    m = VocabularyManager(config_path=str(_repo_root() / "data_samples" / "taxonomy_config.json"))
+    assert "nested_keep" in m.settings and m.nested_keep() == DEFAULT_NESTED_KEEP
+    assert "admin_stop_words" in m.settings and m.admin_stop_words() == ADMIN_STOP_WORDS
+    assert m.composite_separators() == ("/",)
+
+
 def test_settings_block_is_not_a_theme(tmp_path):
     m = _nesting_mgr(tmp_path)
     assert "_settings" not in m.themes()
@@ -298,7 +371,7 @@ def test_a_map_pointing_at_an_undeclared_facet_is_a_hard_error(tmp_path):
     broken = json.loads(json.dumps(FACET_TAXONOMY))
     broken["_settings"]["heslar_map"]["obdobi"] = "Chronlogy"  # typo
     m = _mgr(tmp_path, taxonomy=broken)
-    with pytest.raises(ValueError, match="undeclared facets"):
+    with pytest.raises(ValueError, match="undeclared facet 'Chronlogy'"):
         m.build_nested({})
 
 
@@ -375,6 +448,94 @@ def test_override_facet_can_itself_be_exclude(tmp_path):
     assert m.is_excluded(term) is True
 
 
+def test_override_sub_relabels_the_moved_terms_header(tmp_path):
+    """A `facet` override alone leaves the record under its *old* list's sub-header —
+    `kostel` rendered as "Feature / areál aktivity", the facet a reviewer asked for
+    under the header they moved it away from. `sub` closes that, and must land
+    identically in the nested entry and the audit row so the CSV shows what the prompt
+    renders."""
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [
+            {
+                "match": {"source": "amcr", "id": "HES-1"},
+                "facet": "Artefact",
+                "sub": "druh předmětu",
+                "reason": "x",
+            }
+        ],
+    )
+    audit = []
+    nested = m.build_nested(
+        {
+            "kostel": _pair(
+                "kostel", source="amcr", scheme="obdobi", source_id="HES-1", sub="obdobi"
+            )
+        },
+        audit=audit,
+    )
+    assert nested["Artefact"]["kostel"]["sub"] == "druh předmětu"
+    assert audit[0]["sub"] == "druh předmětu"
+    assert audit[0]["scheme"] == "obdobi"  # the raw list is still recorded, unrelabelled
+
+
+def test_sub_falls_back_to_heslar_labels_without_an_override(tmp_path):
+    """The override is an exception, not the path: an unoverridden record still gets the
+    heslar_labels relabelling ('obdobi' -> 'období') it always had."""
+    m = _facet_mgr(tmp_path)
+    audit = []
+    nested = m.build_nested(
+        {
+            "eneolit": _pair(
+                "eneolit", source="amcr", scheme="obdobi", source_id="HES-9", sub="obdobi"
+            )
+        },
+        audit=audit,
+    )
+    assert nested["Chronology"]["eneolit"]["sub"] == "období"
+    assert audit[0]["sub"] == "období"
+
+
+def test_override_sub_can_supply_a_header_the_source_omits(tmp_path):
+    """TEATER records carry no heslar scheme, so a moved one has no sub-header at all.
+    Assigning (rather than relabelling in place) lets `sub` fill that gap."""
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [
+            {
+                "match": {"source": "teater", "id": "7"},
+                "facet": "Artefact",
+                "sub": "druh předmětu",
+                "reason": "x",
+            }
+        ],
+    )
+    nested = m.build_nested({"x": _pair("x", source="teater", source_id="7")})
+    assert nested["Artefact"]["x"]["sub"] == "druh předmětu"
+
+
+def test_override_sub_is_still_bound_by_keep(tmp_path):
+    """`keep` is the on-disk entry contract (test_keep_limits_the_on_disk_entry_shape).
+    An override must not smuggle a key past it — a caller that excluded `sub` gets no
+    `sub`, override or not."""
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [
+            {
+                "match": {"source": "amcr", "id": "HES-1"},
+                "facet": "Artefact",
+                "sub": "druh předmětu",
+                "reason": "x",
+            }
+        ],
+    )
+    nested = m.build_nested(
+        {"x": _pair("x", source="amcr", scheme="obdobi", source_id="HES-1", sub="obdobi")},
+        keep=("cs", "en"),
+    )
+    assert nested["Artefact"]["x"] == {"cs": "x", "en": "x"}
+
+
 def test_override_facet_must_be_a_declared_theme(tmp_path):
     import pytest
 
@@ -384,6 +545,303 @@ def test_override_facet_must_be_a_declared_theme(tmp_path):
     )
     with pytest.raises(ValueError, match="overrides"):
         m.validate_settings()
+
+
+# ── _exclusions: keys, back-compat, and the review status (issue #6, O3/O4) ──────
+
+
+def _exclusions_mgr(tmp_path, exclusions):
+    taxonomy = json.loads(json.dumps(FACET_TAXONOMY))
+    taxonomy["_settings"]["_exclusions"] = exclusions
+    return _mgr(tmp_path, taxonomy=taxonomy)
+
+
+def test_exclusion_notes_are_keyed_by_the_rule_that_excluded_the_term(tmp_path):
+    """`assign_theme` reports `heslar:zeme` / `teater:2560`; `_exclusions` is keyed the
+    same way, so a report looks a note up by the rule rather than by a second key
+    convention that has to be kept in step with it."""
+    m = _exclusions_mgr(
+        tmp_path,
+        {
+            "heslar:zeme": {"status": "open_geo_ethnic", "reason": "country names"},
+            "teater:2560": {"status": "open_geo_ethnic", "reason": "ethnonyms"},
+        },
+    )
+    notes = m.exclusion_notes()
+    assert notes["heslar:zeme"] == {"status": "open_geo_ethnic", "reason": "country names"}
+    assert notes["teater:2560"]["reason"] == "ethnonyms"
+
+    term = _pair("Albánie", source="amcr", scheme="zeme", source_id="HES-9")
+    _theme, rule = m.assign_theme(term)
+    assert rule in notes, "the rule assign_theme reports must be the key a note is under"
+
+
+def test_legacy_exclusion_key_spellings_still_resolve(tmp_path):
+    """The file shipped with bare AMCR list names and `TEATER 288`. Renaming the keys is
+    not a reason to invalidate someone's local edit, so both spellings still fold onto
+    the canonical rule string."""
+    m = _exclusions_mgr(
+        tmp_path,
+        {"zeme": "country names", "TEATER 288": "neighbouring disciplines", "2560": "ethnonyms"},
+    )
+    notes = m.exclusion_notes()
+    assert set(notes) == {"heslar:zeme", "teater:288", "teater:2560"}
+
+
+def test_a_bare_reason_string_means_already_ruled_on(tmp_path):
+    """Back-compat with a value shape, not just a key: a note written before statuses
+    existed meant "already ruled on", which is what it must keep meaning."""
+    m = _exclusions_mgr(tmp_path, {"heslar:zeme": "country names"})
+    assert m.exclusion_notes()["heslar:zeme"] == {
+        "status": "settled",
+        "reason": "country names",
+    }
+
+
+def test_an_entry_without_a_status_defaults_to_settled(tmp_path):
+    m = _exclusions_mgr(tmp_path, {"heslar:zeme": {"reason": "country names"}})
+    assert m.exclusion_notes()["heslar:zeme"]["status"] == "settled"
+
+
+# ── geo guardrail: one decision, two files, kept in step (issue #6, O4 / C1) ─────
+
+
+def _guard_mgr(tmp_path, **guard):
+    taxonomy = json.loads(json.dumps(FACET_TAXONOMY))
+    taxonomy["_settings"]["geo_guardrail"] = {
+        "active": True,
+        "covers": ["teater:2560"],
+        **guard,
+    }
+    return _mgr(tmp_path, taxonomy=taxonomy)
+
+
+WITH_CLAUSE = "NEVER select a country name, language name, or geographic region name"
+WITHOUT_CLAUSE = "Select the SINGLE most relevant category."
+
+
+def test_the_shipped_config_and_the_shipped_prompt_agree():
+    """The invariant the build gate exists to hold: nothing in the repo today offers a
+    term the prompt forbids the model from selecting."""
+    root = _repo_root()
+    m = VocabularyManager(config_path=str(root / "data_samples" / "taxonomy_config.json"))
+    assert m.geo_guardrail_problems((root / "llm_run.py").read_text(encoding="utf-8")) == []
+
+
+def test_reinstating_a_covered_branch_while_the_clause_stands_is_a_problem(tmp_path):
+    """The failure mode the O3/O4 package warns about: the vocabulary offers ethnonyms,
+    the prompt forbids selecting one, and the score measures the contradiction."""
+    m = _guard_mgr(tmp_path)
+    assert m.geo_guardrail_problems(WITH_CLAUSE) == []  # 2560 is excluded in the fixture
+
+    m.taxonomy["_settings"]["teater_branch_map"]["2560"] = "Chronology"
+    problems = m.geo_guardrail_problems(WITH_CLAUSE)
+    assert len(problems) == 1
+    assert "teater:2560 is offered to the model" in problems[0]
+
+
+def test_relaxing_the_clause_without_saying_so_is_a_problem(tmp_path):
+    """Dropping the wording quietly leaves five branches excluded for a reason that no
+    longer exists — the vocabulary would be needlessly poorer and nothing would say
+    why."""
+    m = _guard_mgr(tmp_path)
+    problems = m.geo_guardrail_problems(WITHOUT_CLAUSE)
+    assert len(problems) == 1
+    assert "the prompt no longer forbids" in problems[0]
+
+
+def test_declaring_the_guardrail_off_while_the_prompt_still_carries_it_is_a_problem(tmp_path):
+    m = _guard_mgr(tmp_path, active=False)
+    problems = m.geo_guardrail_problems(WITH_CLAUSE)
+    assert len(problems) == 1
+    assert "the prompt still forbids" in problems[0]
+
+
+def test_both_halves_flipped_together_is_the_clean_path(tmp_path):
+    """The one outcome the package asks for: relax the wording, declare it relaxed, and
+    reinstate the branch — all in the same change, and the build stays happy."""
+    m = _guard_mgr(tmp_path, active=False)
+    m.taxonomy["_settings"]["teater_branch_map"]["2560"] = "Chronology"
+    assert m.geo_guardrail_problems(WITHOUT_CLAUSE) == []
+
+
+def test_the_prompt_half_is_skipped_when_there_is_no_prompt_to_read(tmp_path):
+    """These artifacts are copied into atrium-llm-enrich, where the prompt lives
+    elsewhere; the vocabulary half must still be checked there."""
+    m = _guard_mgr(tmp_path)
+    assert m.geo_guardrail_problems(None) == []
+    m.taxonomy["_settings"]["teater_branch_map"]["2560"] = "Chronology"
+    assert len(m.geo_guardrail_problems(None)) == 1
+
+
+def test_prompt_markers_are_config_not_code(tmp_path):
+    """A reworded prompt must be an edit to the config, not a patch to the detector."""
+    m = _guard_mgr(tmp_path, prompt_markers=["nikdy nevybírej název země"])
+    assert m.geo_guardrail_problems("... nikdy nevybírej název země ...") == []
+    assert len(m.geo_guardrail_problems(WITH_CLAUSE)) == 1
+
+
+def test_guardrail_scope_and_the_exclusion_register_cannot_drift(tmp_path):
+    """`covers` outlives an exclusion (it is what says a reinstated branch conflicts at
+    all), so the two lists are cross-checked rather than merged."""
+    import pytest
+
+    taxonomy = json.loads(json.dumps(FACET_TAXONOMY))
+    taxonomy["_settings"]["_exclusions"] = {
+        "teater:2560": {"status": "open_geo_ethnic", "reason": "ethnonyms"}
+    }
+    taxonomy["_settings"]["geo_guardrail"] = {"active": True, "covers": []}
+    with pytest.raises(ValueError, match="geo_guardrail.covers does not list it"):
+        _mgr(tmp_path, taxonomy=taxonomy).validate_settings()
+
+    taxonomy["_settings"]["geo_guardrail"]["covers"] = ["teater:2560", "teater:9999"]
+    with pytest.raises(ValueError, match="which no map places"):
+        _mgr(tmp_path, taxonomy=taxonomy).validate_settings()
+
+    taxonomy["_settings"]["geo_guardrail"]["covers"] = ["teater:2560"]
+    taxonomy["_settings"]["_exclusions"]["teater:2560"]["status"] = "open_other"
+    with pytest.raises(ValueError, match="not 'open_geo_ethnic'"):
+        _mgr(tmp_path, taxonomy=taxonomy).validate_settings()
+
+
+# ── validate_settings: every hand-editable surface, reported at once ─────────────
+
+
+def _broken(tmp_path, mutate, overrides=None):
+    import pytest
+
+    taxonomy = json.loads(json.dumps(FACET_TAXONOMY))
+    mutate(taxonomy["_settings"])
+    m = _mgr(tmp_path, taxonomy=taxonomy, overrides=overrides)
+    with pytest.raises(ValueError) as excinfo:
+        m.validate_settings()
+    return str(excinfo.value)
+
+
+def test_tie_break_naming_an_undeclared_facet_is_caught(tmp_path):
+    """tie_break decides prompt truncation order; a name nothing declares is simply
+    never consulted, so the ordering silently is not the one that was written."""
+    message = _broken(tmp_path, lambda s: s["tie_break"].append("Chronlogy"))
+    assert "tie_break lists undeclared facet 'Chronlogy'" in message
+
+
+def test_a_label_for_an_unmapped_list_is_caught(tmp_path):
+    """heslar_labels renames a list for the prompt sub-header. A key naming a list no
+    map places is dead: the relabel never renders and nothing says so."""
+    message = _broken(tmp_path, lambda s: s["heslar_labels"].update({"obdoby": "období"}))
+    assert "heslar_labels['obdoby'] names nothing in heslar_map" in message
+
+
+def test_a_reason_for_something_nobody_excludes_is_caught(tmp_path):
+    """An _exclusions note whose rule is not `__exclude__` reads as a live exclusion
+    to anyone auditing the file, while excluding nothing — the exact inverse of the
+    traceability M7 asked for."""
+    message = _broken(tmp_path, lambda s: s.update({"_exclusions": {"heslar:obdobi": "x"}}))
+    assert "documents a rule that excludes nothing" in message
+
+
+def test_an_unknown_exclusion_status_is_caught(tmp_path):
+    message = _broken(
+        tmp_path,
+        lambda s: s.update({"_exclusions": {"heslar:zeme": {"status": "maybe", "reason": "x"}}}),
+    )
+    assert "status 'maybe' is not one of" in message
+
+
+def test_an_unknown_override_key_is_caught(tmp_path):
+    """The likeliest hand-edit mistake of all: a plausible key nobody reads. 'sub_cs'
+    for 'sub', 'facets' for 'facet' — each does nothing, silently."""
+    message = _broken(
+        tmp_path,
+        lambda s: None,
+        overrides=[{"match": {"source": "amcr", "id": "HES-1"}, "sub_cs": "x", "reason": "y"}],
+    )
+    assert "unknown key 'sub_cs'" in message
+
+
+def test_a_malformed_same_as_entry_is_caught(tmp_path):
+    message = _broken(
+        tmp_path,
+        lambda s: None,
+        overrides=[
+            {
+                "match": {"source": "amcr", "id": "HES-1"},
+                "same_as": [{"source": "teater"}],  # no id
+                "reason": "y",
+            }
+        ],
+    )
+    assert "needs both 'source' and 'id'" in message
+
+
+def test_a_pair_both_linked_and_suppressed_is_caught(tmp_path):
+    """attach_same_as resolves this the safe way (no link), but silently — and the two
+    entries cannot both be what their author meant."""
+    message = _broken(
+        tmp_path,
+        lambda s: None,
+        overrides=[
+            {
+                "match": {"source": "amcr", "id": "HES-1"},
+                "same_as": [{"source": "teater", "id": "9"}],
+                "same_as_suppress": [{"source": "teater", "id": "9"}],
+                "reason": "y",
+            }
+        ],
+    )
+    assert "both name the pair" in message
+
+
+def test_a_stale_override_is_only_reported_when_records_are_supplied(tmp_path):
+    """The manager is routinely used with no harvest at all (prompt building, the
+    single-source builds), where "no such record" is normal — so this check is opt-in
+    rather than something that would fire on every load."""
+    import pytest
+
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [{"match": {"source": "amcr", "id": "HES-GONE"}, "facet": "Artefact", "reason": "y"}],
+    )
+    m.validate_settings()  # no records → not an error
+
+    live = [{"source": "amcr", "source_id": "HES-1"}]
+    with pytest.raises(ValueError, match="matches no harvested record"):
+        m.validate_settings(records=live)
+
+    m.validate_settings(records=live + [{"source": "amcr", "source_id": "HES-GONE"}])
+
+
+def test_every_problem_is_reported_at_once(tmp_path):
+    """One typo per rebuild is how a config file stops being worth editing."""
+    message = _broken(
+        tmp_path,
+        lambda s: (
+            s["tie_break"].append("Chronlogy"),
+            s["heslar_labels"].update({"obdoby": "období"}),
+        ),
+        overrides=[{"match": {"source": "amcr", "id": "HES-1"}, "sub_cs": "x", "reason": "y"}],
+    )
+    assert "tie_break lists undeclared facet" in message
+    assert "names nothing in heslar_map" in message
+    assert "unknown key 'sub_cs'" in message
+
+
+def test_the_shipped_config_survives_the_widened_validation():
+    """Every check above is a real invariant of the shipped files, not just of a
+    fixture — including the stale-override check against the real harvest."""
+    root = _repo_root()
+    m = VocabularyManager(config_path=str(root / "data_samples" / "taxonomy_config.json"))
+    m.validate_settings()
+
+    import pytest
+
+    import vocab_build as vb
+
+    vocab_dir = root / "data_samples" / "vocab"
+    if not (vocab_dir / "amcr_flat.json").exists():
+        pytest.skip("flat artifacts not present in this checkout")
+    records = [r.as_dict() for recs, _meta in vb._load_flat(vocab_dir).values() for r in recs]
+    m.validate_settings(records=records)
 
 
 def test_missing_overrides_file_is_not_an_error(tmp_path):
@@ -429,6 +887,31 @@ def test_shipped_config_covers_every_source_list():
             schemes = {row["scheme"] for row in csv.DictReader(fh) if row["scheme"]}
         unmapped = schemes - set(m.settings.get(map_name) or {})
         assert not unmapped, f"{map_name} does not cover: {sorted(unmapped)}"
+
+
+def test_shipped_exclusions_document_every_excluded_list_and_branch():
+    """Every `__exclude__` in the shipped maps must have a note, and every note must
+    name a rule that actually excludes something — a reason for a list nobody excludes
+    is dead config, and an exclusion with no reason is the thing M7 exists to prevent."""
+    m = VocabularyManager(config_path=str(_repo_root() / "data_samples" / "taxonomy_config.json"))
+    settings = m.settings
+    excluded_rules = {
+        f"heslar:{k}" for k, v in (settings.get("heslar_map") or {}).items() if v == "__exclude__"
+    } | {
+        f"teater:{k}"
+        for k, v in (settings.get("teater_branch_map") or {}).items()
+        if v == "__exclude__"
+    }
+    notes = m.exclusion_notes()
+    assert set(notes) == excluded_rules
+    assert all(note["reason"] for note in notes.values())
+
+
+def test_shipped_exclusion_statuses_are_all_declared():
+    from vocab_manager import EXCLUSION_STATUSES
+
+    m = VocabularyManager(config_path=str(_repo_root() / "data_samples" / "taxonomy_config.json"))
+    assert {n["status"] for n in m.exclusion_notes().values()} <= set(EXCLUSION_STATUSES)
 
 
 def test_shipped_vocabulary_has_no_unplaced_terms():
@@ -504,6 +987,97 @@ def test_attach_same_as_is_a_noop_without_any_composite_overlap():
     nested = {"Feature": {"most": {"cs": "most", "en": "bridge", "source": "a", "source_id": "1"}}}
     assert attach_same_as(nested) == 0
     assert "same_as" not in nested["Feature"]["most"]
+
+
+def test_composite_separators_come_from_the_config(tmp_path):
+    """Only "/" is in use, but both sources are hand-maintained: a second convention
+    appearing in a later harvest must be a config edit, not a code change."""
+    nested = {
+        "Feature": {
+            "most-brod": {"cs": "most-brod", "en": "x", "source": "amcr", "source_id": "A1"},
+            "most": {"cs": "most", "en": "bridge", "source": "amcr", "source_id": "A2"},
+        }
+    }
+    assert find_composite_links(nested) == []  # "-" is not a separator by default
+    assert find_composite_links(nested, ["-"]) == [("Feature", "most-brod", "Feature", "most")]
+
+    taxonomy = json.loads(json.dumps(FACET_TAXONOMY))
+    assert _mgr(tmp_path, taxonomy=taxonomy).composite_separators() == ("/",)
+    taxonomy["_settings"]["composite_separators"] = ["/", " - "]
+    assert _mgr(tmp_path, taxonomy=taxonomy).composite_separators() == ("/", " - ")
+
+
+def test_same_as_overrides_reads_both_directions_of_correction(tmp_path):
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [
+            {
+                "match": {"source": "amcr", "id": "A1"},
+                "same_as": [{"source": "teater", "id": "T9"}],
+                "same_as_suppress": [{"source": "amcr", "id": "A2"}],
+                "reason": "x",
+            }
+        ],
+    )
+    extra, suppress = m.same_as_overrides()
+    assert extra == [[("amcr", "A1"), ("teater", "T9")]]
+    assert suppress == [[("amcr", "A1"), ("amcr", "A2")]]
+
+
+def test_extra_links_two_records_no_label_connects():
+    """`hrad` and `most` share no label at all — only a reviewer can say they belong
+    together, so the mechanism has to accept a link the detector cannot see."""
+    nested = _nested_copy()
+    links = attach_same_as(nested, extra=[[("amcr", "A2"), ("teater", "T9")]])
+    assert links == 2  # the auto most/brod<->most pair, plus the declared one
+    assert {"source": "teater", "id": "T9"} in nested["Feature"]["most"]["same_as"]
+    assert {"source": "amcr", "id": "A2"} in nested["Feature"]["hrad"]["same_as"]
+
+
+def test_suppress_drops_a_detected_link():
+    nested = _nested_copy()
+    assert attach_same_as(nested, suppress=[[("amcr", "A1"), ("amcr", "A2")]]) == 0
+    assert "same_as" not in nested["Activity Area"]["most/brod"]
+    assert "same_as" not in nested["Feature"]["most"]
+
+
+def test_suppress_wins_over_extra():
+    """Contradictory config resolves the safe way — no link — rather than by which
+    argument the caller passed first."""
+    nested = _nested_copy()
+    pair = [("amcr", "A2"), ("teater", "T9")]
+    assert attach_same_as(nested, extra=[pair], suppress=[pair]) == 1  # only the auto pair
+    assert "same_as" not in nested["Feature"]["hrad"]
+
+
+def test_extra_naming_a_record_this_build_does_not_offer_is_skipped():
+    """One overrides file drives the AMCR-only, TEATER-only and union builds, so a
+    declared link whose other side is absent is normal, not an error."""
+    nested = _nested_copy()
+    assert attach_same_as(nested, extra=[[("amcr", "A2"), ("teater", "GONE")]]) == 1
+    assert nested["Feature"]["most"]["same_as"] == [{"source": "amcr", "id": "A1"}]
+
+
+def test_extra_is_order_independent():
+    """A set is a valid argument and the two sides of a pair are interchangeable —
+    neither may change the bytes the build writes."""
+    forward, backward = _nested_copy(), _nested_copy()
+    attach_same_as(forward, extra=[[("amcr", "A2"), ("teater", "T9")]])
+    attach_same_as(backward, extra={frozenset({("teater", "T9"), ("amcr", "A2")})})
+    assert forward == backward
+
+
+def test_shipped_same_as_baseline_is_unchanged():
+    """162 terms carrying 98 links is the reviewed baseline (issue #6, Track 3). The
+    configurable extra/suppress path must not move it while no override uses it."""
+    import json as _json
+
+    nested = _json.loads(
+        (_repo_root() / "data_samples" / "vocab" / "union_nested.json").read_text(encoding="utf-8")
+    )
+    linked = [e for terms in nested.values() for e in terms.values() if e.get("same_as")]
+    assert len(linked) == 162
+    assert sum(len(e["same_as"]) for e in linked) == 2 * 98
 
 
 def test_shipped_vocabulary_same_as_links_are_symmetric():

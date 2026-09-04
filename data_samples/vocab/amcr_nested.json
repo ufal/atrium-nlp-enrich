@@ -2522,7 +2522,7 @@
     "zahrada": {
       "cs": "zahrada",
       "en": "garden",
-      "sub": "druh objektu",
+      "sub": "areál aktivity",
       "source": "amcr",
       "source_id": "HES-000526",
       "discarded_ids": [],
@@ -2672,7 +2672,7 @@
     "cesta": {
       "cs": "cesta",
       "en": "roads",
-      "sub": "areál aktivity",
+      "sub": "druh objektu",
       "source": "amcr",
       "source_id": "HES-000048",
       "discarded_ids": [
@@ -2903,7 +2903,7 @@
     "kaple": {
       "cs": "kaple",
       "en": "chapel",
-      "sub": "areál aktivity",
+      "sub": "druh objektu",
       "source": "amcr",
       "source_id": "HES-000020",
       "discarded_ids": [
@@ -2959,7 +2959,7 @@
     "kostel": {
       "cs": "kostel",
       "en": "church",
-      "sub": "areál aktivity",
+      "sub": "druh objektu",
       "source": "amcr",
       "source_id": "HES-000021",
       "discarded_ids": [
@@ -3101,7 +3101,7 @@
     "mlýn": {
       "cs": "mlýn",
       "en": "mill",
-      "sub": "areál aktivity",
+      "sub": "druh objektu",
       "source": "amcr",
       "source_id": "HES-000028",
       "discarded_ids": [
@@ -6899,7 +6899,7 @@
     "přírodní útvar": {
       "cs": "přírodní útvar",
       "en": "natural landform",
-      "sub": "druh objektu",
+      "sub": "nálezové okolnosti",
       "source": "amcr",
       "source_id": "HES-000470",
       "discarded_ids": [

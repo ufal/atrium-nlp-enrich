@@ -30,44 +30,50 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import vocab_build as vb
 import vocab_sources as vs
-from vocab_manager import VocabularyManager, find_composite_links
+from vocab_manager import (
+    DEFAULT_COMPOSITE_SEPARATORS,
+    DEFAULT_EXCLUSION_STATUS,
+    VocabularyManager,
+    find_composite_links,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent
 DEFAULT_VOCAB_DIR = REPO_ROOT / "data_samples" / "vocab"
 DEFAULT_CONFIG = REPO_ROOT / "data_samples" / "taxonomy_config.json"
 
 # The only judgement call baked into the tooling, and it is a classification of
-# EXISTING rulings, not a new one: every currently-excluded list/branch falls into
-# exactly one of three buckets. Both AMCR heslar names and TEATER branch ids below
-# are named directly by the guardrail's own wording ("country name, language name,
-# or geographic region name") and by TEATER's own labels for 2560/2900/3076 (ethnic
-# groups / historical regions / dynasties) -- this is a restatement, not an opinion.
-#
-#   settled       M4/M3: a technical/administrative AMCR list, already ruled on and
-#                 already correctly excluded. Not part of O3/O4 at all.
-#   geo_ethnic    O3 + O4 "Q1": conflicts with the standing geographic guardrail.
-#                 Reinstating any of these REQUIRES relaxing the guardrail wording
-#                 in the same change (see C1) -- doing one without the other makes
-#                 the prompt forbid what the vocabulary offers.
-#   other         O4 "Q2": excluded on an a priori P3 read with no guardrail
-#                 conflict at all -- battles/wars included, since a battle or war
-#                 NAME is not itself a country/language/region.
-STATUS_GEO_ETHNIC = {
-    "heslar:zeme",  # 249 country names -- "country name"
-    "heslar:jazyk",  # 9 language names -- "language name"
-    "teater:2560",  # etnika / ethnic groups
-    "teater:2900",  # historické oblasti a státní útvary / historical regions
-    "teater:3076",  # panovnické dynastie / ruling dynasties
+# Display labels for the `status` each `_exclusions` entry declares (see
+# vocab_manager.EXCLUSION_STATUSES for what the three mean). The bucket itself is
+# config-authored, not decided here: which exclusions are still open is a reviewer's
+# call, and it used to be two hard-coded sets in this file that only a developer could
+# edit. This mapping only spells the token out for the CSV, and names the decision the
+# reviewer is being asked about.
+STATUS_LABELS = {
+    "settled": "settled (M4)",
+    "open_geo_ethnic": "open: geographic/ethnic (O3/O4 Q1)",
+    "open_other": "open: other (O4 Q2)",
 }
-STATUS_OTHER_OPEN = {
-    "teater:1",  # Teorie a přístupy / Theory and approaches
-    "teater:288",  # Hraniční obory / Cross-border and related disciplines
-    "teater:2557",  # Pomocně-historická hesla (the branch root itself)
-    "teater:2558",  # bitvy / battles -- a battle name is not a place/language name
-    "teater:3091",  # války / wars -- same
-    "teater:3094",  # Povolání a pracovní činnosti / Professions and work activities
-    "teater:3549",  # Společnost / Society
-}
+# A per-term override exclusion has no `_exclusions` entry to carry a status — it is
+# not a list-level ruling at all. Kept distinct so it is never misread as a blessed
+# M4 list.
+STATUS_OVERRIDE = "settled (per-term override)"
+# The one status the tool has to act on rather than just print: a `guardrail_conflict`
+# column marks the rows whose reinstatement also needs the prompt's geographic wording
+# relaxed, so nobody flips one half of that pair on its own.
+GEO_ETHNIC_STATUS = "open_geo_ethnic"
+
+
+def _status_of(notes: Dict[str, Dict[str, str]], *rules: str) -> str:
+    """The declared status of the first of ``rules`` that has an `_exclusions` note.
+
+    Callers pass most-specific-first (a TEATER sub-branch, then its root), because a
+    sub-branch nobody keyed separately is covered by its root's ruling.
+    """
+    for rule in rules:
+        note = notes.get(rule)
+        if note:
+            return note.get("status", DEFAULT_EXCLUSION_STATUS)
+    return DEFAULT_EXCLUSION_STATUS
 
 
 # ── shared loading ───────────────────────────────────────────────────────────────
@@ -272,7 +278,9 @@ COLLISION_COLUMNS = [
 # ── O1/F: composite-label overlap (Track 3) ──────────────────────────────────────
 
 
-def composite_pair_rows(nested: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+def composite_pair_rows(
+    nested: Dict[str, Dict[str, Any]], manager: Optional[VocabularyManager] = None
+) -> List[Dict[str, Any]]:
     """Every offered "X/Y[/Z]" label where at least one of X, Y, Z is ALSO offered as
     its own standalone entry — both are currently selectable answers for the same
     line, and only one is "correct" under an exact-match score (O1/F).
@@ -282,9 +290,34 @@ def composite_pair_rows(nested: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any
     links into the vocabulary — so this report and the mechanism it reports on can
     never disagree about what counts as a pair. This function only decorates each
     link with the two entries' source ids for the reviewer.
+
+    Given a ``manager``, the sheet also uses that config's composite separators and
+    reports each pair's ``link_status`` — ``auto`` as detected, ``suppressed`` where
+    a reviewer has already ruled the pair wrong, ``manual`` for a link declared in
+    ``taxonomy_overrides.json`` that no label shape implies. A reviewer's own
+    verdicts are then visible on the sheet they review, rather than only in the
+    built vocabulary.
     """
+    separators = manager.composite_separators() if manager else DEFAULT_COMPOSITE_SEPARATORS
+    extra, suppress = manager.same_as_overrides() if manager else ([], [])
+    manual = {frozenset(p) for p in extra}
+    blocked = {frozenset(p) for p in suppress}
+
+    def _status(entry_a: Dict[str, Any], entry_b: Dict[str, Any]) -> str:
+        key = frozenset(
+            {
+                (entry_a.get("source", ""), entry_a.get("source_id", "")),
+                (entry_b.get("source", ""), entry_b.get("source_id", "")),
+            }
+        )
+        if key in blocked:
+            return "suppressed"
+        return "manual" if key in manual else "auto"
+
     rows: List[Dict[str, Any]] = []
-    for facet, cs, comp_facet, comp_cs in find_composite_links(nested):
+    seen: set = set()
+    for facet, cs, comp_facet, comp_cs in find_composite_links(nested, separators):
+        seen.add((facet, cs, comp_facet, comp_cs))
         entry = nested[facet][cs]
         comp_entry = nested[comp_facet][comp_cs]
         rows.append(
@@ -298,8 +331,40 @@ def composite_pair_rows(nested: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any
                 "component_source": comp_entry.get("source", ""),
                 "component_id": comp_entry.get("source_id", ""),
                 "same_facet": facet == comp_facet,
+                "link_status": _status(entry, comp_entry),
             }
         )
+
+    # A hand-declared link the detector cannot see has no row above; add it, so the
+    # sheet lists every pair the built vocabulary actually carries.
+    index = {
+        (e.get("source", ""), e.get("source_id", "")): (facet, cs, e)
+        for facet, terms in nested.items()
+        if not facet.startswith("_")
+        for cs, e in terms.items()
+    }
+    for pair in sorted(sorted(tuple(p)) for p in extra):
+        located = [index.get(tuple(side)) for side in pair]
+        if len(located) != 2 or not all(located):
+            continue
+        (facet, cs, entry), (comp_facet, comp_cs, comp_entry) = located
+        if (facet, cs, comp_facet, comp_cs) in seen or (facet, cs) == (comp_facet, comp_cs):
+            continue
+        rows.append(
+            {
+                "composite_cs": cs,
+                "composite_facet": facet,
+                "composite_source": entry.get("source", ""),
+                "composite_id": entry.get("source_id", ""),
+                "component_cs": comp_cs,
+                "component_facet": comp_facet,
+                "component_source": comp_entry.get("source", ""),
+                "component_id": comp_entry.get("source_id", ""),
+                "same_facet": facet == comp_facet,
+                "link_status": _status(entry, comp_entry),
+            }
+        )
+    rows.sort(key=lambda r: (r["composite_cs"], r["component_cs"]))
     return rows
 
 
@@ -313,6 +378,7 @@ COMPOSITE_COLUMNS = [
     "component_source",
     "component_id",
     "same_facet",
+    "link_status",
 ]
 
 
@@ -375,6 +441,7 @@ def teater_subbranch_impact_rows(
     teater_records = per_source.get("teater", ([], {}))[0]
     branch_map = manager.settings.get("teater_branch_map") or {}
     labels = manager.settings.get("teater_branch_labels") or {}
+    notes = manager.exclusion_notes()
     children_index = _teater_children_index(teater_records)
     by_id = {r.source_id: r for r in teater_records if r.source_id}
 
@@ -409,7 +476,8 @@ def teater_subbranch_impact_rows(
                     "usable_count": len(groups),
                     "sample_terms": "; ".join(samples),
                     "would_be_facet": "",  # reviewer's call — Q1/Q2 decides this, not the tool
-                    "guardrail_conflict": f"teater:{child}" in STATUS_GEO_ETHNIC,
+                    "guardrail_conflict": _status_of(notes, f"teater:{child}", f"teater:{root}")
+                    == GEO_ETHNIC_STATUS,
                 }
             )
     rows.sort(key=lambda r: (r["root"], -r["term_count"]))
@@ -469,34 +537,27 @@ def exclusion_impact_rows(
     """
     buckets = _excluded_buckets(per_source, manager)
     labels = manager.settings.get("teater_branch_labels") or {}
-    reasons = manager.settings.get("_exclusions") or {}
+    notes = manager.exclusion_notes()  # keyed by the same rule string as `buckets`
 
     rows: List[Dict[str, Any]] = []
     for rule, members in sorted(buckets.items(), key=lambda kv: -len(kv[1])):
         kind, ident = rule.split(":", 1)
-        if kind == "teater":
-            label = labels.get(ident, "")
-            reason = reasons.get(ident, "") or reasons.get(f"TEATER {ident}", "")
-        elif kind == "override":
+        note = notes.get(rule) or {}
+        if kind == "override":
             # ident is "source:source_id" here (rule = "override:source:source_id");
             # the reason lives on the override entry itself, not in _exclusions.
             src, _, oid = ident.partition(":")
             label = ident
             reason = (manager.overrides.get((src, oid)) or {}).get("reason", "")
+            status = STATUS_OVERRIDE
         else:
-            label = ident
-            reason = reasons.get(ident, "")
+            label = labels.get(ident, "") if kind == "teater" else ident
+            reason = note.get("reason", "")
+            status = STATUS_LABELS.get(
+                note.get("status", DEFAULT_EXCLUSION_STATUS),
+                STATUS_LABELS[DEFAULT_EXCLUSION_STATUS],
+            )
         samples = sorted({m.cs for m in members})[:10]
-        if rule in STATUS_GEO_ETHNIC:
-            status = "open: geographic/ethnic (O3/O4 Q1)"
-        elif rule in STATUS_OTHER_OPEN:
-            status = "open: other (O4 Q2)"
-        elif kind == "override":
-            # Not M4 by definition — a per-term override could exclude anything.
-            # Kept distinct so it is never misread as an already-blessed M4 list.
-            status = "settled (per-term override)"
-        else:
-            status = "settled (M4)"
         rows.append(
             {
                 "status": status,
@@ -576,6 +637,7 @@ def reinstatement_preview_rows(
 
     buckets = _excluded_buckets(per_source, manager)
     labels = manager.settings.get("teater_branch_labels") or {}
+    notes = manager.exclusion_notes()
 
     rows: List[Dict[str, Any]] = []
     for rule, members in buckets.items():
@@ -603,7 +665,7 @@ def reinstatement_preview_rows(
                 "would_be_facet": "",  # reviewer's call — see docstring
                 "collides_with_offered": len(collides),
                 "prompt_token_delta": round(delta_chars / 3.35),
-                "guardrail_conflict": rule in STATUS_GEO_ETHNIC,
+                "guardrail_conflict": _status_of(notes, rule) == GEO_ETHNIC_STATUS,
             }
         )
     rows.sort(key=lambda r: -r["usable_count"])
@@ -692,7 +754,7 @@ def main(argv: Any = None) -> int:
         qualifiers = manager.qualifier_overrides()
         records = filtered.get("amcr", []) + filtered.get("teater", [])
         nested, _audit, _collisions = vb._nest(manager, records, qualifiers=qualifiers)
-        rows = composite_pair_rows(nested)
+        rows = composite_pair_rows(nested, manager)
         _write_csv(args.vocab_dir / "composite_pairs.csv", rows, COMPOSITE_COLUMNS)
 
     if args.exclusions or args.all:
