@@ -1138,6 +1138,16 @@ Just like the main shell-script pipelines, LLM enrichment natively hooks into
 `atrium_paradata.py` and automatically logs:
 
 * Full snapshot of [llm_config.txt](llm_config.txt) 📎 and quality-filter settings.
+* **Which vocabulary build was used** — read from the `*.meta.json` beside the artifact:
+tool version, term count, the sha256 of both taxonomy files, and each source's record
+count and pinned ref (TEATER's harvest commit). A run is reproducible only if the
+vocabulary it saw is identifiable, and every placement decision is a function of those
+two sha256s.
+* **Both vocabulary sources as licence components.** The AMCR heslář and the TEATER
+thesaurus are CC BY-NC 4.0 and declared *conditional* in [para_config.txt](para_config.txt) 📎,
+so they constrain a run's effective licence only when `log_component()` names them.
+Logged per source actually present in the build — an AMCR-only artifact does not claim
+it used TEATER data.
 * Total processed lines (`json` success events).
 * Per-line tracking of filter skips (`skipped_filter`), inference faults
 (`skipped_error`), and already-completed files (`already_exists`).

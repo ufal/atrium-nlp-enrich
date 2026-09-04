@@ -220,6 +220,64 @@ def test_composite_sheet_lists_a_hand_declared_pair_no_label_implies():
     assert {added["composite_cs"], added["component_cs"]} == {"kostel", "kaple"}
 
 
+# ── specificity_pair_rows (D1 / O2) ──────────────────────────────────────────────
+
+
+def test_specificity_pairs_names_the_nearest_offered_ancestor():
+    """The row must name the smallest step the model got wrong, not the branch root —
+    `paleogén` sits under `třetihory`, four rungs below `geologická doba`, and a
+    reviewer ruling on partial credit needs the near miss, not the top of the tree."""
+    _require_flat()
+    per_source = vb._load_flat(VOCAB_DIR)
+    rows = {r["cs"]: r for r in vr.specificity_pair_rows(_built_union(), per_source)}
+
+    paleogen = rows["paleogén"]
+    assert paleogen["nearest_ancestor_cs"] == "třetihory"
+    assert paleogen["outermost_offered_ancestor_cs"] == "geologická doba"
+    assert paleogen["rungs_above"] == 3
+
+
+def test_specificity_pairs_only_lists_terms_whose_ancestor_is_also_offered():
+    """A term whose ancestors were all excluded is not a scoring ambiguity — nothing
+    else was selectable, so the model had no less-specific answer to give."""
+    _require_flat()
+    per_source = vb._load_flat(VOCAB_DIR)
+    nested = _built_union()
+    offered = {cs for terms in nested.values() for cs in terms}
+    for row in vr.specificity_pair_rows(nested, per_source):
+        assert row["nearest_ancestor_cs"] in offered
+        assert row["outermost_offered_ancestor_cs"] in offered
+        assert row["cs"] != row["nearest_ancestor_cs"]
+
+
+def test_every_specificity_pair_sits_inside_one_facet():
+    """Load-bearing for D1: if these pairs crossed facets, scoring the facet instead of
+    the term would separate a near miss from a category error. They do not — every one
+    is intra-facet, so facet-level scoring cannot tell the two apart and the rule has
+    to be made at term level."""
+    _require_flat()
+    per_source = vb._load_flat(VOCAB_DIR)
+    rows = vr.specificity_pair_rows(_built_union(), per_source)
+    assert rows, "the shipped vocabulary must produce specificity pairs"
+    assert all(r["same_facet"] for r in rows)
+
+
+def test_specificity_verdict_column_is_left_for_the_reviewer():
+    """Same convention as collision_review.csv's `verdict` and the reinstatement
+    sheet's `would_be_facet`: the tool measures, @motyc and @david-spacil rule (M10)."""
+    _require_flat()
+    per_source = vb._load_flat(VOCAB_DIR)
+    rows = vr.specificity_pair_rows(_built_union(), per_source)
+    assert {r["verdict"] for r in rows} == {""}
+
+
+def test_specificity_pairs_is_empty_without_a_hierarchy():
+    """AMCR has no broader chain, so an AMCR-only build has no ladder at all — the
+    report must be empty rather than inventing one from label shape."""
+    nested = {"Feature": {"most": {"cs": "most", "source": "amcr", "source_id": "A1"}}}
+    assert vr.specificity_pair_rows(nested, {"amcr": ([], None)}) == []
+
+
 # ── exclusion_impact_rows (O3/O4 / Track 4) ──────────────────────────────────────
 
 
@@ -697,7 +755,7 @@ def test_committed_review_sheets_match_a_fresh_generation():
             vr.collision_review_rows(records, manager, label_index=vr._label_index(per_source)),
             vr.COLLISION_COLUMNS,
         ),
-        "composite_pairs.csv": (vr.composite_pair_rows(nested), vr.COMPOSITE_COLUMNS),
+        "composite_pairs.csv": (vr.composite_pair_rows(nested, manager), vr.COMPOSITE_COLUMNS),
         "exclusion_impact.csv": (
             vr.exclusion_impact_rows(per_source, manager),
             vr.EXCLUSION_COLUMNS,
@@ -709,6 +767,10 @@ def test_committed_review_sheets_match_a_fresh_generation():
         "reinstatement_preview.csv": (
             vr.reinstatement_preview_rows(per_source, manager),
             vr.REINSTATEMENT_COLUMNS,
+        ),
+        "specificity_pairs.csv": (
+            vr.specificity_pair_rows(nested, per_source),
+            vr.SPECIFICITY_COLUMNS,
         ),
     }
 

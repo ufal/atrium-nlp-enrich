@@ -37,7 +37,7 @@ from llm_utils import (  # noqa: E402
     process_document,
     process_document_vllm,
 )
-from vocab_manager import VocabularyManager  # noqa: E402
+from vocab_manager import VocabularyManager, vocabulary_provenance  # noqa: E402
 
 _EXAMPLES_FOOTER = (
     "\nEXAMPLES:\n\n"
@@ -409,6 +409,14 @@ def main(config_path: str = "llm_config.txt") -> None:
     _check_backend_deps(BACKEND, MODEL_KEY)
     log_gpu_info()
 
+    # D3 (issue #6): every run injects the AMCR + TEATER vocabulary into its prompt,
+    # and until now the paradata recorded neither which build of it was used nor that
+    # it was used at all. vocab_build.py has always written the identity beside the
+    # artifact — taxonomy sha256s, tool version, TEATER's pinned commit — and nothing
+    # read it. Empty for a legacy or auto-synced vocabulary with no sidecar; a run
+    # must not fail over missing provenance.
+    provenance = vocabulary_provenance(VOCAB_PATH)
+
     logger = ParadataLogger(
         program="nlp-enrich",
         config={
@@ -419,10 +427,25 @@ def main(config_path: str = "llm_config.txt") -> None:
             "min_char_count": MIN_CHAR_COUNT,
             "min_char_non_text": MIN_CHAR_NON_TEXT,
             "min_alpha_ratio_non_text": MIN_ALPHA_RATIO_NON_TEXT,
+            **({"vocabulary": provenance} if provenance else {}),
         },
         paradata_dir=PARADATA_DIR,
         output_types=["json"],
     )
+
+    # Both vocabulary sources are CC BY-NC 4.0 and declared *conditional* in
+    # para_config.txt, so they constrain a run's effective licence only when named
+    # here. Logged per source actually present in the build, not hard-wired to both:
+    # an AMCR-only artifact must not claim it used TEATER data.
+    for component in provenance.get("components", []):
+        logger.log_component(component)
+    if provenance:
+        src = provenance["sources"]
+        print(
+            f"  vocabulary: {provenance['vocab']['terms']} terms, built by "
+            f"{provenance['vocab']['tool_version']}, sources "
+            + ", ".join(f"{n} ({v['records']} records)" for n, v in sorted(src.items()))
+        )
 
     with logger:
         vocab_mgr = VocabularyManager(vocab_path=VOCAB_PATH)

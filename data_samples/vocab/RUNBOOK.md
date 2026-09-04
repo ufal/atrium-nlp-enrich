@@ -4,12 +4,20 @@ Every script that reads or writes the controlled vocabulary, what it does, when 
 it, and what must **not** be run blindly. Issue
 [#6](https://github.com/ufal/atrium-nlp-enrich/issues/6).
 
+Two decision packages live beside the sheets they are built from. Each frames an open
+question with numbers from this directory and decides nothing:
+
+| Package                        | Question                                             | Sheets it reads                                                                    |
+|--------------------------------|------------------------------------------------------|------------------------------------------------------------------------------------|
+| `6.O3O4.decision-package.md`   | which excluded terms come back? (O3/O4)              | `exclusion_impact.csv`, `teater_subbranch_impact.csv`, `reinstatement_preview.csv` |
+| `6.D-eval.decision-package.md` | what counts as a correct answer? (O2, the D1 rubric) | `specificity_pairs.csv`, `composite_pairs.csv`, `collision_review.csv`             |
+
 Three tools, in dependency order:
 
 | Tool               | Needs network      | Needs the document corpus | Writes                                        |
 |--------------------|--------------------|---------------------------|-----------------------------------------------|
 | `vocab_build.py`   | only for a harvest | no                        | the 10 vocabulary artifacts in this directory |
-| `vocab_review.py`  | no                 | no                        | 5 review sheets (corpus-independent)          |
+| `vocab_review.py`  | no                 | no                        | 6 review sheets (corpus-independent)          |
 | `corpus_review.py` | no                 | **yes**                   | 3 evidence sheets + `corpus_review.meta.json` |
 
 ---
@@ -41,19 +49,20 @@ gate; it runs in CI (`.github/workflows/vocab-drift.yml`) and as
 pre-union path). The refresh workflow does not pass it, so that file keeps diverging;
 do not rely on it.
 
-## 2. `vocab_review.py` — the five reviewer sheets
+## 2. `vocab_review.py` — the six reviewer sheets
 
 Offline, pure, deterministic. Reads the committed `*_flat.json` plus the taxonomy
 config; writes only the CSVs below. Nothing here decides anything — each sheet ranks
 and surfaces candidates for a human.
 
 ```bash
-python3 vocab_review.py --all            # all five
+python3 vocab_review.py --all            # all six
 python3 vocab_review.py --collisions     # collision_review.csv        (M8, @david-spacil)
 python3 vocab_review.py --composites     # composite_pairs.csv         (O1/F)
 python3 vocab_review.py --exclusions     # exclusion_impact.csv        (O3/O4, @motyc)
 python3 vocab_review.py --subbranches    # teater_subbranch_impact.csv (O3/O4, finer grain)
 python3 vocab_review.py --reinstate      # reinstatement_preview.csv   (O3/O4 go/no-go)
+python3 vocab_review.py --specificity    # specificity_pairs.csv       (D1/O2, @motyc)
 ```
 
 Re-run after **any** taxonomy change, for the same reason as the artifacts:

@@ -83,6 +83,70 @@ DEFAULT_COMPOSITE_SEPARATORS = ("/",)
 # convention someone invented, and either way it silently does nothing.
 OVERRIDE_KEYS = frozenset({"facet", "sub", "qualifier_cs", "same_as", "same_as_suppress", "reason"})
 
+# Which para_config.txt [components] entry each vocabulary source is declared as. Both
+# are CC BY-NC 4.0 and both are declared *conditional*, meaning they only constrain a
+# run's effective licence when log_component() actually names them — so a run that
+# injects this vocabulary into its prompt and never logs the component under-reports
+# its own licence. Kept here, beside the sources themselves, so the mapping travels
+# with the vocabulary core into atrium-llm-enrich rather than being re-derived there.
+PARADATA_COMPONENTS = {"amcr": "amcr_vocab", "teater": "teater_data"}
+
+
+def vocabulary_provenance(vocab_path: str) -> Dict[str, Any]:
+    """Identity of a built vocabulary, read from the ``*.meta.json`` beside it.
+
+    ``vocab_build.py`` has always written this sidecar — the taxonomy files' sha256s,
+    the tool version, and per-source harvest facts including TEATER's pinned
+    ``snapshot_ref`` — and nothing has ever read it, so an enrichment run recorded
+    *that* it used a vocabulary but never *which* one (issue #6, D3).
+
+    Returns ``{}`` when there is no sidecar: the legacy flat vocabulary and an
+    auto-synced one have none, and a run must not fail over missing provenance. Keys:
+
+      ``vocab``        the artifact's own path, tool version and term count
+      ``taxonomy``     ``{config_sha256, overrides_sha256}`` — the two files that
+                       decide every placement
+      ``sources``      per source: records, licence and pinned ref
+      ``components``   para_config component names to pass to ``log_component``
+    """
+    meta_path = Path(vocab_path).with_suffix(".meta.json")
+    if not meta_path.exists():
+        return {}
+    with open(meta_path, "r", encoding="utf-8") as fh:
+        meta = json.load(fh)
+
+    sources = {}
+    components = []
+    for source in meta.get("sources") or []:
+        name = str(source.get("name") or "")
+        if not name:
+            continue
+        sources[name] = {
+            "records": source.get("records"),
+            "license": source.get("license"),
+            # TEATER pins a commit; AMCR has no equivalent, so the harvest endpoint is
+            # the closest thing to a version it can offer.
+            "ref": source.get("snapshot_ref") or source.get("endpoint"),
+        }
+        if name in PARADATA_COMPONENTS:
+            components.append(PARADATA_COMPONENTS[name])
+
+    return {
+        "vocab": {
+            "path": str(vocab_path),
+            "meta_path": str(meta_path),
+            "tool_version": meta.get("tool_version"),
+            "terms": (meta.get("counts") or {}).get("total"),
+        },
+        "taxonomy": {
+            "config_sha256": (meta.get("taxonomy_config") or {}).get("sha256"),
+            "overrides_sha256": (meta.get("taxonomy_overrides") or {}).get("sha256"),
+        },
+        "sources": sources,
+        "components": sorted(components),
+    }
+
+
 # The prompt has forbidden the model from selecting a country, language or region name
 # since long before the vocabulary excluded those branches. The two are one decision
 # held in two places, and either half can be changed without the other: relax the prompt

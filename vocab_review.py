@@ -684,6 +684,86 @@ REINSTATEMENT_COLUMNS = [
 ]
 
 
+# ── D1: the specificity ladder (issue #6, O2 / workstream D) ─────────────────────
+
+
+def specificity_pair_rows(
+    nested: Dict[str, Dict[str, Any]],
+    per_source: Dict[str, Tuple[List[vs.VocabRecord], Any]],
+) -> List[Dict[str, Any]]:
+    """Every offered term that is ALSO offered under one of its own broader terms.
+
+    This is the measurement behind D1's "partial credit for a correct-but-less-specific
+    term" question, and it is not a corner case: TEATER curates a real ``broader``
+    hierarchy and the facet rollup keeps both tiers, so a large share of the TEATER side
+    of the vocabulary sits directly under an ancestor the model could equally have
+    picked. Under strict exact match a model answering ``třetihory`` where the gold
+    label is ``paleogén`` scores exactly what one answering ``keramika`` scores — zero —
+    and the metric cannot tell a near-miss from a category error.
+
+    ``nearest_ancestor`` is the closest offered ancestor, not the branch root: the chain
+    is walked from the term outward, so the row names the smallest step the model
+    actually got wrong. ``rungs_above`` counts how many of the term's ancestors are
+    offered at all, which is how far a "credit any ancestor" rule would reach.
+
+    Decides nothing — the scoring rule is @motyc's and @david-spacil's call (M10). This
+    sheet only says how many answers it would change.
+    """
+    by_norm: Dict[str, Tuple[str, str]] = {}
+    teater_ids: Dict[str, Tuple[str, str]] = {}
+    for facet, terms in nested.items():
+        if facet.startswith("_"):
+            continue
+        for cs, entry in terms.items():
+            by_norm[vs.norm_label(cs)] = (facet, cs)
+            if entry.get("source") == "teater" and entry.get("source_id"):
+                teater_ids[str(entry["source_id"])] = (facet, cs)
+
+    records = {r.source_id: r for r in per_source.get("teater", ([], None))[0] if r.source_id}
+
+    rows: List[Dict[str, Any]] = []
+    for source_id, (facet, cs) in teater_ids.items():
+        record = records.get(source_id)
+        if not record:
+            continue
+        # Outward from the term: broader is root-first, so reversed() is nearest-first.
+        offered_ancestors = [
+            a for a in reversed(record.broader) if a in teater_ids and teater_ids[a][1] != cs
+        ]
+        if not offered_ancestors:
+            continue
+        anc_facet, anc_cs = teater_ids[offered_ancestors[0]]
+        root_facet, root_cs = teater_ids[offered_ancestors[-1]]
+        rows.append(
+            {
+                "cs": cs,
+                "facet": facet,
+                "source_id": source_id,
+                "nearest_ancestor_cs": anc_cs,
+                "nearest_ancestor_id": offered_ancestors[0],
+                "outermost_offered_ancestor_cs": root_cs,
+                "rungs_above": len(offered_ancestors),
+                "same_facet": facet == anc_facet and facet == root_facet,
+                "verdict": "",  # reviewer's: full / partial / no credit
+            }
+        )
+    rows.sort(key=lambda r: (-r["rungs_above"], r["cs"]))
+    return rows
+
+
+SPECIFICITY_COLUMNS = [
+    "cs",
+    "facet",
+    "source_id",
+    "nearest_ancestor_cs",
+    "nearest_ancestor_id",
+    "outermost_offered_ancestor_cs",
+    "rungs_above",
+    "same_facet",
+    "verdict",
+]
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────────
 
 
@@ -705,7 +785,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="O3/O4 reinstatement preview: usable_count, collisions, token delta per rule",
     )
-    p.add_argument("--all", action="store_true", help="all five reports")
+    p.add_argument(
+        "--specificity",
+        action="store_true",
+        help="D1 specificity ladder: terms offered alongside their own broader term",
+    )
+    p.add_argument("--all", action="store_true", help="all six reports")
     p.add_argument("--vocab-dir", type=Path, default=DEFAULT_VOCAB_DIR)
     p.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     p.add_argument("--overrides", type=Path, default=None)
@@ -720,11 +805,12 @@ def main(argv: Any = None) -> int:
         or args.exclusions
         or args.subbranches
         or args.reinstate
+        or args.specificity
         or args.all
     ):
         print(
             "Nothing to do — pass --collisions, --composites, --exclusions, "
-            "--subbranches, --reinstate, or --all."
+            "--subbranches, --reinstate, --specificity, or --all."
         )
         return 2
 
@@ -768,6 +854,13 @@ def main(argv: Any = None) -> int:
     if args.reinstate or args.all:
         rows = reinstatement_preview_rows(per_source, manager)
         _write_csv(args.vocab_dir / "reinstatement_preview.csv", rows, REINSTATEMENT_COLUMNS)
+
+    if args.specificity or args.all:
+        qualifiers = manager.qualifier_overrides()
+        records = filtered.get("amcr", []) + filtered.get("teater", [])
+        nested, _audit, _collisions = vb._nest(manager, records, qualifiers=qualifiers)
+        rows = specificity_pair_rows(nested, per_source)
+        _write_csv(args.vocab_dir / "specificity_pairs.csv", rows, SPECIFICITY_COLUMNS)
 
     return 0
 

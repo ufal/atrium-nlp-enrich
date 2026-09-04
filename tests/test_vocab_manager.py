@@ -603,6 +603,94 @@ def test_an_entry_without_a_status_defaults_to_settled(tmp_path):
     assert m.exclusion_notes()["heslar:zeme"]["status"] == "settled"
 
 
+# ── vocabulary provenance for paradata (issue #6, D3) ───────────────────────────
+
+
+def _write_vocab_with_meta(tmp_path, meta):
+    (tmp_path / "union_nested.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "union_nested.meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False), encoding="utf-8"
+    )
+    return str(tmp_path / "union_nested.json")
+
+
+def test_provenance_reads_the_sidecar_beside_the_artifact(tmp_path):
+    """vocab_build.py has always written this file and nothing has ever read it, so an
+    enrichment run recorded *that* it used a vocabulary but never *which* one."""
+    from vocab_manager import vocabulary_provenance
+
+    path = _write_vocab_with_meta(
+        tmp_path,
+        {
+            "tool_version": "v0.20.0",
+            "counts": {"total": 2074},
+            "taxonomy_config": {"sha256": "aaa"},
+            "taxonomy_overrides": {"sha256": "bbb"},
+            "sources": [
+                {"name": "amcr", "records": 1460, "license": "CC BY-NC 4.0", "endpoint": "oai"},
+                {
+                    "name": "teater",
+                    "records": 4134,
+                    "license": "CC BY-NC 4.0",
+                    "snapshot_ref": "2106c59",
+                },
+            ],
+        },
+    )
+    prov = vocabulary_provenance(path)
+    assert prov["vocab"]["tool_version"] == "v0.20.0"
+    assert prov["vocab"]["terms"] == 2074
+    assert prov["taxonomy"] == {"config_sha256": "aaa", "overrides_sha256": "bbb"}
+    # TEATER pins a commit; AMCR has no equivalent, so the endpoint stands in for one.
+    assert prov["sources"]["teater"]["ref"] == "2106c59"
+    assert prov["sources"]["amcr"]["ref"] == "oai"
+
+
+def test_provenance_names_the_components_the_build_actually_used(tmp_path):
+    """An AMCR-only artifact must not claim it used TEATER data — the licence block is
+    an assertion about what a run depended on, not a list of what exists."""
+    from vocab_manager import vocabulary_provenance
+
+    path = _write_vocab_with_meta(
+        tmp_path, {"sources": [{"name": "amcr", "records": 1460, "license": "CC BY-NC 4.0"}]}
+    )
+    assert vocabulary_provenance(path)["components"] == ["amcr_vocab"]
+
+
+def test_provenance_is_empty_without_a_sidecar(tmp_path):
+    """The legacy flat vocabulary and an auto-synced one have no sidecar. A run must
+    not fail over missing provenance."""
+    from vocab_manager import vocabulary_provenance
+
+    (tmp_path / "legacy.json").write_text("{}", encoding="utf-8")
+    assert vocabulary_provenance(str(tmp_path / "legacy.json")) == {}
+    assert vocabulary_provenance(str(tmp_path / "absent.json")) == {}
+
+
+def test_shipped_vocabulary_declares_both_non_commercial_sources():
+    from vocab_manager import vocabulary_provenance
+
+    prov = vocabulary_provenance(str(_repo_root() / "data_samples" / "vocab" / "union_nested.json"))
+    assert prov["components"] == ["amcr_vocab", "teater_data"]
+    assert {s["license"] for s in prov["sources"].values()} == {"CC BY-NC 4.0"}
+    assert prov["taxonomy"]["config_sha256"] and prov["taxonomy"]["overrides_sha256"]
+
+
+def test_every_paradata_component_name_is_declared_in_para_config():
+    """log_component() falls back to "UNKNOWN" for a name para_config.txt does not
+    declare — silently, and the run's effective licence is then computed without it.
+    A typo here would under-report a CC BY-NC 4.0 dependency."""
+    from vocab_manager import PARADATA_COMPONENTS
+
+    text = (_repo_root() / "para_config.txt").read_text(encoding="utf-8")
+    declared = {
+        line.split("=", 1)[0].strip()
+        for line in text.splitlines()
+        if "=" in line and not line.strip().startswith("#")
+    }
+    assert set(PARADATA_COMPONENTS.values()) <= declared
+
+
 # ── geo guardrail: one decision, two files, kept in step (issue #6, O4 / C1) ─────
 
 
