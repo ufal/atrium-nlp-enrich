@@ -280,7 +280,7 @@ Maps input text files to document IDs and page numbers to ensure correct process
 * **Input:** `../CSVS_with_TEXT/` (raw text files in subdirectories from Step 1).
 * **Output:** `OUTPUT_DIR/manifest.tsv`.
 
-Example output file [manifest.tsv](data_samples/manifest_SHORT.tsv) 📎 with **file**, **page**
+Example output file [manifest.tsv](data_samples/manifest.tsv) 📎 with **file**, **page**
 number, and **path** columns. It lists all text files to be processed in the next steps.
 Run the following command to see how many documents will be processed:
 
@@ -309,7 +309,7 @@ ls -l <OUTPUT_DIR>/UDP/ | wc -l
 ```
 which returns the total number of CoNLL-U files created (each file corresponds to a document).
 
-Example output directory [UDP](data_samples%2FUDP) 📁 contains per-document CoNLL-U files.
+Example output directory [UDP](data_samples/UDP) 📁 contains per-document CoNLL-U files.
 
 > [!NOTE]
 > **Chunking and page boundaries.** [chunk.py](api_util/chunk.py)📎 splits text on OCR line boundaries (not raw whitespace),
@@ -347,7 +347,7 @@ ls -l OUTPUT_DIR/NE | wc -l
 ```
 which returns the total number of directories created (each subfolder corresponds to a document).
 
-Example output directory [NE](data_samples%2FNE) 📁 contains per-page TSV files with NE annotations, where the NE tags
+Example output directory [NE](data_samples/NE) 📁 contains per-page TSV files with NE annotations, where the NE tags
 follow the CNEC 2.0 standard [^3] which is used in the Czech Nametag model.
 
 
@@ -539,7 +539,8 @@ ls OUTPUT_DIR/TEITOK/*.xml | wc -l
 
 returns number of recorded `.teitok.xml` documents.
 
-Example summary table: [summary_ne_counts.csv](data_samples/summary_ne_counts.csv) 📎.
+Example summary table: `summary_ne_counts.csv` (produced by a real run; not committed —
+see the note below).
 
 Example output directory [UDP_NE](data_samples/UDP_NE) 📁 contains per-document CSV
 tables with NE tags and UDPipe feature columns, plus CoNLL-U files with NE annotations in
@@ -601,8 +602,10 @@ AND
 └── manifest.tsv
 ```
 
-The combined output [summary_ne_counts.csv](data_samples/summary_ne_counts.csv) 📎 contains aggregated Named Entity
-statistics across all processed pages.
+The combined output `summary_ne_counts.csv` contains aggregated Named Entity
+statistics across all processed pages. This repository's `data_samples/` only ships the three
+synthetic demo documents (`CTX00000000{1,2,3}`), so no `summary_ne_counts.csv` is
+committed — the file is real output of a real `api_5_summary_ne.sh` run, not a sample bundled here.
 
 > [!NOTE]
 > Now you can delete `UDP/` from `<OUTPUT_DIR>/` if you no longer need the raw CoNLL-U files.
@@ -1109,28 +1112,36 @@ its own source label (e.g. `"GPS (navigační systém)"`) is never touched.
 }
 ```
 
-Output examples per model:
-- [KW_PER_DOC_LLM_qwen3_14b](data_samples/KW_PER_DOC_LLM_qwen3_14b) 📂 by Qwen 3-14B [^18]
-- [KW_PER_DOC_LLM_qwen2.5-14b-awq](data_samples/KW_PER_DOC_LLM_qwen25_14b_awq) 📂 by Qwen 2.5-14B AWQ [^12]
-- [KW_PER_DOC_LLM_gemma_3_12b_it](data_samples/KW_PER_DOC_LLM_gemma_3_12b_it) 📂 by Gemma 3-12B-IT [^20]
-- [KW_PER_DOC_LLM_qwen_3.6_27b_it](data_samples/KW_PER_DOC_LLM_qwen_36_27b_it) 📂 by Qwen 3.6-27B-IT [^24]
-- [KW_PER_DOC_LLM_gemma_4_31b_it](data_samples/KW_PER_DOC_LLM_gemma_4_31b_it) 📂 by Gemma 4-31B-IT [^22]
-- [KW_PER_DOC_LLM_qwen_3.5_9b_it](data_samples/KW_PER_DOC_LLM_qwen_35_9b_it) 📂 by Qwen 3.5-9B-IT [^26]
-- [KW_PER_DOC_LLM_llama31_70b](data_samples/KW_PER_DOC_LLM_llama31_70b) 📂 by LLaMA 3.1-70B [^30]
-- [KW_PER_DOC_LLM_qwen3_8b](data_samples/KW_PER_DOC_LLM_qwen3_8b) 📂 by Qwen 3-8B [^19]
+> [!NOTE]
+> None of the per-model output sets below is committed to this repository — each is the
+> real output of a real run against the full report corpus, not a sample bundled with
+> the code (same reason `data_samples/DOC_LINE_CATEG/` itself holds only three synthetic
+> demo documents). The directory names are the `OUTPUT_DIR` a local run with that
+> `MODEL_KEY` produces; the footnote on each is the model card.
+
+Output examples per model (directory names, not links — see the note above):
+- `KW_PER_DOC_LLM_qwen3_14b` by Qwen 3-14B [^18]
+- `KW_PER_DOC_LLM_qwen25_14b_awq` by Qwen 2.5-14B AWQ [^12]
+- `KW_PER_DOC_LLM_gemma_3_12b_it` by Gemma 3-12B-IT [^20]
+- `KW_PER_DOC_LLM_qwen_36_27b_it` by Qwen 3.6-27B-IT [^24]
+- `KW_PER_DOC_LLM_gemma_4_31b_it` by Gemma 4-31B-IT [^22]
+- `KW_PER_DOC_LLM_qwen_35_9b_it` by Qwen 3.5-9B-IT [^26]
+- `KW_PER_DOC_LLM_llama31_70b` by LLaMA 3.1-70B [^30]
+- `KW_PER_DOC_LLM_qwen3_8b` by Qwen 3-8B [^19]
 
 Pending (sample runs in progress):
-- [KW_PER_DOC_LLM_qwen_3.6_35b_moe](data_samples/KW_PER_DOC_LLM_qwen_36_35b_moe) 📂 by Qwen 3.6-35B-MoE [^23]
-- [KW_PER_DOC_LLM_gemma_4_26b_a4b_it](data_samples/KW_PER_DOC_LLM_gemma_4_26b_a4b_it) 📂 by Gemma 4-26B-A4B-IT [^25]
+- `KW_PER_DOC_LLM_qwen_36_35b_moe` by Qwen 3.6-35B-MoE [^23]
+- `KW_PER_DOC_LLM_gemma_4_26b_a4b_it` by Gemma 4-26B-A4B-IT [^25]
 
-Archived (unsuccessful — evaluation notes in issue #6):
-- [KW_PER_DOC_LLM_mistral-nemo-12b](data_samples/archived_KW_PER_DOC_LLM/KW_PER_DOC_LLM_mistral_nemo_12b) 📂 by Mistral Nemo 12B [^14]
-- [KW_PER_DOC_LLM_aya_expanse_8b](data_samples/archived_KW_PER_DOC_LLM/KW_PER_DOC_LLM_aya_expanse_8b) 📂 by Aya Expanse 8B [^15]
-- [KW_PER_DOC_LLM_bielik_11b_v3.0](data_samples/archived_KW_PER_DOC_LLM/KW_PER_DOC_LLM_bielik_11b_v30) 📂 by Bielik 11B v3.0 [^16]
-- [KW_PER_DOC_LLM_llama31_8b](data_samples/archived_KW_PER_DOC_LLM/KW_PER_DOC_LLM_llama31_8b) 📂 by LLaMA 3.1-8B [^17]
-- [KW_PER_DOC_LLM_ministral_3_14b](data_samples/archived_KW_PER_DOC_LLM/KW_PER_DOC_LLM_ministral_3_14b) 📂 by Ministral 3-14B [^21]
-- [KW_PER_DOC_LLM_qwen3_8b (early run)](data_samples/archived_KW_PER_DOC_LLM/KW_PER_DOC_LLM_qwen3_8b) 📂 by Qwen 3-8B [^19]
-- [KW_PER_DOC_LLM_qwen2.5-7b](data_samples/archived_KW_PER_DOC_LLM/KW_PER_DOC_LLM_qwen25_7b) 📂 by Qwen 2.5-7B [^13]
+Archived (unsuccessful — evaluation notes in issue #6; would have been under
+`archived_KW_PER_DOC_LLM/`):
+- `KW_PER_DOC_LLM_mistral_nemo_12b` by Mistral Nemo 12B [^14]
+- `KW_PER_DOC_LLM_aya_expanse_8b` by Aya Expanse 8B [^15]
+- `KW_PER_DOC_LLM_bielik_11b_v30` by Bielik 11B v3.0 [^16]
+- `KW_PER_DOC_LLM_llama31_8b` by LLaMA 3.1-8B [^17]
+- `KW_PER_DOC_LLM_ministral_3_14b` by Ministral 3-14B [^21]
+- `KW_PER_DOC_LLM_qwen3_8b` (early run) by Qwen 3-8B [^19]
+- `KW_PER_DOC_LLM_qwen25_7b` by Qwen 2.5-7B [^13]
 
 ### 📊 Paradata Integration
 
@@ -1191,7 +1202,7 @@ started.  Because every script is an independent invocation, a complete
 four-step run will create four separate files, making it straightforward to
 audit individual stages in isolation.
 
-The paradata logs (samples in directory [paradata](paradata) 📂) capture key details about each pipeline stage,
+The paradata logs (samples in directory [paradata](data_samples/paradata) 📂) capture key details about each pipeline stage,
 including the program name, run ID, execution duration, configuration parameters, input and output statistics,
 and performance metrics. They also document skipped files with reasons and provide a breakdown of output
 types and processing rates for benchmarking. This structured metadata ensures traceability and facilitates
