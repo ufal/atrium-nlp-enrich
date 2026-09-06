@@ -36,9 +36,11 @@ def test_shipped_template_parses_and_declares_every_required_block():
 def test_every_shipped_block_is_reachable():
     """A block with no flag and no required status would sit in the file rendering
     nothing — the exact dead config `validate_settings` refuses elsewhere."""
-    known = set(pt.REQUIRED_BLOCKS) | set(pt.BLOCK_FLAGS) | {
-        b for b in pt.GEO_GUARDRAIL_BLOCKS.values() if b
-    }
+    known = (
+        set(pt.REQUIRED_BLOCKS)
+        | set(pt.BLOCK_FLAGS)
+        | {b for b in pt.GEO_GUARDRAIL_BLOCKS.values() if b}
+    )
     assert set(_blocks()) <= known, f"unreachable blocks: {set(_blocks()) - known}"
 
 
@@ -122,7 +124,9 @@ def test_a_template_missing_the_selected_guardrail_is_an_error(tmp_path):
     """Flag and template drifting apart must fail loudly: the prompt would otherwise
     silently carry no geographic rule while the config says it does."""
     f = tmp_path / "t.txt"
-    f.write_text("[[role]]\nr\n[[rule.json_only]]\nj\n[[vocabulary.header]]\nV:\n", encoding="utf-8")
+    f.write_text(
+        "[[role]]\nr\n[[rule.json_only]]\nj\n[[vocabulary.header]]\nV:\n", encoding="utf-8"
+    )
     with pytest.raises(pt.TemplateError, match="which the template does not define"):
         pt.selected_blocks(pt.load_blocks(f), {"PROMPT_GEO_GUARDRAIL": "strict"})
 
@@ -203,8 +207,10 @@ def test_turning_a_block_off_removes_exactly_that_text():
 
 def test_the_template_path_is_configurable(tmp_path):
     f = tmp_path / "variant.txt"
-    f.write_text("[[role]]\nvariant role\n[[rule.json_only]]\nj\n[[vocabulary.header]]\nV:\n",
-                 encoding="utf-8")
+    f.write_text(
+        "[[role]]\nvariant role\n[[rule.json_only]]\nj\n[[vocabulary.header]]\nV:\n",
+        encoding="utf-8",
+    )
     preamble, _ = pt.render({"PROMPT_TEMPLATE": str(f), "PROMPT_GEO_GUARDRAIL": "off"})
     assert preamble.startswith("variant role")
 
@@ -226,7 +232,9 @@ def test_the_shipped_config_and_the_shipped_taxonomy_agree():
     from vocab_manager import VocabularyManager
 
     config = pt.load_run_config(REPO_ROOT / "llm_config.txt")
-    manager = VocabularyManager(config_path=str(REPO_ROOT / "data_samples" / "taxonomy_config.json"))
+    manager = VocabularyManager(
+        config_path=str(REPO_ROOT / "data_samples" / "taxonomy_config.json")
+    )
     assert manager.geo_guardrail_problems(pt.guardrail_text(config)) == []
 
 
@@ -235,10 +243,77 @@ def test_the_strict_wording_carries_every_marker_the_config_looks_for():
     wording is edited without the markers, the gate silently stops detecting it."""
     from vocab_manager import VocabularyManager
 
-    manager = VocabularyManager(config_path=str(REPO_ROOT / "data_samples" / "taxonomy_config.json"))
+    manager = VocabularyManager(
+        config_path=str(REPO_ROOT / "data_samples" / "taxonomy_config.json")
+    )
     strict = pt.guardrail_text({"PROMPT_GEO_GUARDRAIL": "strict"}).lower()
     for marker in manager.geo_guardrail()["prompt_markers"]:
         assert marker.lower() in strict, f"marker {marker!r} not in the strict wording"
+
+
+# ── the CLI: reading the prompt without a GPU run ───────────────────────────────
+
+
+def test_blocks_lists_every_block_with_its_state(capsys):
+    assert pt.main(["--blocks"]) == 0
+    out = capsys.readouterr().out
+    for name in pt.load_blocks():
+        assert name in out
+    assert "[on ]" in out and "[off]" in out
+
+
+def test_blocks_reports_a_token_cost_per_rule(capsys):
+    """The instruction preamble competes with the vocabulary for one budget, so "is this
+    rule worth its tokens" is a real question — and at a tight window a rule kept is
+    terms dropped. The examples block is the expensive one."""
+    assert pt.main(["--blocks"]) == 0
+    out = capsys.readouterr().out
+    assert "tokens of instructions" in out
+    assert "tok" in out
+    blocks = pt.load_blocks()
+    assert pt.block_cost(blocks["examples"]) > pt.block_cost(blocks["rule.exact_term"])
+    assert pt.block_cost(blocks["examples"]) > 100
+
+
+def test_preview_prints_the_prompt_and_marks_where_the_vocabulary_goes(capsys):
+    """The term list is 4 700 lines and lives in the built artifact; a preview that
+    dumped it would be unreadable and would duplicate union_nested.json."""
+    assert pt.main(["--preview", "--set", "PROMPT_GEO_GUARDRAIL=strict"]) == 0
+    out = capsys.readouterr().out
+    assert "You are an expert archaeological data extractor" in out
+    assert "NEVER select a country name" in out
+    assert "the vocabulary term list is injected here" in out
+    assert out.index("THEMATIC VOCABULARY") < out.index("EXAMPLES")
+
+
+def test_diff_shows_exactly_the_guardrail_swap(capsys):
+    """The M11/M12 decision, in one command: what changes when the wording is relaxed.
+    A reviewer ruling on prompt text should be able to read the change, not infer it."""
+    assert (
+        pt.main(["--diff", "PROMPT_GEO_GUARDRAIL=strict", "PROMPT_GEO_GUARDRAIL=preference"]) == 0
+    )
+    out = capsys.readouterr().out
+    assert "-NEVER select a country name" in out
+    assert "+Select a geographic, ethnic or dynastic term only when" in out
+    # nothing else moved
+    changed = [
+        ln for ln in out.splitlines() if ln[:1] in "+-" and not ln.startswith(("+++", "---"))
+    ]
+    assert len(changed) == 2
+
+
+def test_diff_of_two_identical_settings_says_so(capsys):
+    assert pt.main(["--diff", "PROMPT_EXAMPLES=true", "PROMPT_EXAMPLES=true"]) == 0
+    assert "no difference" in capsys.readouterr().out
+
+
+def test_a_malformed_set_is_rejected():
+    with pytest.raises(SystemExit, match="KEY=VALUE"):
+        pt.main(["--preview", "--set", "PROMPT_EXAMPLES"])
+
+
+def test_no_action_prints_help_rather_than_doing_something(capsys):
+    assert pt.main([]) == 2
 
 
 # ── the committed output template ───────────────────────────────────────────────
@@ -250,7 +325,13 @@ def test_output_template_is_valid_and_documents_the_record_shape():
     assert tpl["example_records"], "the template must carry at least one example record"
     for record in tpl["example_records"]:
         assert set(record) >= {
-            "file_id", "page", "line", "categ", "quality_score", "original_text", "enrichment",
+            "file_id",
+            "page",
+            "line",
+            "categ",
+            "quality_score",
+            "original_text",
+            "enrichment",
         }
 
 
@@ -268,8 +349,12 @@ def test_output_template_matches_the_schema_the_model_is_given():
     says the model returns — `teater_category_ids` is the one addition, attached after
     inference rather than generated."""
     src = (REPO_ROOT / "llm_run.py").read_text(encoding="utf-8")
-    model_fields = {"extracted_keywords_cs", "extracted_keywords_en",
-                    "teater_category", "confidence_score"}
+    model_fields = {
+        "extracted_keywords_cs",
+        "extracted_keywords_en",
+        "teater_category",
+        "confidence_score",
+    }
     for field in model_fields:
         assert f"{field}: " in src, f"{field} is not declared in build_schema"
 
@@ -300,3 +385,183 @@ def test_the_metatext_example_shows_empty_keyword_arrays():
     assert obj["teater_category"] == "Nerelevantní (meta-text)"
     assert obj["extracted_keywords_cs"] == []
     assert obj["extracted_keywords_en"] == []
+
+
+# ── the vocabulary half (shared with llm_run.build_system_prompt) ────────────────
+#
+# `vocabulary_terms` and `vocabulary_block` were lifted verbatim out of
+# `llm_run.build_system_prompt` so that `--full` renders the prompt the pipeline
+# actually sends. The risk that creates is a silent transcription error: the extraction
+# would still run, still look plausible, and quietly render a different prompt than the
+# one under test elsewhere. `_reference_terms` / `_reference_block` below are the
+# pre-extraction code, kept as the independent second opinion, and the first test asserts
+# byte equality against the real 4 718-term artifact.
+
+VOCAB_FILE = REPO_ROOT / "data_samples" / "vocab" / "union_nested.json"
+
+
+def _reference_terms(vocab_data, excluded_themes=None):
+    skip = {"other"} if excluded_themes is None else {t.lower() for t in excluded_themes}
+    raw_terms = [
+        {
+            "theme": "Administrative / Meta",
+            "sub": "",
+            "cs": "Nerelevantní (meta-text)",
+            "en": "Irrelevant / Meta-text",
+        }
+    ]
+    for theme, data in vocab_data.items():
+        if theme.startswith("_") or theme.lower() in skip:
+            continue
+        if isinstance(data, dict):
+            if "keywords" in data and isinstance(data["keywords"], dict):
+                cs_list = data["keywords"].get("cs", [])
+                en_list = data["keywords"].get("en", [])
+                for i, cs_key in enumerate(cs_list):
+                    en = en_list[i] if i < len(en_list) else cs_key
+                    raw_terms.append({"theme": theme, "sub": "", "cs": cs_key, "en": en})
+            else:
+                for cs_key, pair in data.items():
+                    en = pair.get("en", cs_key) if isinstance(pair, dict) else cs_key
+                    sub = pair.get("sub", "") if isinstance(pair, dict) else ""
+                    term = {"theme": theme, "sub": sub, "cs": cs_key, "en": en}
+                    if isinstance(pair, dict) and pair.get("source") and pair.get("source_id"):
+                        term["ids"] = [{"source": pair["source"], "id": pair["source_id"]}] + [
+                            {"source": d["source"], "id": d["id"]}
+                            for d in (pair.get("discarded_ids") or [])
+                        ]
+                        if pair.get("bare_cs"):
+                            term["bare_cs"] = pair["bare_cs"]
+                    raw_terms.append(term)
+    return raw_terms
+
+
+def _reference_block(term_list):
+    groups = {}
+    for t in term_list:
+        key = (t["theme"], t.get("sub") or "")
+        groups.setdefault(key, []).append(f"{t['cs']} ({t['en']})")
+    prompt = ""
+    for (theme_name, sub_name), lines in groups.items():
+        title = f"{theme_name} / {sub_name}" if sub_name else theme_name
+        prompt += f"\n--- {title} ---\n"
+        prompt += "\n".join(f"- {line}" for line in lines) + "\n"
+    return prompt
+
+
+def _shipped_vocab():
+    if not VOCAB_FILE.exists():
+        pytest.skip("union_nested.json not built")
+    return json.loads(VOCAB_FILE.read_text(encoding="utf-8"))
+
+
+def test_the_extracted_renderer_reproduces_the_reference_implementation_byte_for_byte():
+    vocab = _shipped_vocab()
+    withheld = pt.themes_withheld()
+
+    assert pt.vocabulary_terms(vocab, withheld) == _reference_terms(vocab, withheld)
+    assert pt.vocabulary_block(pt.vocabulary_terms(vocab, withheld)) == _reference_block(
+        _reference_terms(vocab, withheld)
+    )
+
+
+def test_vocabulary_terms_defaults_to_withholding_only_other():
+    vocab = {
+        "Artefact": {"nůž": {"en": "knife", "sub": "tools"}},
+        "Other": {"cosi": {"en": "something"}},
+    }
+    labels = {t["cs"] for t in pt.vocabulary_terms(vocab)}
+    assert "nůž" in labels
+    assert "cosi" not in labels, "the default must match build_system_prompt's own"
+
+
+def test_the_meta_text_sentinel_is_always_first_and_carries_no_ids():
+    """It is the answer for a line that is not archaeology, so it cannot depend on which
+    facets are in the vocabulary — and it must not look like a term with a source id,
+    or `_id_lookup_and_strip_map` would claim records back it."""
+    terms = pt.vocabulary_terms({})
+    assert terms[0]["cs"] == "Nerelevantní (meta-text)"
+    assert "ids" not in terms[0]
+
+
+def test_vocabulary_terms_carries_ids_and_bare_cs_through():
+    vocab = {
+        "Feature": {
+            "zámek (sídlo elity)": {
+                "en": "chateau",
+                "source": "teater",
+                "source_id": "1439",
+                "bare_cs": "zámek",
+                "discarded_ids": [{"source": "amcr", "id": "HES-000817"}],
+            }
+        }
+    }
+    term = pt.vocabulary_terms(vocab, [])[1]
+    assert term["ids"] == [
+        {"source": "teater", "id": "1439"},
+        {"source": "amcr", "id": "HES-000817"},
+    ]
+    assert term["bare_cs"] == "zámek"
+    assert "bare_cs" not in pt.vocabulary_block([term]), "internals must not reach the prompt"
+
+
+def test_themes_withheld_reads_in_prompt_from_the_shipped_taxonomy_config(tmp_path):
+    assert pt.themes_withheld() == {"other"}, "the shipped config withholds only Other"
+
+    config = tmp_path / "taxonomy_config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "_settings": {"tie_break": []},
+                "Artefact": {"priority": 5},
+                "Draft": {"priority": 0, "in_prompt": False},
+                "Other": {"priority": 0, "in_prompt": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert pt.themes_withheld(config) == {"draft"}
+
+
+def test_render_full_is_the_preamble_then_the_terms_then_the_footer():
+    _shipped_vocab()
+    preamble, footer = pt.render({})
+    full = pt.render_full({})
+
+    assert full.startswith(preamble)
+    assert full.endswith(footer)
+    assert "… the vocabulary term list is injected here …" not in full
+    assert "\n--- Administrative / Meta ---\n" in full
+
+
+def test_render_full_renders_every_term_the_prompt_offers():
+    vocab = _shipped_vocab()
+    terms = pt.vocabulary_terms(vocab, pt.themes_withheld())
+    full = pt.render_full({})
+    # one bullet per term, plus the sentinel, and nothing else claiming to be one
+    assert full.count("\n- ") == len(terms)
+
+
+def test_render_full_respects_the_prompt_flags():
+    """The instruction half of --full is the configured one — otherwise a reviewer would
+    read a prompt nobody sends."""
+    _shipped_vocab()
+    strict = pt.render_full({"PROMPT_GEO_GUARDRAIL": "strict"})
+    off = pt.render_full({"PROMPT_GEO_GUARDRAIL": "off"})
+    assert "NEVER select a country name" in strict
+    assert "NEVER select a country name" not in off
+
+
+def test_render_full_says_how_to_fix_a_missing_vocabulary(tmp_path):
+    with pytest.raises(pt.TemplateError) as excinfo:
+        pt.render_full({}, vocab_path=tmp_path / "absent.json")
+    assert "vocab_build.py --from-flat" in str(excinfo.value)
+
+
+def test_full_cli_prints_the_whole_prompt(capsys):
+    _shipped_vocab()
+    assert pt.main(["--full"]) == 0
+    out = capsys.readouterr().out
+    assert "THEMATIC VOCABULARY:" in out
+    assert "--- Administrative / Meta ---" in out
+    assert out.rstrip().endswith("}"), "the examples footer must be the last thing printed"

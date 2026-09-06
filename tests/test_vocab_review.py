@@ -327,6 +327,78 @@ def test_specificity_pairs_is_empty_without_a_hierarchy():
     assert vr.specificity_pair_rows(nested, {"amcr": ([], None)}) == []
 
 
+# ── context_budget_rows: where truncation actually cuts ──────────────────────────
+
+
+def test_the_budget_ladder_still_matches_the_model_registry():
+    """The ladder is hard-coded because llm_utils imports torch. That is only safe if a
+    test notices when the registry gains a window the sheet does not model."""
+    import re
+
+    src = (REPO_ROOT / "llm_utils.py").read_text(encoding="utf-8")
+    windows = {int(m) for m in re.findall(r'"context_window":\s*(\d+)', src)}
+    assert windows == set(vr.CONTEXT_WINDOWS), (
+        f"registry has {sorted(windows - set(vr.CONTEXT_WINDOWS))} that the budget sheet "
+        f"does not model, or models {sorted(set(vr.CONTEXT_WINDOWS) - windows)} that no "
+        "model has"
+    )
+    assert re.search(r"^MAX_NEW_TOKENS = (\d+)", src, re.M).group(1) == "2048"
+    assert vr.CONTEXT_RESERVED == 2048 + 512
+
+
+def test_a_large_window_keeps_the_whole_vocabulary():
+    _require_flat()
+    manager = _shipped_manager()
+    rows = vr.context_budget_rows(_built_union(), manager)
+    big = [r for r in rows if r["context_window"] == 131072]
+    assert big and all(r["status"] == "full" for r in big)
+
+
+def test_a_tight_window_cuts_the_probationary_facet_first():
+    """The layout M11 asked for, made checkable: the 2 638 reinstated terms sit last in
+    the priority order, so a 32k model loses them BEFORE it loses any archaeological
+    facet. That is what makes "evaluate later if problems arise" affordable — the terms
+    on probation are also the terms a tight budget spends last."""
+    _require_flat()
+    manager = _shipped_manager()
+    rows = {
+        r["facet"]: r
+        for r in vr.context_budget_rows(_built_union(), manager)
+        if r["context_window"] == 32768
+    }
+    assert rows["Related Disciplines & Society"]["status"] != "full"
+    for facet in ("Chronology", "Activity Area", "Feature", "Artefact", "Material", "Methods"):
+        assert rows[facet]["status"] == "full", f"{facet} was cut before the probation facet"
+
+
+def test_the_smallest_window_cannot_hold_the_vocabulary_at_all():
+    """8 192 is a real registry entry (aya-expanse-8b, bielik-11b, the GGUF build) and
+    three of the archived, unsuccessful runs used exactly those models. Under 10 % of
+    the vocabulary reaches them — worth knowing before a result is read as a model
+    quality signal."""
+    _require_flat()
+    manager = _shipped_manager()
+    rows = [
+        r for r in vr.context_budget_rows(_built_union(), manager) if r["context_window"] == 8192
+    ]
+    kept = sum(r["surviving"] for r in rows)
+    total = sum(r["terms"] for r in rows)
+    assert kept / total < 0.10
+
+
+def test_turning_off_a_prompt_block_buys_room_for_terms():
+    """The overhead is charged from the CONFIGURED prompt, so a reviewer trimming a
+    block in llm_config.txt can see what it buys instead of guessing."""
+    _require_flat()
+    manager = _shipped_manager()
+    nested = _built_union()
+    with_examples = vr.context_budget_rows(nested, manager, windows=(8192,), prompt_config={})
+    without = vr.context_budget_rows(
+        nested, manager, windows=(8192,), prompt_config={"PROMPT_EXAMPLES": "false"}
+    )
+    assert sum(r["surviving"] for r in without) > sum(r["surviving"] for r in with_examples)
+
+
 # ── exclusion_impact_rows (O3/O4 / Track 4) ──────────────────────────────────────
 
 

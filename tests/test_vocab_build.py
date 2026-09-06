@@ -329,7 +329,11 @@ def test_the_build_refuses_a_vocabulary_that_contradicts_the_prompt():
     # back in force while 2560 stays selectable — the exact state the decision package
     # named as the one outcome to avoid.
     settings = manager.taxonomy["_settings"]
-    settings["geo_guardrail"] = {**settings["geo_guardrail"], "active": True, "covers": ["teater:2560"]}
+    settings["geo_guardrail"] = {
+        **settings["geo_guardrail"],
+        "active": True,
+        "covers": ["teater:2560"],
+    }
     assert settings["teater_branch_map"]["2560"] != "__exclude__"
     with pytest.raises(SystemExit, match="teater:2560 is offered to the model"):
         vb._check_geo_guardrail(manager)

@@ -17,7 +17,7 @@ Three tools, in dependency order:
 | Tool               | Needs network      | Needs the document corpus | Writes                                        |
 |--------------------|--------------------|---------------------------|-----------------------------------------------|
 | `vocab_build.py`   | only for a harvest | no                        | the 10 vocabulary artifacts in this directory |
-| `vocab_review.py`  | no                 | no                        | 6 review sheets (corpus-independent)          |
+| `vocab_review.py`  | no                 | no                        | 7 review sheets (corpus-independent)          |
 | `corpus_review.py` | no                 | **yes**                   | 3 evidence sheets + `corpus_review.meta.json` |
 
 ---
@@ -49,20 +49,21 @@ gate; it runs in CI (`.github/workflows/vocab-drift.yml`) and as
 pre-union path). The refresh workflow does not pass it, so that file keeps diverging;
 do not rely on it.
 
-## 2. `vocab_review.py` — the six reviewer sheets
+## 2. `vocab_review.py` — the seven reviewer sheets
 
 Offline, pure, deterministic. Reads the committed `*_flat.json` plus the taxonomy
 config; writes only the CSVs below. Nothing here decides anything — each sheet ranks
 and surfaces candidates for a human.
 
 ```bash
-python3 vocab_review.py --all            # all six
+python3 vocab_review.py --all            # all seven
 python3 vocab_review.py --collisions     # collision_review.csv        (M8, @david-spacil)
 python3 vocab_review.py --composites     # composite_pairs.csv         (O1/F)
 python3 vocab_review.py --exclusions     # exclusion_impact.csv        (O3/O4, @motyc)
 python3 vocab_review.py --subbranches    # teater_subbranch_impact.csv (O3/O4, finer grain)
 python3 vocab_review.py --reinstate      # reinstatement_preview.csv   (O3/O4 go/no-go)
 python3 vocab_review.py --specificity    # specificity_pairs.csv       (D1/O2, @motyc)
+python3 vocab_review.py --budget         # context_budget.csv          (which models still fit)
 ```
 
 Re-run after **any** taxonomy change, for the same reason as the artifacts:
@@ -168,4 +169,6 @@ reports every problem at once, not one per rebuild).
 | Which instruction reaches the model at all     | `prompts/system_prompt.txt` holds the text as `[[blocks]]` in render order; `llm_config.txt`'s `PROMPT_*` flags choose which render. The run banner prints the on/off list                                                       |
 | The geographic guardrail's wording             | `llm_config.txt` → `PROMPT_GEO_GUARDRAIL` = `strict` / `preference` / `off`, paired with `taxonomy_config.json` → `geo_guardrail.active`. `vocab_build.py` renders the selected block and refuses a build where the two disagree |
 | What one enrichment record looks like          | `prompts/output_template.json` — the committed shape of `<doc_id>_enriched.json`, held in step with the schema and the prompt's own examples by test                                                                             |
+| **Reading the prompt without a GPU run**       | `python3 prompt_template.py --blocks` (what is on) · `--preview` (the rendered text) · `--diff KEY=A KEY=B` (what a flag change actually does to the wording)                                                                    |
+| **Whether a model can still hold it**          | `context_budget.csv` — per context window and facet, how much survives truncation. At 32k only the probation facet is cut; at 8k under 10 % of the vocabulary reaches the model                                                  |
 | Nothing                                        | a generated CSV. Every sheet in this directory is rebuilt from the two files above; hand-editing one is discarded on the next run.                                                                                               |

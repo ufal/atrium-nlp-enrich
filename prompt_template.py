@@ -47,6 +47,8 @@ from typing import Dict, List, Optional, Sequence
 REPO_ROOT = Path(__file__).resolve().parent
 DEFAULT_TEMPLATE = REPO_ROOT / "prompts" / "system_prompt.txt"
 DEFAULT_OUTPUT_TEMPLATE = REPO_ROOT / "prompts" / "output_template.json"
+DEFAULT_VOCAB = REPO_ROOT / "data_samples" / "vocab" / "union_nested.json"
+DEFAULT_TAXONOMY_CONFIG = REPO_ROOT / "data_samples" / "taxonomy_config.json"
 
 _HEADER_RE = re.compile(r"^\[\[([A-Za-z0-9_.]+)\]\]\s*$")
 
@@ -89,9 +91,7 @@ class TemplateError(ValueError):
     """A template or flag problem that would produce a prompt nobody intended."""
 
 
-def template_path(
-    config: Optional[Dict[str, str]] = None, override: Optional[Path] = None
-) -> Path:
+def template_path(config: Optional[Dict[str, str]] = None, override: Optional[Path] = None) -> Path:
     """Resolve the template file: explicit argument, then ``PROMPT_TEMPLATE``, then the
     shipped default. A relative configured path is taken against the repo root, so the
     same config works whatever directory the run started in."""
@@ -167,9 +167,7 @@ def resolve_geo_guardrail(config: Optional[Dict[str, str]] = None) -> str:
     return mode
 
 
-def selected_blocks(
-    blocks: Dict[str, str], config: Optional[Dict[str, str]] = None
-) -> List[str]:
+def selected_blocks(blocks: Dict[str, str], config: Optional[Dict[str, str]] = None) -> List[str]:
     """Block names to render, in template order, for this configuration.
 
     A flag naming a block the template does not define is an error rather than a no-op:
@@ -229,21 +227,168 @@ def render(
     return preamble, footer
 
 
+# ── The vocabulary half of the prompt ────────────────────────────────────────────
+#
+# These two functions used to live inside ``llm_run.build_system_prompt``. They are here
+# because two callers need the *same* answer and only one of them can import torch:
+# ``llm_run`` renders the prompt it sends, and the CLI below renders the prompt a
+# reviewer reads. A second copy of this loop would let the two drift, and a prompt
+# preview that is not the prompt is worse than no preview at all.
+#
+# Truncation deliberately stays in ``llm_run``: it needs a real tokenizer, and it is the
+# one part of prompt assembly that depends on the model rather than on the vocabulary.
+
+META_TEXT_TERM = {
+    "theme": "Administrative / Meta",
+    "sub": "",
+    "cs": "Nerelevantní (meta-text)",
+    "en": "Irrelevant / Meta-text",
+}
+
+
+def vocabulary_terms(
+    vocab_data: dict, excluded_themes: Optional[Sequence[str]] = None
+) -> List[dict]:
+    """Flatten a nested vocabulary into the term dicts the prompt is rendered from.
+
+    Each term carries ``theme``, ``sub``, ``cs`` and ``en``; a term that came from a
+    source record also carries ``ids`` (its own ``{source, id}`` plus everything B1's
+    dedup discarded onto it, M7) and, when B3 qualified it, ``bare_cs``. Neither extra
+    reaches the prompt text — ``llm_run`` uses them to build ``teater_category_ids`` and
+    to strip the qualifier back off the emitted label.
+
+    ``excluded_themes`` is lower-cased theme names to withhold, defaulting to
+    ``{"other"}``. The meta-text sentinel is always first: it is the answer for a line
+    that is not archaeology, so it cannot be a term the vocabulary happens to contain.
+    """
+    skip = {"other"} if excluded_themes is None else {t.lower() for t in excluded_themes}
+
+    terms: List[dict] = [dict(META_TEXT_TERM)]
+    for theme, data in vocab_data.items():
+        if theme.startswith("_") or theme.lower() in skip:
+            continue
+        if not isinstance(data, dict):
+            continue
+        if "keywords" in data and isinstance(data["keywords"], dict):
+            cs_list = data["keywords"].get("cs", [])
+            en_list = data["keywords"].get("en", [])
+            for i, cs_key in enumerate(cs_list):
+                en = en_list[i] if i < len(en_list) else cs_key
+                terms.append({"theme": theme, "sub": "", "cs": cs_key, "en": en})
+            continue
+        for cs_key, pair in data.items():
+            en = pair.get("en", cs_key) if isinstance(pair, dict) else cs_key
+            sub = pair.get("sub", "") if isinstance(pair, dict) else ""
+            term = {"theme": theme, "sub": sub, "cs": cs_key, "en": en}
+            if isinstance(pair, dict) and pair.get("source") and pair.get("source_id"):
+                term["ids"] = [{"source": pair["source"], "id": pair["source_id"]}] + [
+                    {"source": d["source"], "id": d["id"]}
+                    for d in (pair.get("discarded_ids") or [])
+                ]
+                if pair.get("bare_cs"):
+                    term["bare_cs"] = pair["bare_cs"]
+            terms.append(term)
+    return terms
+
+
+def vocabulary_block(term_list: Sequence[dict]) -> str:
+    """Render the term list grouped by facet, then by the source's own subgroup.
+
+    Both AMCR and TEATER curate a second level — 50 heslars, and TEATER's depth-2 groups
+    — and flattening a 700-term facet into one undifferentiated list throws that away.
+    Two levels cost ~120 header lines and give the model the structure a domain expert
+    already built.
+    """
+    groups: Dict[tuple, List[str]] = {}
+    for t in term_list:
+        key = (t["theme"], t.get("sub") or "")
+        groups.setdefault(key, []).append(f"{t['cs']} ({t['en']})")
+
+    out: List[str] = []
+    for (theme_name, sub_name), lines in groups.items():
+        title = f"{theme_name} / {sub_name}" if sub_name else theme_name
+        out.append(f"\n--- {title} ---\n")
+        out.append("\n".join(f"- {line}" for line in lines) + "\n")
+    return "".join(out)
+
+
+def themes_withheld(path: Optional[Path] = None) -> set:
+    """Theme names withheld from the prompt, read from taxonomy_config.json.
+
+    The same derivation ``llm_run.main`` makes: a theme reaches the model unless its
+    ``in_prompt`` is false, and absent the flag the default is everything except
+    ``Other``. Read here so the CLI's rendered prompt matches the shipped one without
+    importing the pipeline.
+    """
+    import json
+
+    path = Path(path) if path else DEFAULT_TAXONOMY_CONFIG
+    if not path.exists():
+        raise TemplateError(f"taxonomy config not found: {path}")
+    taxonomy = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        name.lower()
+        for name, cfg in taxonomy.items()
+        if not name.startswith("_")
+        and isinstance(cfg, dict)
+        and not cfg.get("in_prompt", name.lower() != "other")
+    }
+
+
+def render_full(
+    config: Optional[Dict[str, str]] = None,
+    vocab_path: Optional[Path] = None,
+    taxonomy_path: Optional[Path] = None,
+    path: Optional[Path] = None,
+) -> str:
+    """The whole prompt — instructions *and* every term — without importing the pipeline.
+
+    This is the untruncated prompt: what the model sees when the context window holds
+    the full vocabulary (``SKIP_TRUNCATION`` or a budget that fits, which at 128k it
+    does — see ``vocab_review.py --budget``). At a tighter window ``llm_run`` drops a
+    tail of terms; the instruction half is identical either way.
+    """
+    import json
+
+    vocab_file = Path(vocab_path) if vocab_path else DEFAULT_VOCAB
+    if not vocab_file.exists():
+        raise TemplateError(
+            f"vocabulary not found: {vocab_file} — build it with "
+            "`python3 vocab_build.py --from-flat`"
+        )
+    vocab_data = json.loads(vocab_file.read_text(encoding="utf-8"))
+    preamble, footer = render(config, path)
+    terms = vocabulary_terms(vocab_data, themes_withheld(taxonomy_path))
+    return preamble + vocabulary_block(terms) + footer
+
+
+# Chars per token, matching the ratio the vocabulary sheets use. Estimated rather than
+# tokenised: no tokenizer is available where this runs (vocab_build, the CLI, the tests).
+CHARS_PER_TOKEN = 3.35
+
+
+def block_cost(body: str) -> int:
+    """Rough token cost of one block, for "is this rule worth its tokens"."""
+    return round(len(body) / CHARS_PER_TOKEN)
+
+
 def describe(config: Optional[Dict[str, str]] = None, path: Optional[Path] = None) -> str:
-    """One line per block, for the run banner: what the model is actually being told."""
+    """One line per block, for the run banner: what the model is being told, and what
+    each rule costs. The cost matters because the instruction preamble competes with the
+    vocabulary for the same budget — at a tight context window a rule kept is terms
+    dropped (see ``vocab_review.py --budget``)."""
     blocks = load_blocks(template_path(config, path))
     active = set(selected_blocks(blocks, config))
     mode = resolve_geo_guardrail(config)
-    lines = [f"  prompt blocks (geo guardrail: {mode})"]
-    for name in blocks:
+    total = sum(block_cost(body) for name, body in blocks.items() if name in active)
+    lines = [f"  prompt blocks (geo guardrail: {mode}) — ~{total} tokens of instructions"]
+    for name, body in blocks.items():
         mark = "on " if name in active else "off"
-        lines.append(f"    [{mark}] {name}")
+        lines.append(f"    [{mark}] {name:32s} ~{block_cost(body):4d} tok")
     return "\n".join(lines)
 
 
-def guardrail_text(
-    config: Optional[Dict[str, str]] = None, path: Optional[Path] = None
-) -> str:
+def guardrail_text(config: Optional[Dict[str, str]] = None, path: Optional[Path] = None) -> str:
     """Just the guardrail wording currently in force ("" when the mode is ``off``).
 
     ``vocab_build.py`` checks this against ``taxonomy_config.json``'s declared
@@ -276,3 +421,110 @@ def output_record_fields(path: Optional[Path] = None) -> Sequence[str]:
     tpl = output_template(path)
     example = (tpl.get("example_records") or [{}])[0]
     return list((example.get("enrichment") or {}).keys())
+
+
+# ── CLI: read the prompt without running the pipeline ────────────────────────────
+#
+# A reviewer deciding whether a rule is worth its tokens should not have to start a GPU
+# job to find out what the model is currently told. `--preview` prints the rendered
+# instruction text with the term list elided; `--full` prints the real thing, all 4 719
+# terms of it, which is the version to redirect into a file and read or diff between
+# builds; `--diff` shows what changes between two flag settings, which is the form a
+# wording decision actually takes.
+
+
+def _cli_config(pairs: Sequence[str], config_file: Optional[Path]) -> Dict[str, str]:
+    config = load_run_config(config_file) if config_file else {}
+    for pair in pairs:
+        if "=" not in pair:
+            raise SystemExit(f"--set expects KEY=VALUE, got {pair!r}")
+        key, _, value = pair.partition("=")
+        config[key.strip()] = value.strip()
+    return config
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="prompt_template.py",
+        description="Render, inspect and diff the system prompt's instruction text.",
+    )
+    parser.add_argument("--preview", action="store_true", help="print the rendered prompt")
+    parser.add_argument("--blocks", action="store_true", help="list every block, on or off")
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="print the complete prompt, vocabulary included (redirect this to a file)",
+    )
+    parser.add_argument(
+        "--vocab",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=f"nested vocabulary to render (default: {DEFAULT_VOCAB.name})",
+    )
+    parser.add_argument(
+        "--diff",
+        nargs=2,
+        metavar=("KEY=VALUE", "KEY=VALUE"),
+        help="unified diff of the prompt under two settings, e.g. "
+        "--diff PROMPT_GEO_GUARDRAIL=strict PROMPT_GEO_GUARDRAIL=preference",
+    )
+    parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="override a flag for this run (repeatable)",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=REPO_ROOT / "llm_config.txt",
+        help="config file to read flags from (default: llm_config.txt)",
+    )
+    args = parser.parse_args(argv)
+
+    config_file = args.config if args.config and Path(args.config).exists() else None
+    config = _cli_config(args.set, config_file)
+
+    if not (args.preview or args.blocks or args.diff or args.full):
+        parser.print_help()
+        return 2
+
+    if args.blocks:
+        print(describe(config))
+
+    if args.preview:
+        preamble, footer = render(config)
+        vocab_note = "    … the vocabulary term list is injected here …\n"
+        print("\n" + preamble + vocab_note + footer)
+
+    if args.full:
+        print("\n" + render_full(config, vocab_path=args.vocab), end="")
+
+    if args.diff:
+        import difflib
+
+        left = _cli_config([args.diff[0]], config_file)
+        right = _cli_config([args.diff[1]], config_file)
+        lp, lf = render(left)
+        rp, rf = render(right)
+        delta = list(
+            difflib.unified_diff(
+                (lp + lf).splitlines(keepends=True),
+                (rp + rf).splitlines(keepends=True),
+                fromfile=args.diff[0],
+                tofile=args.diff[1],
+            )
+        )
+        if not delta:
+            print(f"no difference between {args.diff[0]} and {args.diff[1]}")
+        else:
+            print("".join(delta), end="")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

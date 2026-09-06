@@ -28,6 +28,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+import prompt_template
 import vocab_build as vb
 import vocab_sources as vs
 from vocab_manager import (
@@ -764,6 +765,104 @@ SPECIFICITY_COLUMNS = [
 ]
 
 
+# ── context budget: what survives truncation, and on which models ────────────────
+#
+# The distinct context windows in llm_utils.py's model registry, minus CONTEXT_RESERVED
+# (MAX_NEW_TOKENS 2048 + 512). Hard-coded rather than imported because llm_utils pulls
+# in torch; `tests/test_vocab_review.py` asserts this ladder still matches the registry,
+# so it cannot drift silently.
+PROMPT_CONFIG = Path(__file__).resolve().parent / "llm_config.txt"
+CONTEXT_RESERVED = 2560
+CONTEXT_WINDOWS = (8192, 32768, 128000, 131072, 256000, 262144, 1048576)
+
+
+def context_budget_rows(
+    nested: Dict[str, Dict[str, Any]],
+    manager: VocabularyManager,
+    windows: Sequence[int] = CONTEXT_WINDOWS,
+    prompt_config: Optional[Dict[str, str]] = None,
+) -> List[Dict[str, Any]]:
+    """Per (context window, facet): how much of the vocabulary survives truncation.
+
+    ``build_system_prompt`` renders the facets in priority order and, when the result
+    exceeds the budget, keeps the largest fitting **prefix** of the flattened term list.
+    So a facet is not dropped because it is unimportant — it is dropped because it sits
+    late in the order, and everything after the cut goes with it. That makes "which
+    model are we running?" a vocabulary question, not just an infrastructure one, and it
+    is the concrete form of M11's *evaluate later if problems arise*: the 2 638
+    reinstated terms sit last by design, so they are the first thing a tight budget
+    removes.
+
+    The overhead of the instruction preamble and the examples is charged against the
+    budget too, and taken from the *configured* prompt (``prompt_template``), so turning
+    a block off in ``llm_config.txt`` shows up here as room for more terms.
+
+    Estimated, not tokenised: no tokenizer is available offline, so this uses the same
+    ~3.35 chars/token ratio as the rest of this module. Read it as "roughly where the
+    cut falls", not as a promise about a specific model.
+    """
+    overhead_chars = 0
+    try:
+        preamble, footer = prompt_template.render(prompt_config or {})
+        overhead_chars = len(preamble) + len(footer)
+    except prompt_template.TemplateError:
+        pass  # a broken template is vocab_build's error to raise, not this report's
+
+    order = [f for f in manager._theme_order() if f in nested and nested[f]]
+    priorities = {f: (manager.themes().get(f) or {}).get("priority", 0) for f in order}
+
+    # The flattened list build_system_prompt truncates, in the same order, plus the
+    # meta-text sentinel it puts at index 0.
+    flat: List[Tuple[str, int]] = [
+        ("_sentinel", _approx_prompt_chars("Nerelevantní (meta-text)", "Irrelevant / Meta-text"))
+    ]
+    for facet in order:
+        for cs, entry in nested[facet].items():
+            flat.append((facet, _approx_prompt_chars(cs, entry.get("en", ""))))
+
+    rows: List[Dict[str, Any]] = []
+    for window in windows:
+        budget_chars = max(0, (window - CONTEXT_RESERVED)) * 3.35 - overhead_chars
+        used = 0.0
+        surviving: Dict[str, int] = {}
+        for facet, cost in flat:
+            if used + cost > budget_chars:
+                break
+            used += cost
+            if facet != "_sentinel":
+                surviving[facet] = surviving.get(facet, 0) + 1
+        for facet in order:
+            total = len(nested[facet])
+            kept = surviving.get(facet, 0)
+            rows.append(
+                {
+                    "context_window": window,
+                    "input_budget_tokens": window - CONTEXT_RESERVED,
+                    "facet": facet,
+                    "priority": priorities[facet],
+                    "terms": total,
+                    "surviving": kept,
+                    "dropped": total - kept,
+                    "share_surviving": round(kept / total, 3) if total else 0.0,
+                    "status": "full" if kept == total else ("dropped" if kept == 0 else "partial"),
+                }
+            )
+    return rows
+
+
+BUDGET_COLUMNS = [
+    "context_window",
+    "input_budget_tokens",
+    "facet",
+    "priority",
+    "terms",
+    "surviving",
+    "dropped",
+    "share_surviving",
+    "status",
+]
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────────
 
 
@@ -790,7 +889,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="D1 specificity ladder: terms offered alongside their own broader term",
     )
-    p.add_argument("--all", action="store_true", help="all six reports")
+    p.add_argument(
+        "--budget",
+        action="store_true",
+        help="context_budget.csv: what survives truncation at each model's window",
+    )
+    p.add_argument("--all", action="store_true", help="all seven reports")
     p.add_argument("--vocab-dir", type=Path, default=DEFAULT_VOCAB_DIR)
     p.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     p.add_argument("--overrides", type=Path, default=None)
@@ -806,11 +910,12 @@ def main(argv: Any = None) -> int:
         or args.subbranches
         or args.reinstate
         or args.specificity
+        or args.budget
         or args.all
     ):
         print(
             "Nothing to do — pass --collisions, --composites, --exclusions, "
-            "--subbranches, --reinstate, --specificity, or --all."
+            "--subbranches, --reinstate, --specificity, --budget, or --all."
         )
         return 2
 
@@ -861,6 +966,16 @@ def main(argv: Any = None) -> int:
         nested, _audit, _collisions = vb._nest(manager, records, qualifiers=qualifiers)
         rows = specificity_pair_rows(nested, per_source)
         _write_csv(args.vocab_dir / "specificity_pairs.csv", rows, SPECIFICITY_COLUMNS)
+
+    if args.budget or args.all:
+        qualifiers = manager.qualifier_overrides()
+        records = filtered.get("amcr", []) + filtered.get("teater", [])
+        nested, _audit, _collisions = vb._nest(manager, records, qualifiers=qualifiers)
+        config = {}
+        if PROMPT_CONFIG.exists():
+            config = prompt_template.load_run_config(PROMPT_CONFIG)
+        rows = context_budget_rows(nested, manager, prompt_config=config)
+        _write_csv(args.vocab_dir / "context_budget.csv", rows, BUDGET_COLUMNS)
 
     return 0
 
