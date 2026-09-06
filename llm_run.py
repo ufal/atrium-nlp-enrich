@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field  # noqa: E402
 from tqdm import tqdm  # noqa: E402
 
 import llm_utils  # noqa: E402  (side-effect: env-var guard + compat patches)
+import prompt_template  # noqa: E402
 from atrium_paradata import ParadataLogger  # noqa: E402
 from llm_utils import (  # noqa: E402
     CONTEXT_RESERVED,
@@ -38,27 +39,6 @@ from llm_utils import (  # noqa: E402
     process_document_vllm,
 )
 from vocab_manager import VocabularyManager, vocabulary_provenance  # noqa: E402
-
-_EXAMPLES_FOOTER = (
-    "\nEXAMPLES:\n\n"
-    'Input line: "Výzkum odhalil základy gotického kostela ze 14. '
-    'století."\n'
-    "Correct output:\n"
-    "{\n"
-    '  "extracted_keywords_cs": ["základy", "gotický kostel"],\n'
-    '  "extracted_keywords_en": ["foundations", "Gothic church"],\n'
-    '  "teater_category": "kostel",\n'
-    '  "confidence_score": 0.92\n'
-    "}\n\n"
-    'Input line: "Praha, dne 6. října 1956, Dr. Solle"\n'
-    "Correct output:\n"
-    "{\n"
-    '  "extracted_keywords_cs": [],\n'
-    '  "extracted_keywords_en": [],\n'
-    '  "teater_category": "Nerelevantní (meta-text)",\n'
-    '  "confidence_score": 1.0\n'
-    "}\n"
-)
 
 
 def build_schema(term_names: List[str]) -> type:
@@ -135,6 +115,7 @@ def build_system_prompt(
     max_tokens: int,
     skip_truncation: bool = False,
     excluded_themes: Optional[Set[str]] = None,
+    prompt_config: Optional[Dict[str, str]] = None,
 ) -> Tuple[str, List[str], Dict[str, IdList], Dict[str, str]]:
     """Render the thematic vocabulary into a system prompt and return the term list.
 
@@ -154,33 +135,11 @@ def build_system_prompt(
     ``teater_category`` reads ``"zámek"`` while the id set still disambiguates which
     sense was meant. Neither map is serialised into the prompt itself.
     """
-    header = (
-        "You are an expert archaeological data extractor. "
-        "Analyze the MARKED LINE enclosed in <target_line> ... </target_line> "
-        "within its surrounding document context.\n"
-        "1. Extract ONLY archaeological entities, features, periods, or materials "
-        "from the marked line. "
-        "Do NOT extract names of researchers, dates, conjunctions, or "
-        "administrative words.\n"
-        "2. Select the SINGLE most relevant category from the thematic vocabulary "
-        "list below.\n"
-        "CRITICAL: If the marked line is purely administrative, a table of contents, "
-        "a generic heading (e.g. page numbers, titles, author names, 'Práce:', "
-        "'Obsah:', literature references) or lacks direct archaeological context, "
-        "you MUST select 'Nerelevantní (meta-text)'.\n"
-        "NEVER select a country name, language name, or geographic region name "
-        "as the teater_category for any line — including administrative lines. "
-        "For any line that lacks direct archaeological significance, "
-        "you MUST use 'Nerelevantní (meta-text)'.\n"
-        "When extracting keywords, normalize obvious OCR artifacts and typos to "
-        "their correct Czech forms. "
-        "Do NOT include garbled tokens or split words as keywords. "
-        "Prefer the normalized phrase over the raw OCR text.\n"
-        "You MUST use the exact Czech term as written in the vocabulary.\n"
-        "You MUST respond ONLY with a valid JSON object matching the requested "
-        "schema.\n\n"
-        "THEMATIC VOCABULARY:\n"
-    )
+    # The instruction text is prompts/system_prompt.txt, not a literal here: which
+    # rules reach the model is a config decision (issue #6, C1), and the geographic
+    # guardrail in particular has to stay in step with taxonomy_config.json — which it
+    # cannot do while it lives in Python that vocab_build.py would have to grep.
+    header, examples_footer = prompt_template.render(prompt_config or {})
 
     skip = {"other"} if excluded_themes is None else {t.lower() for t in excluded_themes}
 
@@ -239,14 +198,14 @@ def build_system_prompt(
             prompt += f"\n--- {title} ---\n"
             prompt += "\n".join(f"- {line}" for line in lines) + "\n"
 
-        prompt += _EXAMPLES_FOOTER
+        prompt += examples_footer
         return prompt
 
     full_prompt = _build_candidate_prompt(prioritised)
     token_count = count_tokens(full_prompt, tokenizer)
 
     _header_tok = count_tokens(header, tokenizer)
-    _examples_tok = count_tokens(_EXAMPLES_FOOTER, tokenizer)
+    _examples_tok = count_tokens(examples_footer, tokenizer)
     _vocab_tok = token_count - _header_tok - _examples_tok
     print(
         f"[vocab] {len(prioritised)} terms, {token_count} tokens total "
@@ -437,6 +396,7 @@ def main(config_path: str = "llm_config.txt") -> None:
     # para_config.txt, so they constrain a run's effective licence only when named
     # here. Logged per source actually present in the build, not hard-wired to both:
     # an AMCR-only artifact must not claim it used TEATER data.
+    print(prompt_template.describe(config))
     for component in provenance.get("components", []):
         logger.log_component(component)
     if provenance:
@@ -506,6 +466,7 @@ def main(config_path: str = "llm_config.txt") -> None:
             max_tokens=max_input_tokens,
             skip_truncation=skip_trunc,
             excluded_themes=excluded_themes,
+            prompt_config=config,
         )
         EnrichmentModel = build_schema(surviving_terms)
 

@@ -942,11 +942,22 @@ are the whole surface a domain reviewer needs; nothing below requires touching P
 | `qualifier_cs`                                   | pull a confirmed homonym out of its dedup group as `"<cs> (<qualifier>)"`                   |
 | `same_as` / `same_as_suppress`                   | add or drop a composite/component equivalence link; neither changes what the prompt offers  |
 
+**The system prompt is a config surface too.** Its instruction text lives in
+[`prompts/system_prompt.txt`](prompts/system_prompt.txt) 📎 as `[[named blocks]]` in
+render order; `llm_config.txt`'s `PROMPT_*` flags choose which of them reach the model,
+and the run banner prints the resulting on/off list so a log always says what the model
+was told. `PROMPT_GEO_GUARDRAIL` is the one three-way switch (`strict` / `preference` /
+`off`) because the geographic rule has three states, and it is paired with
+`taxonomy_config.json`'s `geo_guardrail.active`:
+[`prompts/output_template.json`](prompts/output_template.json) 📎 documents the resulting
+per-document output file.
+
 `validate_settings()` refuses an edit that would not do what it says — an undeclared
 facet, a relabel for a list no map places, a reason for something nobody excludes, an
-unknown override key, a stale `(source, id)`, a pair both linked and suppressed — and
-reports every problem at once rather than one per rebuild. `vocab_build.py` additionally
-refuses to build a vocabulary that contradicts the prompt's geographic guardrail.
+unknown override key, a stale `(source, id)`, a pair both linked and suppressed, two
+overrides that would build the same bracketed key — and reports every problem at once
+rather than one per rebuild. `vocab_build.py` additionally renders the prompt the config
+selects and refuses to build a vocabulary that contradicts its geographic guardrail.
 [`data_samples/vocab/RUNBOOK.md`](data_samples/vocab/RUNBOOK.md) 📎 has the full decision
 table and the edit → rebuild → review loop.
 

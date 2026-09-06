@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+import prompt_template
 import vocab_sources as vs
 from vocab_manager import VocabularyManager, attach_same_as
 
@@ -38,9 +39,11 @@ DEFAULT_CONFIG = REPO_ROOT / "data_samples" / "taxonomy_config.json"
 # The path every consumer already points at (llm_config.txt, service/api.py, the hub's
 # e2e fixture). Kept stable so there is no flag day.
 LEGACY_NESTED = REPO_ROOT / "data_samples" / "teater_nested_vocab.json"
-# The module whose system prompt carries the geographic guardrail. Read, never written:
-# the clause stays in Python and this is a gate, not a generator (issue #6, O4 / C1).
-PROMPT_SOURCE = REPO_ROOT / "llm_run.py"
+# The runtime config that selects which prompt blocks render. Read, never written: this
+# is a gate, not a generator (issue #6, O4 / C1). The guardrail wording itself lives in
+# prompts/system_prompt.txt and is resolved through prompt_template, so the build checks
+# the text the model will actually be sent rather than grepping Python for a sentence.
+PROMPT_CONFIG = REPO_ROOT / "llm_config.txt"
 
 SCHEMA_VERSION = 1
 CHECK_PLACEHOLDER = "<checked>"
@@ -205,11 +208,17 @@ def _check_geo_guardrail(manager: VocabularyManager) -> None:
     model — which is why the O3/O4 decision package puts the two in the same change.
     The build is where both halves are in scope, so it is where they are checked.
 
-    A missing prompt module is not an error: this repo's vocabulary artifacts are
-    copied into atrium-llm-enrich, where the prompt lives elsewhere. The vocabulary
-    half is still checked there.
+    A missing prompt template or config is not an error: this repo's vocabulary
+    artifacts are copied into atrium-llm-enrich, where the prompt lives elsewhere. The
+    vocabulary half is still checked there.
     """
-    source = PROMPT_SOURCE.read_text(encoding="utf-8") if PROMPT_SOURCE.exists() else None
+    source = None
+    if PROMPT_CONFIG.exists():
+        config = prompt_template.load_run_config(PROMPT_CONFIG)
+        try:
+            source = prompt_template.guardrail_text(config)
+        except prompt_template.TemplateError as exc:
+            raise SystemExit(f"[guardrail] the prompt template is unusable: {exc}") from None
     problems = manager.geo_guardrail_problems(source)
     if problems:
         raise SystemExit(

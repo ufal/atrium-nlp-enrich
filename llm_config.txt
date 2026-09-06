@@ -74,6 +74,34 @@ PARADATA_DIR=paradata
 EMIT_CATEGORY_IDS=true
 
 # =============================================================================
+# System prompt
+# =============================================================================
+# The instruction text lives in prompts/system_prompt.txt, one [[block]] per rule, in
+# the order the model sees them. These flags choose which blocks render; the run banner
+# prints the resulting on/off list so a log always says what the model was told.
+#
+# `role`, `rule.json_only` and `vocabulary.header` always render and have no flag.
+PROMPT_TEMPLATE=prompts/system_prompt.txt
+
+PROMPT_TASK_EXTRACT=true
+PROMPT_TASK_SELECT=true
+PROMPT_METATEXT_RULE=true
+PROMPT_OCR_NORMALISATION=true
+PROMPT_EXACT_TERM=true
+PROMPT_EXAMPLES=true
+
+# The one three-way switch, because the decision has three states rather than two
+# (issue #6, C1 / M11 / M12):
+#   strict      — "NEVER select a country/language/region name" (pairs with the
+#                 geographic TEATER branches being excluded)
+#   preference  — "select one only when the line is genuinely about it" (pairs with
+#                 those branches reinstated)
+#   off         — no geographic rule at all
+# taxonomy_config.json's `geo_guardrail.active` must agree: vocab_build.py renders this
+# prompt and refuses to build a vocabulary that contradicts it.
+PROMPT_GEO_GUARDRAIL=preference
+
+# =============================================================================
 # Line-quality filter
 # =============================================================================
 INCLUDE_NON_TEXT=true

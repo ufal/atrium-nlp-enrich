@@ -710,10 +710,15 @@ WITHOUT_CLAUSE = "Select the SINGLE most relevant category."
 
 def test_the_shipped_config_and_the_shipped_prompt_agree():
     """The invariant the build gate exists to hold: nothing in the repo today offers a
-    term the prompt forbids the model from selecting."""
+    term the prompt forbids the model from selecting. Reads the guardrail through
+    prompt_template rather than grepping llm_run.py — the wording is a config-selected
+    block now, so the only honest source is the one the runtime renders from."""
+    import prompt_template
+
     root = _repo_root()
     m = VocabularyManager(config_path=str(root / "data_samples" / "taxonomy_config.json"))
-    assert m.geo_guardrail_problems((root / "llm_run.py").read_text(encoding="utf-8")) == []
+    config = prompt_template.load_run_config(root / "llm_config.txt")
+    assert m.geo_guardrail_problems(prompt_template.guardrail_text(config)) == []
 
 
 def test_reinstating_a_covered_branch_while_the_clause_stands_is_a_problem(tmp_path):
@@ -897,6 +902,91 @@ def test_a_stale_override_is_only_reported_when_records_are_supplied(tmp_path):
         m.validate_settings(records=live)
 
     m.validate_settings(records=live + [{"source": "amcr", "source_id": "HES-GONE"}])
+
+
+def test_two_records_sharing_a_qualifier_is_caught(tmp_path):
+    """@david-spacil, working the M8 review (issue #6, comment 5541507280): "two records
+    sharing a qualifier build the same key, and the second one is then dropped without
+    even keeping its id." He read it right — `to_term_pairs` appends the loser to the
+    collisions *warning* list and skips it, so the id reaches no `discarded_ids`. His
+    convention (qualify only the record that leaves the group) is now a rule."""
+    import pytest
+
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [
+            {"match": {"source": "teater", "id": "1"}, "qualifier_cs": "q", "reason": "x"},
+            {"match": {"source": "teater", "id": "2"}, "qualifier_cs": "q", "reason": "x"},
+        ],
+    )
+    records = [
+        {"cs": "x", "source": "teater", "source_id": "1"},
+        {"cs": "x", "source": "teater", "source_id": "2"},
+        {"cs": "x", "source": "amcr", "source_id": "A1"},
+    ]
+    m.validate_settings()  # not knowable without the records
+    with pytest.raises(ValueError, match="would build the same key"):
+        m.validate_settings(records=records)
+
+
+def test_distinct_qualifiers_in_one_group_are_fine(tmp_path):
+    """The safe shape of the same edit: two homonyms split apart, each keeping its id."""
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [
+            {"match": {"source": "teater", "id": "1"}, "qualifier_cs": "q1", "reason": "x"},
+            {"match": {"source": "teater", "id": "2"}, "qualifier_cs": "q2", "reason": "x"},
+        ],
+    )
+    m.validate_settings(
+        records=[
+            {"cs": "x", "source": "teater", "source_id": "1"},
+            {"cs": "x", "source": "teater", "source_id": "2"},
+            {"cs": "x", "source": "amcr", "source_id": "A1"},
+        ]
+    )
+
+
+def test_qualifying_every_member_of_a_group_is_caught(tmp_path):
+    """The mirror fault: qualify them all and the bare label is offered by nobody —
+    which no reviewer splitting a homonym intends."""
+    import pytest
+
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [
+            {"match": {"source": "teater", "id": "1"}, "qualifier_cs": "q1", "reason": "x"},
+            {"match": {"source": "teater", "id": "2"}, "qualifier_cs": "q2", "reason": "x"},
+        ],
+    )
+    with pytest.raises(ValueError, match="bare label would not be offered"):
+        m.validate_settings(
+            records=[
+                {"cs": "x", "source": "teater", "source_id": "1"},
+                {"cs": "x", "source": "teater", "source_id": "2"},
+            ]
+        )
+
+
+def test_a_qualifier_shared_across_DIFFERENT_groups_is_fine(tmp_path):
+    """Two of the shipped verdicts both use "materiál" (`vejce`, `rostlinné
+    makrozbytty`). Different labels build different keys, so this must not be flagged —
+    the check is per group, not global."""
+    m = _facet_mgr_with_overrides(
+        tmp_path,
+        [
+            {"match": {"source": "amcr", "id": "A1"}, "qualifier_cs": "materiál", "reason": "x"},
+            {"match": {"source": "amcr", "id": "B1"}, "qualifier_cs": "materiál", "reason": "x"},
+        ],
+    )
+    m.validate_settings(
+        records=[
+            {"cs": "vejce", "source": "amcr", "source_id": "A1"},
+            {"cs": "vejce", "source": "amcr", "source_id": "A2"},
+            {"cs": "rostlinné makrozbytky", "source": "amcr", "source_id": "B1"},
+            {"cs": "rostlinné makrozbytky", "source": "amcr", "source_id": "B2"},
+        ]
+    )
 
 
 def test_every_problem_is_reported_at_once(tmp_path):
@@ -1156,16 +1246,21 @@ def test_extra_is_order_independent():
 
 
 def test_shipped_same_as_baseline_is_unchanged():
-    """162 terms carrying 98 links is the reviewed baseline (issue #6, Track 3). The
-    configurable extra/suppress path must not move it while no override uses it."""
+    """169 terms carrying 102 links, and the number has moved twice for stated reasons:
+    the reviewed baseline was 162/98; M13's `pastvina/louka (nálezové okolnosti)` split
+    added one (the qualified label still contains "/", so it is still a composite of the
+    same components); M11's reinstatement added three more, since composites and their
+    components can now both be offered across the two new context facets. The
+    configurable extra/suppress path must not move it further while no override uses
+    it."""
     import json as _json
 
     nested = _json.loads(
         (_repo_root() / "data_samples" / "vocab" / "union_nested.json").read_text(encoding="utf-8")
     )
     linked = [e for terms in nested.values() for e in terms.values() if e.get("same_as")]
-    assert len(linked) == 162
-    assert sum(len(e["same_as"]) for e in linked) == 2 * 98
+    assert len(linked) == 169
+    assert sum(len(e["same_as"]) for e in linked) == 2 * 102
 
 
 def test_shipped_vocabulary_same_as_links_are_symmetric():

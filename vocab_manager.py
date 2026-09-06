@@ -444,6 +444,57 @@ class VocabularyManager:
             if value.get("qualifier_cs")
         }
 
+    def _qualifier_problems(self, records: Iterable[Dict[str, Any]]) -> List[str]:
+        """Qualifier faults that only exist relative to a same-label group.
+
+        ``to_term_pairs`` keys a split entry ``"{cs} ({qualifier_cs})"``. Two records in
+        one group with the same qualifier therefore build the same key: the second is
+        recorded in the collisions warning list and skipped, so its id reaches no
+        entry's ``discarded_ids`` and survives nowhere — silently, since a warning is
+        not a failure. @david-spacil identified this while working the M8 review
+        (issue #6, comment 5541507280) and adopted the safe convention himself: put the
+        qualifier only on the record that leaves the group. This makes the convention a
+        rule rather than something a reviewer has to know.
+
+        The second fault is the mirror image: qualify *every* member and the bare label
+        is offered by nobody, which no reviewer splitting a homonym intends.
+        """
+        qualifiers = self.qualifier_overrides()
+        if not qualifiers:
+            return []
+
+        groups: Dict[str, List[Tuple[str, str]]] = {}
+        for record in records:
+            cs = str(record.get("cs") or "")
+            if not cs:
+                continue
+            key = (str(record.get("source") or ""), str(record.get("source_id") or ""))
+            groups.setdefault(_norm(cs), []).append(key)
+
+        problems: List[str] = []
+        for label, members in sorted(groups.items()):
+            qualified = [(k, qualifiers[k]) for k in members if k in qualifiers]
+            if not qualified:
+                continue
+            by_qualifier: Dict[str, List[Tuple[str, str]]] = {}
+            for key, qualifier in qualified:
+                by_qualifier.setdefault(qualifier, []).append(key)
+            for qualifier, keys in sorted(by_qualifier.items()):
+                if len(keys) > 1:
+                    named = ", ".join(f"{s}:{i}" for s, i in sorted(keys))
+                    problems.append(
+                        f"qualifier_cs {qualifier!r} is on {len(keys)} records sharing the label "
+                        f"{label!r} ({named}) — they would build the same key and all but the "
+                        "first would be dropped with its id. Qualify only the record that "
+                        "leaves the group."
+                    )
+            if len(qualified) == len(members):
+                problems.append(
+                    f"every record with the label {label!r} carries a qualifier_cs, so the "
+                    "bare label would not be offered at all — leave at least one unqualified"
+                )
+        return problems
+
     def geo_guardrail(self) -> Dict[str, Any]:
         """The ``_settings.geo_guardrail`` block, with defaults filled in. See
         :data:`DEFAULT_GEO_GUARDRAIL_MARKERS`."""
@@ -752,9 +803,12 @@ class VocabularyManager:
 
         ``records`` — the harvested records this config will be applied to, when the
         caller has them — additionally reports overrides whose ``(source, id)`` matches
-        nothing. That check is opt-in because the manager is routinely used without a
-        harvest (prompt building, the single-source builds), where "no such record" is
-        normal rather than a mistake.
+        nothing, and the two qualifier faults that can only be seen against real labels:
+        two records in one same-label group carrying the *same* ``qualifier_cs`` (the
+        second builds an identical key and is dropped with its id, issue #6 M13), and a
+        group where *every* member is qualified (the bare label then disappears
+        entirely). Both are opt-in for the same reason: the manager is routinely used
+        without a harvest, where neither is knowable.
         """
         known_facets = set(self.themes()) | {EXCLUDE_THEME}
         settings = self.settings
@@ -849,6 +903,9 @@ class VocabularyManager:
                 bad.append(f"{where} matches no harvested record")
         for pair in sorted(contradictory, key=lambda p: sorted(p)):
             bad.append(f"same_as and same_as_suppress both name the pair {sorted(pair)}")
+
+        if records is not None:
+            bad.extend(self._qualifier_problems(records))
 
         if bad:
             raise ValueError(

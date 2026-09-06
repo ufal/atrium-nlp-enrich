@@ -27,6 +27,50 @@ def _shipped_manager():
     return VocabularyManager(config_path=str(CONFIG))
 
 
+# The O3/O4 branches, as they were configured before M11 reinstated them. Several tests
+# below exercise the exclusion/reinstatement reporting itself, which needs something
+# excluded to report. Rebuilding that state here rather than reading it out of the
+# shipped config keeps those tests measuring the TOOL rather than the current ruling —
+# which is what they were always meant to do, and what stops the next ruling breaking
+# them again.
+_Q1_RULES = {
+    "heslar:zeme": "249 country names.",
+    "heslar:jazyk": "9 language names.",
+    "teater:2560": "391 ethnonyms.",
+    "teater:2900": "317 historical regions.",
+    "teater:3076": "15 ruling dynasties.",
+}
+_Q2_RULES = {
+    "teater:1": "Theory and approaches.",
+    "teater:288": "Cross-border disciplines.",
+    "teater:2557": "Auxiliary-historical branch root.",
+    "teater:2558": "battles.",
+    "teater:3091": "wars.",
+    "teater:3094": "professions.",
+    "teater:3549": "society.",
+}
+
+
+def _manager_with_q1q2_excluded():
+    """The shipped manager with the twelve O3/O4 rules put back to `__exclude__`."""
+    manager = _shipped_manager()
+    settings = manager.settings
+    for rule, reason in {**_Q1_RULES, **_Q2_RULES}.items():
+        kind, ident = rule.split(":", 1)
+        settings["heslar_map" if kind == "heslar" else "teater_branch_map"][ident] = "__exclude__"
+        settings["_exclusions"][rule] = {
+            "status": "open_geo_ethnic" if rule in _Q1_RULES else "open_other",
+            "reason": reason,
+        }
+    settings["geo_guardrail"] = {
+        **settings["geo_guardrail"],
+        "active": True,
+        "covers": sorted(_Q1_RULES),
+    }
+    manager._invalidate_cache()
+    return manager
+
+
 def _require_flat():
     if not (VOCAB_DIR / "amcr_flat.json").exists() or not (VOCAB_DIR / "teater_flat.json").exists():
         pytest.skip("flat artifacts not present in this checkout")
@@ -250,16 +294,21 @@ def test_specificity_pairs_only_lists_terms_whose_ancestor_is_also_offered():
         assert row["cs"] != row["nearest_ancestor_cs"]
 
 
-def test_every_specificity_pair_sits_inside_one_facet():
-    """Load-bearing for D1: if these pairs crossed facets, scoring the facet instead of
-    the term would separate a near miss from a category error. They do not — every one
-    is intra-facet, so facet-level scoring cannot tell the two apart and the rule has
-    to be made at term level."""
+def test_specificity_pairs_are_intra_facet_except_where_an_override_moved_a_term():
+    """Load-bearing for D1: a pair that sits inside one facet cannot be separated by
+    scoring the facet instead of the term, so the partial-credit rule has to be made at
+    term level. Before the M11 reinstatement every pair was intra-facet; now three are
+    not, and all three are terms a `facet` override pins away from where their TEATER
+    ancestor landed (`olej`, `vodní pramen`, `úřední písemnost` — the B5 regression
+    fixes). The conclusion is unchanged and stronger: 3 of 3225 is not an escape
+    hatch."""
     _require_flat()
     per_source = vb._load_flat(VOCAB_DIR)
     rows = vr.specificity_pair_rows(_built_union(), per_source)
     assert rows, "the shipped vocabulary must produce specificity pairs"
-    assert all(r["same_facet"] for r in rows)
+    cross = [r for r in rows if r["same_facet"] is not True]
+    assert {r["cs"] for r in cross} == {"olej", "vodní pramen", "úřední písemnost"}
+    assert len(cross) / len(rows) < 0.01
 
 
 def test_specificity_verdict_column_is_left_for_the_reviewer():
@@ -294,11 +343,17 @@ def test_exclusion_impact_settled_and_open_totals_reconcile():
     by_status = {}
     for r in rows:
         by_status[r["status"]] = by_status.get(r["status"], 0) + r["term_count"]
-    assert set(by_status) == {
+    # Since M11 reinstated Q1 and Q2, every remaining exclusion is settled under M4 —
+    # the two open buckets are empty because the questions were answered, not because
+    # the tool stopped reporting them. Asserted as a subset so the partition check keeps
+    # working if a branch is ever excluded again on evidence (which is what P3 invites).
+    assert set(by_status) <= {
         "settled (M4)",
         "open: geographic/ethnic (O3/O4 Q1)",
         "open: other (O4 Q2)",
+        "settled (per-term override)",
     }
+    assert "settled (M4)" in by_status
     assert sum(by_status.values()) == sum(r["term_count"] for r in rows)
 
 
@@ -306,16 +361,15 @@ def test_exclusion_impact_settled_and_open_totals_reconcile():
     "rule",
     ["heslar:zeme", "heslar:jazyk", "teater:2560", "teater:2900", "teater:3076"],
 )
-def test_exclusion_impact_flags_exactly_the_guardrail_conflicting_lists(rule):
-    """O3/O4: only the lists the guardrail's own wording names (country, language,
-    geographic region) or TEATER's own ethnic/historical/dynastic labels are Q1 —
-    everything else excluded is Q2 or already settled, not a guardrail question."""
+def test_the_q1_lists_are_no_longer_excluded_at_all(rule):
+    """O3/O4 Q1 was the set of lists the guardrail's own wording named. M11 reinstated
+    every one of them, so none should appear in the exclusion sheet — a Q1 rule still
+    listed here would mean the ruling was only half applied."""
     _require_flat()
     manager = _shipped_manager()
     per_source = vb._load_flat(VOCAB_DIR)
     rows = vr.exclusion_impact_rows(per_source, manager)
-    row = next(r for r in rows if r["rule"] == rule)
-    assert row["status"] == "open: geographic/ethnic (O3/O4 Q1)"
+    assert rule not in {r["rule"] for r in rows}
 
 
 def test_exclusion_impact_technical_amcr_lists_are_settled_not_open():
@@ -383,9 +437,15 @@ def test_collision_review_carries_source_metadata_columns():
 
 
 def test_collision_review_aat_verdict_distribution_reconciles():
-    """Verified against the shipped union vocabulary's 127 differing-gloss groups.
-    Only conflicting/agreeing are strong signal; a regression in _aat_verdict's
-    threshold would silently change which ~20 groups a reviewer can bulk-handle."""
+    """Verified against the shipped union vocabulary's 136 differing-gloss groups —
+    127 before M11, plus the 9 the reinstatement added.
+
+    `aat_verdict` is the signal that actually predicted @david-spacil's verdicts: all 3
+    `conflicting` groups in the 127 he reviewed turned out to be splits, against 2–6 %
+    for every other class (the dissimilarity ranking he was given did far worse — 1 of
+    7 splits inside its top 30). A regression in `_aat_verdict`'s threshold would
+    silently change which groups the next reviewer can bulk-handle, so the distribution
+    is pinned."""
     _require_flat()
     manager = _shipped_manager()
     per_source = vb._load_flat(VOCAB_DIR)
@@ -400,7 +460,8 @@ def test_collision_review_aat_verdict_distribution_reconciles():
     for r in rows:
         by_group.setdefault(r["cs"], r["aat_verdict"])
     counts = collections.Counter(by_group.values())
-    assert counts == {"agreeing": 17, "none": 46, "one_sided": 61, "conflicting": 3}
+    assert counts == {"agreeing": 19, "none": 52, "one_sided": 62, "conflicting": 3}
+    assert sum(counts.values()) == 136
 
 
 def test_aat_verdict_conflicting_when_getty_alignments_disagree():
@@ -479,7 +540,7 @@ def test_exclusion_status_comes_from_the_config_not_from_this_module():
     `status` on the `_exclusions` entry: editing the config alone must change both the
     status column and the guardrail_conflict flag."""
     _require_flat()
-    manager = _shipped_manager()
+    manager = _manager_with_q1q2_excluded()
     per_source = vb._load_flat(VOCAB_DIR)
 
     before = {r["rule"]: r["status"] for r in vr.exclusion_impact_rows(per_source, manager)}
@@ -497,7 +558,7 @@ def test_guardrail_conflict_follows_the_declared_status():
     """The one status the tool acts on rather than prints: `guardrail_conflict` marks
     the rows whose reinstatement also needs the prompt's geographic wording relaxed."""
     _require_flat()
-    manager = _shipped_manager()
+    manager = _manager_with_q1q2_excluded()
     per_source = vb._load_flat(VOCAB_DIR)
 
     rows = {r["rule"]: r for r in vr.reinstatement_preview_rows(per_source, manager)}
@@ -516,7 +577,7 @@ def test_subbranch_impact_inherits_its_roots_status_when_unkeyed():
     """A sub-branch nobody keyed separately is covered by its root's ruling, so the
     guardrail flag must fall back to the root rather than silently reading False."""
     _require_flat()
-    manager = _shipped_manager()
+    manager = _manager_with_q1q2_excluded()
     notes = manager.exclusion_notes()
     assert "teater:2560" in notes  # keyed in its own right
     assert not any(k.startswith("teater:3095") for k in notes)  # a child of 3094, not keyed
@@ -555,7 +616,7 @@ def test_subbranch_impact_decomposes_only_excluded_depth1_roots():
     appear, and neither must a leaf inside an already-finest-grain sub-branch (2560
     etnika's own ~390 individual ethnic-group names must not explode into rows)."""
     _require_flat()
-    manager = _shipped_manager()
+    manager = _manager_with_q1q2_excluded()
     per_source = vb._load_flat(VOCAB_DIR)
     rows = vr.teater_subbranch_impact_rows(per_source, manager)
 
@@ -578,9 +639,16 @@ def test_subbranch_impact_children_plus_root_reconciles_with_exclusion_impact():
     descendant to a child rule and never falls back to "teater:2557" -- that rule
     then covers only 2557's own single record. Reconciling the sum-of-children with
     that root would be reconciling against the wrong thing.
+
+    A per-term `facet` override is the second, smaller exception, and it is not a
+    disagreement between the sheets: an override is checked BEFORE either map, so a
+    record it rescues is no longer excluded by its branch and drops out of the
+    exclusion count -- while the sub-branch walk, which follows TEATER's tree rather
+    than the placement rules, still sees it. The three M11 regression pins
+    (teater:605, 1022, 602, all under 288) are exactly that case.
     """
     _require_flat()
-    manager = _shipped_manager()
+    manager = _manager_with_q1q2_excluded()
     per_source = vb._load_flat(VOCAB_DIR)
     sub_rows = vr.teater_subbranch_impact_rows(per_source, manager)
     root_rows = vr.exclusion_impact_rows(per_source, manager)
@@ -590,11 +658,23 @@ def test_subbranch_impact_children_plus_root_reconciles_with_exclusion_impact():
     for r in sub_rows:
         by_root[r["root"]] = by_root.get(r["root"], 0) + r["term_count"]
 
+    rescued = {
+        source_id
+        for (source, source_id), override in manager.overrides.items()
+        if source == "teater" and override.get("facet") not in (None, "__exclude__")
+    }
+    teater_records = {r.source_id: r for r in per_source["teater"][0] if r.source_id}
+
     for root, children_total in by_root.items():
         if root == "2557":
             assert root_totals["teater:2557"] == 1
             continue
-        assert children_total + 1 == root_totals[f"teater:{root}"], root
+        pinned = sum(
+            1
+            for sid in rescued
+            if (rec := teater_records.get(sid)) is not None and root in rec.broader
+        )
+        assert children_total + 1 - pinned == root_totals[f"teater:{root}"], root
 
 
 def test_subbranch_impact_guardrail_conflict_matches_status_geo_ethnic():
@@ -603,7 +683,7 @@ def test_subbranch_impact_guardrail_conflict_matches_status_geo_ethnic():
     ethnic, or dynastic, so they must read False even though their parent (2557) is
     the guardrail-conflicting family."""
     _require_flat()
-    manager = _shipped_manager()
+    manager = _manager_with_q1q2_excluded()
     per_source = vb._load_flat(VOCAB_DIR)
     rows = vr.teater_subbranch_impact_rows(per_source, manager)
     by_id = {r["subbranch"]: r["guardrail_conflict"] for r in rows}
@@ -644,7 +724,7 @@ def test_reinstatement_preview_never_mutates_the_config_or_the_manager():
     import hashlib
 
     before = hashlib.sha256(CONFIG.read_bytes()).hexdigest()
-    manager = _shipped_manager()
+    manager = _manager_with_q1q2_excluded()
     per_source = vb._load_flat(VOCAB_DIR)
 
     vr.reinstatement_preview_rows(per_source, manager)
@@ -700,7 +780,7 @@ def test_reinstatement_preview_etnika_adds_the_full_391():
     all 391 terms net-new -- matching the in-memory reinstatement probe this sheet's
     design was validated against."""
     _require_flat()
-    manager = _shipped_manager()
+    manager = _manager_with_q1q2_excluded()
     per_source = vb._load_flat(VOCAB_DIR)
     row = next(
         r for r in vr.reinstatement_preview_rows(per_source, manager) if r["rule"] == "teater:2560"
