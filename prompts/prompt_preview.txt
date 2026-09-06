@@ -30,4 +30,3 @@ Correct output:
   "teater_category": "Nerelevantní (meta-text)",
   "confidence_score": 1.0
 }
-

@@ -1,71 +1,71 @@
-context_window,input_budget_tokens,facet,priority,terms,surviving,dropped,share_surviving,status
-8192,5632,Chronology,9,272,272,0,1.0,full
-8192,5632,Activity Area,8,266,173,93,0.65,partial
-8192,5632,Feature,7,374,0,374,0.0,dropped
-8192,5632,Artefact,6,728,0,728,0.0,dropped
-8192,5632,Material,5,160,0,160,0.0,dropped
-8192,5632,Finds Context,4,11,0,11,0.0,dropped
-8192,5632,Methods,3,198,0,198,0.0,dropped
-8192,5632,Location & Admin,1,71,0,71,0.0,dropped
-8192,5632,Cultural & Geographic Context,0,972,0,972,0.0,dropped
-8192,5632,Related Disciplines & Society,0,1666,0,1666,0.0,dropped
-32768,30208,Chronology,9,272,272,0,1.0,full
-32768,30208,Activity Area,8,266,266,0,1.0,full
-32768,30208,Feature,7,374,374,0,1.0,full
-32768,30208,Artefact,6,728,728,0,1.0,full
-32768,30208,Material,5,160,160,0,1.0,full
-32768,30208,Finds Context,4,11,11,0,1.0,full
-32768,30208,Methods,3,198,198,0,1.0,full
-32768,30208,Location & Admin,1,71,71,0,1.0,full
-32768,30208,Cultural & Geographic Context,0,972,972,0,1.0,full
-32768,30208,Related Disciplines & Society,0,1666,180,1486,0.108,partial
-128000,125440,Chronology,9,272,272,0,1.0,full
-128000,125440,Activity Area,8,266,266,0,1.0,full
-128000,125440,Feature,7,374,374,0,1.0,full
-128000,125440,Artefact,6,728,728,0,1.0,full
-128000,125440,Material,5,160,160,0,1.0,full
-128000,125440,Finds Context,4,11,11,0,1.0,full
-128000,125440,Methods,3,198,198,0,1.0,full
-128000,125440,Location & Admin,1,71,71,0,1.0,full
-128000,125440,Cultural & Geographic Context,0,972,972,0,1.0,full
-128000,125440,Related Disciplines & Society,0,1666,1666,0,1.0,full
-131072,128512,Chronology,9,272,272,0,1.0,full
-131072,128512,Activity Area,8,266,266,0,1.0,full
-131072,128512,Feature,7,374,374,0,1.0,full
-131072,128512,Artefact,6,728,728,0,1.0,full
-131072,128512,Material,5,160,160,0,1.0,full
-131072,128512,Finds Context,4,11,11,0,1.0,full
-131072,128512,Methods,3,198,198,0,1.0,full
-131072,128512,Location & Admin,1,71,71,0,1.0,full
-131072,128512,Cultural & Geographic Context,0,972,972,0,1.0,full
-131072,128512,Related Disciplines & Society,0,1666,1666,0,1.0,full
-256000,253440,Chronology,9,272,272,0,1.0,full
-256000,253440,Activity Area,8,266,266,0,1.0,full
-256000,253440,Feature,7,374,374,0,1.0,full
-256000,253440,Artefact,6,728,728,0,1.0,full
-256000,253440,Material,5,160,160,0,1.0,full
-256000,253440,Finds Context,4,11,11,0,1.0,full
-256000,253440,Methods,3,198,198,0,1.0,full
-256000,253440,Location & Admin,1,71,71,0,1.0,full
-256000,253440,Cultural & Geographic Context,0,972,972,0,1.0,full
-256000,253440,Related Disciplines & Society,0,1666,1666,0,1.0,full
-262144,259584,Chronology,9,272,272,0,1.0,full
-262144,259584,Activity Area,8,266,266,0,1.0,full
-262144,259584,Feature,7,374,374,0,1.0,full
-262144,259584,Artefact,6,728,728,0,1.0,full
-262144,259584,Material,5,160,160,0,1.0,full
-262144,259584,Finds Context,4,11,11,0,1.0,full
-262144,259584,Methods,3,198,198,0,1.0,full
-262144,259584,Location & Admin,1,71,71,0,1.0,full
-262144,259584,Cultural & Geographic Context,0,972,972,0,1.0,full
-262144,259584,Related Disciplines & Society,0,1666,1666,0,1.0,full
-1048576,1046016,Chronology,9,272,272,0,1.0,full
-1048576,1046016,Activity Area,8,266,266,0,1.0,full
-1048576,1046016,Feature,7,374,374,0,1.0,full
-1048576,1046016,Artefact,6,728,728,0,1.0,full
-1048576,1046016,Material,5,160,160,0,1.0,full
-1048576,1046016,Finds Context,4,11,11,0,1.0,full
-1048576,1046016,Methods,3,198,198,0,1.0,full
-1048576,1046016,Location & Admin,1,71,71,0,1.0,full
-1048576,1046016,Cultural & Geographic Context,0,972,972,0,1.0,full
-1048576,1046016,Related Disciplines & Society,0,1666,1666,0,1.0,full
+context_window,input_budget_tokens,grouping,facet,priority,terms,surviving,dropped,share_surviving,status
+8192,5632,facet_sub,Chronology,9,272,272,0,1.0,full
+8192,5632,facet_sub,Activity Area,8,266,147,119,0.553,partial
+8192,5632,facet_sub,Feature,7,374,0,374,0.0,dropped
+8192,5632,facet_sub,Artefact,6,728,0,728,0.0,dropped
+8192,5632,facet_sub,Material,5,160,0,160,0.0,dropped
+8192,5632,facet_sub,Finds Context,4,11,0,11,0.0,dropped
+8192,5632,facet_sub,Methods,3,198,0,198,0.0,dropped
+8192,5632,facet_sub,Location & Admin,1,71,0,71,0.0,dropped
+8192,5632,facet_sub,Cultural & Geographic Context,0,972,0,972,0.0,dropped
+8192,5632,facet_sub,Related Disciplines & Society,0,1666,0,1666,0.0,dropped
+32768,30208,facet_sub,Chronology,9,272,272,0,1.0,full
+32768,30208,facet_sub,Activity Area,8,266,266,0,1.0,full
+32768,30208,facet_sub,Feature,7,374,374,0,1.0,full
+32768,30208,facet_sub,Artefact,6,728,728,0,1.0,full
+32768,30208,facet_sub,Material,5,160,160,0,1.0,full
+32768,30208,facet_sub,Finds Context,4,11,11,0,1.0,full
+32768,30208,facet_sub,Methods,3,198,198,0,1.0,full
+32768,30208,facet_sub,Location & Admin,1,71,71,0,1.0,full
+32768,30208,facet_sub,Cultural & Geographic Context,0,972,972,0,1.0,full
+32768,30208,facet_sub,Related Disciplines & Society,0,1666,54,1612,0.032,partial
+128000,125440,facet_sub,Chronology,9,272,272,0,1.0,full
+128000,125440,facet_sub,Activity Area,8,266,266,0,1.0,full
+128000,125440,facet_sub,Feature,7,374,374,0,1.0,full
+128000,125440,facet_sub,Artefact,6,728,728,0,1.0,full
+128000,125440,facet_sub,Material,5,160,160,0,1.0,full
+128000,125440,facet_sub,Finds Context,4,11,11,0,1.0,full
+128000,125440,facet_sub,Methods,3,198,198,0,1.0,full
+128000,125440,facet_sub,Location & Admin,1,71,71,0,1.0,full
+128000,125440,facet_sub,Cultural & Geographic Context,0,972,972,0,1.0,full
+128000,125440,facet_sub,Related Disciplines & Society,0,1666,1666,0,1.0,full
+131072,128512,facet_sub,Chronology,9,272,272,0,1.0,full
+131072,128512,facet_sub,Activity Area,8,266,266,0,1.0,full
+131072,128512,facet_sub,Feature,7,374,374,0,1.0,full
+131072,128512,facet_sub,Artefact,6,728,728,0,1.0,full
+131072,128512,facet_sub,Material,5,160,160,0,1.0,full
+131072,128512,facet_sub,Finds Context,4,11,11,0,1.0,full
+131072,128512,facet_sub,Methods,3,198,198,0,1.0,full
+131072,128512,facet_sub,Location & Admin,1,71,71,0,1.0,full
+131072,128512,facet_sub,Cultural & Geographic Context,0,972,972,0,1.0,full
+131072,128512,facet_sub,Related Disciplines & Society,0,1666,1666,0,1.0,full
+256000,253440,facet_sub,Chronology,9,272,272,0,1.0,full
+256000,253440,facet_sub,Activity Area,8,266,266,0,1.0,full
+256000,253440,facet_sub,Feature,7,374,374,0,1.0,full
+256000,253440,facet_sub,Artefact,6,728,728,0,1.0,full
+256000,253440,facet_sub,Material,5,160,160,0,1.0,full
+256000,253440,facet_sub,Finds Context,4,11,11,0,1.0,full
+256000,253440,facet_sub,Methods,3,198,198,0,1.0,full
+256000,253440,facet_sub,Location & Admin,1,71,71,0,1.0,full
+256000,253440,facet_sub,Cultural & Geographic Context,0,972,972,0,1.0,full
+256000,253440,facet_sub,Related Disciplines & Society,0,1666,1666,0,1.0,full
+262144,259584,facet_sub,Chronology,9,272,272,0,1.0,full
+262144,259584,facet_sub,Activity Area,8,266,266,0,1.0,full
+262144,259584,facet_sub,Feature,7,374,374,0,1.0,full
+262144,259584,facet_sub,Artefact,6,728,728,0,1.0,full
+262144,259584,facet_sub,Material,5,160,160,0,1.0,full
+262144,259584,facet_sub,Finds Context,4,11,11,0,1.0,full
+262144,259584,facet_sub,Methods,3,198,198,0,1.0,full
+262144,259584,facet_sub,Location & Admin,1,71,71,0,1.0,full
+262144,259584,facet_sub,Cultural & Geographic Context,0,972,972,0,1.0,full
+262144,259584,facet_sub,Related Disciplines & Society,0,1666,1666,0,1.0,full
+1048576,1046016,facet_sub,Chronology,9,272,272,0,1.0,full
+1048576,1046016,facet_sub,Activity Area,8,266,266,0,1.0,full
+1048576,1046016,facet_sub,Feature,7,374,374,0,1.0,full
+1048576,1046016,facet_sub,Artefact,6,728,728,0,1.0,full
+1048576,1046016,facet_sub,Material,5,160,160,0,1.0,full
+1048576,1046016,facet_sub,Finds Context,4,11,11,0,1.0,full
+1048576,1046016,facet_sub,Methods,3,198,198,0,1.0,full
+1048576,1046016,facet_sub,Location & Admin,1,71,71,0,1.0,full
+1048576,1046016,facet_sub,Cultural & Geographic Context,0,972,972,0,1.0,full
+1048576,1046016,facet_sub,Related Disciplines & Society,0,1666,1666,0,1.0,full

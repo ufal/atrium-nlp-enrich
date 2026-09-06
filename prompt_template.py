@@ -77,6 +77,27 @@ GEO_GUARDRAIL_BLOCKS: Dict[str, Optional[str]] = {
 }
 DEFAULT_GEO_GUARDRAIL = "strict"
 
+# How the term list is laid out under the vocabulary header. @motyc asked to "distinguish
+# clearly between which terms are available to the model and how those terms are grouped
+# for inference", and to "check empirically how much facet placement affects the results
+# at all" once the whole vocabulary fits the context (issue #6, M2 — the half of that
+# ruling that is an experiment rather than a policy). It fits now, so the layout is a
+# flag: the same terms, in the same order, under three different amounts of structure.
+#
+#   facet_sub — "--- Facet / Subgroup ---", the shipped prompt: both curated levels
+#   facet     — "--- Facet ---" only: the facets, without the source's own second level
+#   flat      — no headers at all: the terms, and nothing claiming they belong together
+#
+# All three offer the same terms and truncate identically. What else moves is *order*:
+# grouping by sub-branch makes a facet's sub-groups contiguous, which `vocabulary_terms`
+# does not, so `facet_sub` is a permutation within each facet while `facet` and `flat`
+# keep the term order exactly. That gives two clean contrasts rather than one muddled
+# scale — `facet` vs `flat` isolates the headers alone, `facet_sub` vs `facet` measures
+# the source's second level (headers and adjacency together, as a real grouping is).
+GROUPING_FLAG = "PROMPT_VOCAB_GROUPING"
+GROUPING_MODES = ("facet_sub", "facet", "flat")
+DEFAULT_GROUPING = "facet_sub"
+
 # Blocks the vocabulary is rendered between: everything before `vocabulary.header` is
 # the instruction preamble, everything after it is appended once the terms are in.
 VOCABULARY_ANCHOR = "vocabulary.header"
@@ -164,6 +185,16 @@ def resolve_geo_guardrail(config: Optional[Dict[str, str]] = None) -> str:
         raise TemplateError(
             f"{GEO_GUARDRAIL_FLAG}={raw!r} is not one of {sorted(GEO_GUARDRAIL_BLOCKS)}"
         )
+    return mode
+
+
+def resolve_grouping(config: Optional[Dict[str, str]] = None) -> str:
+    """Which vocabulary layout is in force. An unknown value is an error, not a fallback:
+    a typo that silently rendered the default would make an ablation report a difference
+    that was never applied."""
+    mode = (config or {}).get(GROUPING_FLAG, DEFAULT_GROUPING).strip().lower()
+    if mode not in GROUPING_MODES:
+        raise TemplateError(f"{GROUPING_FLAG}={mode!r} is not one of {', '.join(GROUPING_MODES)}")
     return mode
 
 
@@ -291,22 +322,59 @@ def vocabulary_terms(
     return terms
 
 
-def vocabulary_block(term_list: Sequence[dict]) -> str:
-    """Render the term list grouped by facet, then by the source's own subgroup.
+def group_titles(term_list: Sequence[dict], grouping: str = DEFAULT_GROUPING) -> List[str]:
+    """The header lines this layout would emit, in order — ``[]`` for ``flat``.
+
+    Split out because the headers are the whole of what the grouping modes differ by, and
+    because the context-budget report has to charge them against the window.
+    """
+    if grouping == "flat":
+        return []
+    titles: List[str] = []
+    for t in term_list:
+        theme, sub = t["theme"], (t.get("sub") or "")
+        title = f"{theme} / {sub}" if (sub and grouping == "facet_sub") else theme
+        if title not in titles:
+            titles.append(title)
+    return titles
+
+
+def vocabulary_block(term_list: Sequence[dict], grouping: Optional[str] = None) -> str:
+    """Render the term list under the configured amount of structure.
 
     Both AMCR and TEATER curate a second level — 50 heslars, and TEATER's depth-2 groups
-    — and flattening a 700-term facet into one undifferentiated list throws that away.
-    Two levels cost ~120 header lines and give the model the structure a domain expert
-    already built.
+    — and the shipped ``facet_sub`` layout keeps both, because flattening a 700-term
+    facet into one undifferentiated list throws away structure a domain expert already
+    built. ``facet`` and ``flat`` are the comparison arms for M2's open question, not
+    proposals: they cost ~120 and ~130 header lines less, and whether that buys or costs
+    accuracy is exactly what nobody has measured.
+
+    Every mode emits the same terms. ``facet`` and ``flat`` emit them in ``term_list``
+    order; ``facet_sub`` reorders within each facet so its sub-groups are contiguous,
+    which is what grouping by sub-branch means. So ``facet`` vs ``flat`` varies the
+    headers alone, and ``facet_sub`` vs ``facet`` varies the second level.
+
+    ``grouping`` is a mode name; ``None`` means the shipped default. Pass what
+    ``resolve_grouping(config)`` returns to honour ``llm_config.txt``.
     """
-    groups: Dict[tuple, List[str]] = {}
+    grouping = grouping or DEFAULT_GROUPING
+    if grouping not in GROUPING_MODES:
+        raise TemplateError(
+            f"unknown grouping {grouping!r}; expected one of {', '.join(GROUPING_MODES)}"
+        )
+
+    if grouping == "flat":
+        lines = [f"- {t['cs']} ({t['en']})" for t in term_list]
+        return "\n" + "\n".join(lines) + "\n" if lines else ""
+
+    groups: Dict[str, List[str]] = {}
     for t in term_list:
-        key = (t["theme"], t.get("sub") or "")
-        groups.setdefault(key, []).append(f"{t['cs']} ({t['en']})")
+        theme, sub = t["theme"], (t.get("sub") or "")
+        title = f"{theme} / {sub}" if (sub and grouping == "facet_sub") else theme
+        groups.setdefault(title, []).append(f"{t['cs']} ({t['en']})")
 
     out: List[str] = []
-    for (theme_name, sub_name), lines in groups.items():
-        title = f"{theme_name} / {sub_name}" if sub_name else theme_name
+    for title, lines in groups.items():
         out.append(f"\n--- {title} ---\n")
         out.append("\n".join(f"- {line}" for line in lines) + "\n")
     return "".join(out)
@@ -359,7 +427,7 @@ def render_full(
     vocab_data = json.loads(vocab_file.read_text(encoding="utf-8"))
     preamble, footer = render(config, path)
     terms = vocabulary_terms(vocab_data, themes_withheld(taxonomy_path))
-    return preamble + vocabulary_block(terms) + footer
+    return preamble + vocabulary_block(terms, resolve_grouping(config)) + footer
 
 
 # Chars per token, matching the ratio the vocabulary sheets use. Estimated rather than
@@ -381,7 +449,10 @@ def describe(config: Optional[Dict[str, str]] = None, path: Optional[Path] = Non
     active = set(selected_blocks(blocks, config))
     mode = resolve_geo_guardrail(config)
     total = sum(block_cost(body) for name, body in blocks.items() if name in active)
-    lines = [f"  prompt blocks (geo guardrail: {mode}) — ~{total} tokens of instructions"]
+    lines = [
+        f"  prompt blocks (geo guardrail: {mode}, vocabulary grouping: "
+        f"{resolve_grouping(config)}) — ~{total} tokens of instructions"
+    ]
     for name, body in blocks.items():
         mark = "on " if name in active else "off"
         lines.append(f"    [{mark}] {name:32s} ~{block_cost(body):4d} tok")
@@ -423,6 +494,64 @@ def output_record_fields(path: Optional[Path] = None) -> Sequence[str]:
     return list((example.get("enrichment") or {}).keys())
 
 
+# ── The committed prompt sheets ──────────────────────────────────────────────────
+#
+# `prompts/prompt_*.txt` are the prompt as a reviewer reads it — @david-spacil and
+# @motyc rule on wording and on vocabulary content without running the pipeline, and a
+# file in the repo is what they can open. That makes them exactly the kind of generated
+# artifact this repository has twice let go stale (union_nested.json, a5e3c8a and
+# d4c46b2): committed, useful, and derived from files that keep moving.
+#
+# So they are generated, never hand-edited. `--write` regenerates all four and `--check`
+# fails if any is out of date, in the same shape as `vocab_build.py --from-flat --check`.
+
+SHEET_DIR = REPO_ROOT / "prompts"
+GUARDRAIL_DIFF_PAIR = ("PROMPT_GEO_GUARDRAIL=strict", "PROMPT_GEO_GUARDRAIL=preference")
+
+
+def sheet_contents(config: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """The four committed sheets, by filename, as the CLI would print them.
+
+    Kept in one function so the writer and the drift check cannot disagree about what
+    "up to date" means.
+    """
+    config = config or {}
+    return {
+        "prompt_blocks.txt": describe(config) + "\n",
+        "prompt_preview.txt": "\n" + _preview_text(config),
+        "prompt_full.txt": "\n" + render_full(config),
+        "prompt_guardrail_diff.txt": _diff_text(config, *GUARDRAIL_DIFF_PAIR),
+    }
+
+
+def stale_sheets(
+    config: Optional[Dict[str, str]] = None, directory: Optional[Path] = None
+) -> List[str]:
+    """Names of the committed sheets that no longer match a fresh render."""
+    directory = Path(directory) if directory else SHEET_DIR
+    stale = []
+    for name, body in sheet_contents(config).items():
+        path = directory / name
+        if not path.exists() or path.read_text(encoding="utf-8") != body:
+            stale.append(name)
+    return stale
+
+
+def write_sheets(
+    config: Optional[Dict[str, str]] = None, directory: Optional[Path] = None
+) -> List[str]:
+    """Regenerate the committed sheets; returns the names actually rewritten."""
+    directory = Path(directory) if directory else SHEET_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+    written = []
+    for name, body in sheet_contents(config).items():
+        path = directory / name
+        if not path.exists() or path.read_text(encoding="utf-8") != body:
+            path.write_text(body, encoding="utf-8")
+            written.append(name)
+    return written
+
+
 # ── CLI: read the prompt without running the pipeline ────────────────────────────
 #
 # A reviewer deciding whether a rule is worth its tokens should not have to start a GPU
@@ -441,6 +570,32 @@ def _cli_config(pairs: Sequence[str], config_file: Optional[Path]) -> Dict[str, 
         key, _, value = pair.partition("=")
         config[key.strip()] = value.strip()
     return config
+
+
+def _preview_text(config: Optional[Dict[str, str]] = None) -> str:
+    preamble, footer = render(config)
+    return preamble + "    … the vocabulary term list is injected here …\n" + footer
+
+
+def _diff_text(config: Optional[Dict[str, str]], left_pair: str, right_pair: str) -> str:
+    import difflib
+
+    left = dict(config or {})
+    right = dict(config or {})
+    for target, pair in ((left, left_pair), (right, right_pair)):
+        key, _, value = pair.partition("=")
+        target[key.strip()] = value.strip()
+    lp, lf = render(left)
+    rp, rf = render(right)
+    delta = list(
+        difflib.unified_diff(
+            (lp + lf).splitlines(keepends=True),
+            (rp + rf).splitlines(keepends=True),
+            fromfile=left_pair,
+            tofile=right_pair,
+        )
+    )
+    return "".join(delta) if delta else f"no difference between {left_pair} and {right_pair}\n"
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -463,6 +618,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default=None,
         metavar="PATH",
         help=f"nested vocabulary to render (default: {DEFAULT_VOCAB.name})",
+    )
+    parser.add_argument(
+        "--write",
+        action="store_true",
+        help=f"regenerate the committed sheets in {SHEET_DIR.name}/",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="exit 1 if a committed sheet no longer matches the configured prompt",
     )
     parser.add_argument(
         "--diff",
@@ -489,7 +654,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     config_file = args.config if args.config and Path(args.config).exists() else None
     config = _cli_config(args.set, config_file)
 
-    if not (args.preview or args.blocks or args.diff or args.full):
+    if not (args.preview or args.blocks or args.diff or args.full or args.write or args.check):
         parser.print_help()
         return 2
 
@@ -497,32 +662,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(describe(config))
 
     if args.preview:
-        preamble, footer = render(config)
-        vocab_note = "    … the vocabulary term list is injected here …\n"
-        print("\n" + preamble + vocab_note + footer)
+        print("\n" + _preview_text(config), end="")
 
     if args.full:
         print("\n" + render_full(config, vocab_path=args.vocab), end="")
 
     if args.diff:
-        import difflib
+        print(_diff_text(config, args.diff[0], args.diff[1]), end="")
 
-        left = _cli_config([args.diff[0]], config_file)
-        right = _cli_config([args.diff[1]], config_file)
-        lp, lf = render(left)
-        rp, rf = render(right)
-        delta = list(
-            difflib.unified_diff(
-                (lp + lf).splitlines(keepends=True),
-                (rp + rf).splitlines(keepends=True),
-                fromfile=args.diff[0],
-                tofile=args.diff[1],
-            )
+    if args.write:
+        written = write_sheets(config)
+        print(
+            f"sheets up to date ({SHEET_DIR})"
+            if not written
+            else "regenerated: " + ", ".join(written)
         )
-        if not delta:
-            print(f"no difference between {args.diff[0]} and {args.diff[1]}")
-        else:
-            print("".join(delta), end="")
+
+    if args.check:
+        stale = stale_sheets(config)
+        if stale:
+            print(
+                "stale prompt sheets: "
+                + ", ".join(stale)
+                + "\nregenerate with `python3 prompt_template.py --write`"
+            )
+            return 1
+        print("prompt sheets match the configured prompt")
     return 0
 
 

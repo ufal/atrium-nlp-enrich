@@ -952,6 +952,44 @@ was told. `PROMPT_GEO_GUARDRAIL` is the one three-way switch (`strict` / `prefer
 [`prompts/output_template.json`](prompts/output_template.json) 📎 documents the resulting
 per-document output file.
 
+Reading the prompt needs neither a GPU nor the model stack — `prompt_template.py` imports
+nothing outside the standard library, so these run in a bare checkout:
+
+```bash
+python3 prompt_template.py --blocks                  # which rules are on, and what each costs
+python3 prompt_template.py --preview                 # the instruction text, term list elided
+python3 prompt_template.py --full  > prompt.txt      # the whole prompt, all 4 719 terms
+python3 prompt_template.py --diff PROMPT_GEO_GUARDRAIL=strict \
+                                 PROMPT_GEO_GUARDRAIL=preference
+python3 prompt_template.py --write                   # regenerate the committed sheets
+python3 prompt_template.py --check                   # exit 1 if a sheet is out of date
+```
+
+`--full` renders the untruncated prompt — instructions under the current flags, then every
+term `VOCAB_PATH` offers, grouped exactly as `build_system_prompt()` groups them (both call
+the same two functions, and a test asserts they agree byte for byte). It is what a model
+with room for the whole vocabulary sees; at a tighter window the run drops a tail of terms,
+which [`context_budget.csv`](data_samples/vocab/context_budget.csv) 📎 sizes per window.
+
+The four sheets under [`prompts/`](prompts) 📎 — `prompt_blocks.txt`, `prompt_preview.txt`,
+`prompt_full.txt`, `prompt_guardrail_diff.txt` — are the output of the first four commands,
+committed so a reviewer can read the prompt in a diff without running Python. They are
+**generated, never hand-edited**: `--write` rewrites them, `--check` fails when the
+vocabulary, a flag or the template has moved without them, and
+[.github/workflows/vocab-drift.yml](.github/workflows/vocab-drift.yml) runs that check on
+every PR touching either half.
+
+**`PROMPT_VOCAB_GROUPING` controls the layout of the term list**, not its contents:
+`facet_sub` (shipped — `--- Facet / Subgroup ---`, both curated levels), `facet` (facet
+headers only) or `flat` (no headers). It exists to answer @motyc's question in
+[issue #6](https://github.com/ufal/atrium-nlp-enrich/issues/6#issuecomment-5424905539) —
+whether the facet grouping affects results at all, now that the whole vocabulary fits a
+128k window. All three offer the same terms and truncate identically; `facet` and `flat`
+also preserve term order, while `facet_sub` makes each facet's sub-groups contiguous. So
+`facet` vs `flat` isolates the ~120 header lines and `facet_sub` vs `facet` measures the
+source's second level. The headers are not free: at an 8 192-token window they cost 26
+terms, at 32 768 they cost 126, and at 128k nothing, since everything fits either way.
+
 `validate_settings()` refuses an edit that would not do what it says — an undeclared
 facet, a relabel for a list no map places, a reason for something nobody excludes, an
 unknown override key, a stale `(source, id)`, a pair both linked and suppressed, two

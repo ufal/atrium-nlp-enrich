@@ -141,65 +141,13 @@ def build_system_prompt(
     # cannot do while it lives in Python that vocab_build.py would have to grep.
     header, examples_footer = prompt_template.render(prompt_config or {})
 
-    skip = {"other"} if excluded_themes is None else {t.lower() for t in excluded_themes}
-
-    raw_terms: List[dict] = []
-    raw_terms.append(
-        {
-            "theme": "Administrative / Meta",
-            "sub": "",
-            "cs": "Nerelevantní (meta-text)",
-            "en": "Irrelevant / Meta-text",
-        }
-    )
-
-    for theme, data in vocab_data.items():
-        if theme.startswith("_") or theme.lower() in skip:
-            continue
-        if isinstance(data, dict):
-            if "keywords" in data and isinstance(data["keywords"], dict):
-                cs_list = data["keywords"].get("cs", [])
-                en_list = data["keywords"].get("en", [])
-                for i, cs_key in enumerate(cs_list):
-                    en = en_list[i] if i < len(en_list) else cs_key
-                    raw_terms.append({"theme": theme, "sub": "", "cs": cs_key, "en": en})
-            else:
-                for cs_key, pair in data.items():
-                    en = pair.get("en", cs_key) if isinstance(pair, dict) else cs_key
-                    sub = pair.get("sub", "") if isinstance(pair, dict) else ""
-                    term = {"theme": theme, "sub": sub, "cs": cs_key, "en": en}
-                    if isinstance(pair, dict) and pair.get("source") and pair.get("source_id"):
-                        term["ids"] = [{"source": pair["source"], "id": pair["source_id"]}] + [
-                            {"source": d["source"], "id": d["id"]}
-                            for d in (pair.get("discarded_ids") or [])
-                        ]
-                        if pair.get("bare_cs"):
-                            term["bare_cs"] = pair["bare_cs"]
-                    raw_terms.append(term)
-
-    prioritised = raw_terms
+    # Flattening and grouping live in prompt_template so that `prompt_template.py --full`
+    # renders the same prompt this function sends, without importing torch to do it.
+    prioritised = prompt_template.vocabulary_terms(vocab_data, excluded_themes)
+    grouping = prompt_template.resolve_grouping(prompt_config or {})
 
     def _build_candidate_prompt(term_list: List[dict]) -> str:
-        """Render the vocabulary grouped by facet, then by the source's own subgroup.
-
-        Both AMCR and TEATER curate a second level — 50 heslars, and TEATER's 122
-        depth-2 groups — and flattening a 726-term facet into one undifferentiated list
-        throws that away. Two levels cost ~120 header lines and give the model the
-        structure a domain expert already built.
-        """
-        groups: Dict[Tuple[str, str], List[str]] = {}
-        for t in term_list:
-            key = (t["theme"], t.get("sub") or "")
-            groups.setdefault(key, []).append(f"{t['cs']} ({t['en']})")
-
-        prompt = header
-        for (theme_name, sub_name), lines in groups.items():
-            title = f"{theme_name} / {sub_name}" if sub_name else theme_name
-            prompt += f"\n--- {title} ---\n"
-            prompt += "\n".join(f"- {line}" for line in lines) + "\n"
-
-        prompt += examples_footer
-        return prompt
+        return header + prompt_template.vocabulary_block(term_list, grouping) + examples_footer
 
     full_prompt = _build_candidate_prompt(prioritised)
     token_count = count_tokens(full_prompt, tokenizer)

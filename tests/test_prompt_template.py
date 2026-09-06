@@ -455,6 +455,28 @@ def _shipped_vocab():
     return json.loads(VOCAB_FILE.read_text(encoding="utf-8"))
 
 
+def test_llm_run_renders_the_vocabulary_through_the_shared_functions():
+    """The extraction is only worth anything while `llm_run` is the *caller*.
+
+    It was published with `prompt_template` holding the functions and `llm_run` still
+    holding a copy of the loop — at which point `--full` and `prompts/prompt_full.txt`
+    claim to be the prompt the pipeline sends while nothing makes that true. That state
+    passes every other test in this file, so it gets its own: read the source, since
+    `llm_run` cannot be imported here (it pulls in torch, transformers and pysqlite3).
+    """
+    src = (REPO_ROOT / "llm_run.py").read_text(encoding="utf-8")
+
+    assert "prompt_template.vocabulary_terms(" in src
+    assert "prompt_template.vocabulary_block(" in src
+
+    # the two lines that only exist in a second copy of the renderer
+    for reimplementation in ("groups.setdefault(key, []).append(", "raw_terms: List[dict] = []"):
+        assert reimplementation not in src, (
+            f"llm_run.py re-implements the vocabulary renderer ({reimplementation!r}) — "
+            "prompt_template must stay the single definition"
+        )
+
+
 def test_the_extracted_renderer_reproduces_the_reference_implementation_byte_for_byte():
     vocab = _shipped_vocab()
     withheld = pt.themes_withheld()
@@ -565,3 +587,195 @@ def test_full_cli_prints_the_whole_prompt(capsys):
     assert "THEMATIC VOCABULARY:" in out
     assert "--- Administrative / Meta ---" in out
     assert out.rstrip().endswith("}"), "the examples footer must be the last thing printed"
+
+
+# ── vocabulary grouping (M2's open half: does the layout matter?) ────────────────
+
+
+def test_the_shipped_grouping_is_the_prompt_that_was_always_sent():
+    """`facet_sub` must be byte-identical to the layout the pipeline used before the flag
+    existed, or every earlier run becomes incomparable with every later one."""
+    vocab = _shipped_vocab()
+    terms = pt.vocabulary_terms(vocab, pt.themes_withheld())
+    assert pt.vocabulary_block(terms, "facet_sub") == _reference_block(terms)
+    assert pt.vocabulary_block(terms) == _reference_block(terms), "the default must be facet_sub"
+
+
+def _bullets(terms, grouping):
+    return [
+        line[2:]
+        for line in pt.vocabulary_block(terms, grouping).splitlines()
+        if line.startswith("- ")
+    ]
+
+
+@pytest.mark.parametrize("grouping", pt.GROUPING_MODES)
+def test_every_grouping_offers_exactly_the_same_terms(grouping):
+    """The point of the ablation: the vocabulary on offer must not move with the layout,
+    or a score difference would be measuring which terms were available instead."""
+    vocab = _shipped_vocab()
+    terms = pt.vocabulary_terms(vocab, pt.themes_withheld())
+    want = [f"{t['cs']} ({t['en']})" for t in terms]
+    assert sorted(_bullets(terms, grouping)) == sorted(want)
+
+
+def test_only_the_sub_branch_layout_reorders_terms_and_only_inside_a_facet():
+    """The ablation's design, asserted rather than assumed. `facet` and `flat` keep the
+    term order, so comparing them isolates the headers; `facet_sub` makes a facet's
+    sub-groups contiguous, so comparing it against `facet` measures the source's second
+    level. Neither ever moves a term across a facet boundary."""
+    vocab = _shipped_vocab()
+    terms = pt.vocabulary_terms(vocab, pt.themes_withheld())
+    want = [f"{t['cs']} ({t['en']})" for t in terms]
+
+    assert _bullets(terms, "flat") == want
+    assert _bullets(terms, "facet") == want
+
+    grouped = _bullets(terms, "facet_sub")
+    assert grouped != want, "the shipped layout does reorder — the contrast is real"
+
+    by_facet: dict = {}
+    for t in terms:
+        by_facet.setdefault(t["theme"], []).append(f"{t['cs']} ({t['en']})")
+    cut = 0
+    for facet, members in by_facet.items():
+        segment = grouped[cut : cut + len(members)]
+        cut += len(members)
+        assert sorted(segment) == sorted(members), f"{facet} leaked across a boundary"
+
+
+def test_each_grouping_mode_emits_the_headers_it_promises():
+    vocab = _shipped_vocab()
+    terms = pt.vocabulary_terms(vocab, pt.themes_withheld())
+    rendered = {g: pt.vocabulary_block(terms, g) for g in pt.GROUPING_MODES}
+
+    assert "--- Chronology / geologická doba ---" in rendered["facet_sub"]
+    assert "--- Chronology ---" in rendered["facet"]
+    headers = [
+        line.strip("- ").strip()
+        for line in rendered["facet"].splitlines()
+        if line.startswith("---")
+    ]
+    assert "Chronology / geologická doba" not in headers, "facet mode must drop the sub level"
+    assert headers == list(dict.fromkeys(t["theme"] for t in terms))
+    assert "---" not in rendered["flat"]
+
+    # each step down removes structure and nothing else
+    assert len(rendered["facet_sub"]) > len(rendered["facet"]) > len(rendered["flat"])
+
+
+def test_group_titles_reports_what_each_layout_would_emit():
+    terms = [
+        {"theme": "Feature", "sub": "objekt", "cs": "a", "en": "a"},
+        {"theme": "Feature", "sub": "areál", "cs": "b", "en": "b"},
+        {"theme": "Artefact", "sub": "", "cs": "c", "en": "c"},
+    ]
+    assert pt.group_titles(terms, "facet_sub") == [
+        "Feature / objekt",
+        "Feature / areál",
+        "Artefact",
+    ]
+    assert pt.group_titles(terms, "facet") == ["Feature", "Artefact"]
+    assert pt.group_titles(terms, "flat") == []
+
+
+def test_an_unknown_grouping_is_refused_rather_than_defaulted():
+    """A typo must not quietly render the shipped layout — an ablation would then report
+    a difference nobody applied."""
+    with pytest.raises(pt.TemplateError, match="PROMPT_VOCAB_GROUPING"):
+        pt.resolve_grouping({"PROMPT_VOCAB_GROUPING": "facets"})
+    with pytest.raises(pt.TemplateError, match="unknown grouping"):
+        pt.vocabulary_block([], "facets")
+
+
+def test_the_shipped_config_selects_the_shipped_grouping():
+    config = pt.load_run_config(REPO_ROOT / "llm_config.txt")
+    assert pt.GROUPING_FLAG in config, "llm_config.txt must state the grouping explicitly"
+    assert pt.resolve_grouping(config) == pt.DEFAULT_GROUPING
+
+
+def test_render_full_and_the_banner_honour_the_grouping():
+    _shipped_vocab()
+    assert "--- Chronology / geologická doba ---" in pt.render_full({})
+    assert (
+        "---"
+        not in pt.render_full({"PROMPT_VOCAB_GROUPING": "flat"}).split("THEMATIC VOCABULARY:")[1]
+    )
+    assert "vocabulary grouping: flat" in pt.describe({"PROMPT_VOCAB_GROUPING": "flat"})
+
+
+def test_llm_run_renders_with_the_configured_grouping():
+    """Same reasoning as the shared-renderer pin: the flag is only real if the pipeline
+    reads it, and llm_run cannot be imported here."""
+    src = (REPO_ROOT / "llm_run.py").read_text(encoding="utf-8")
+    assert "prompt_template.resolve_grouping(" in src
+    assert "prompt_template.vocabulary_block(term_list, grouping)" in src
+
+
+# ── the committed prompt sheets ─────────────────────────────────────────────────
+
+
+def test_the_committed_sheets_match_a_fresh_render():
+    """`prompts/prompt_*.txt` are generated files the reviewers read. They move whenever
+    the vocabulary, a `PROMPT_*` flag or the template changes — and none of those edits
+    touches the sheets, which is how `union_nested.json` went stale twice."""
+    _shipped_vocab()
+    config = pt.load_run_config(REPO_ROOT / "llm_config.txt")
+    assert pt.stale_sheets(config) == [], "regenerate with `python3 prompt_template.py --write`"
+
+
+def test_a_tampered_sheet_is_reported_stale(tmp_path):
+    config = pt.load_run_config(REPO_ROOT / "llm_config.txt")
+    pt.write_sheets(config, tmp_path)
+    assert pt.stale_sheets(config, tmp_path) == []
+
+    (tmp_path / "prompt_blocks.txt").write_text("nonsense\n", encoding="utf-8")
+    assert pt.stale_sheets(config, tmp_path) == ["prompt_blocks.txt"]
+
+
+def test_a_missing_sheet_is_reported_stale(tmp_path):
+    config = pt.load_run_config(REPO_ROOT / "llm_config.txt")
+    pt.write_sheets(config, tmp_path)
+    (tmp_path / "prompt_full.txt").unlink()
+    assert "prompt_full.txt" in pt.stale_sheets(config, tmp_path)
+
+
+def test_write_is_idempotent_and_reports_only_what_it_changed(tmp_path):
+    config = pt.load_run_config(REPO_ROOT / "llm_config.txt")
+    assert sorted(pt.write_sheets(config, tmp_path)) == sorted(pt.sheet_contents(config))
+    assert pt.write_sheets(config, tmp_path) == []
+
+
+def test_the_sheets_follow_the_flags_they_document(tmp_path):
+    """A sheet generated under different flags must differ — otherwise `--check` would
+    pass against a configuration the sheets do not describe."""
+    strict = pt.sheet_contents({"PROMPT_GEO_GUARDRAIL": "strict"})
+    flat = pt.sheet_contents({"PROMPT_VOCAB_GROUPING": "flat"})
+    shipped = pt.sheet_contents(pt.load_run_config(REPO_ROOT / "llm_config.txt"))
+
+    assert strict["prompt_preview.txt"] != shipped["prompt_preview.txt"]
+    assert flat["prompt_full.txt"] != shipped["prompt_full.txt"]
+    assert "vocabulary grouping: flat" in flat["prompt_blocks.txt"]
+
+
+def test_the_sheets_are_exactly_what_the_cli_prints(capsys):
+    """`--write` and a shell redirect must produce the same bytes, or the RUNBOOK's two
+    documented ways of getting a sheet would disagree."""
+    _shipped_vocab()
+    config = pt.load_run_config(REPO_ROOT / "llm_config.txt")
+    sheets = pt.sheet_contents(config)
+
+    for flag, name in (("--blocks", "prompt_blocks.txt"), ("--preview", "prompt_preview.txt")):
+        capsys.readouterr()
+        assert pt.main([flag]) == 0
+        assert capsys.readouterr().out == sheets[name]
+
+
+def test_check_exits_1_on_drift_and_0_when_current(tmp_path, monkeypatch, capsys):
+    config_file = REPO_ROOT / "llm_config.txt"
+    monkeypatch.setattr(pt, "SHEET_DIR", tmp_path)
+    assert pt.main(["--check", "--config", str(config_file)]) == 1
+    capsys.readouterr()
+    assert pt.main(["--write", "--config", str(config_file)]) == 0
+    assert pt.main(["--check", "--config", str(config_file)]) == 0
+    assert "match the configured prompt" in capsys.readouterr().out

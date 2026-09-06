@@ -9,6 +9,7 @@ made-up data and only showed up once the real term counts stopped adding up to 2
 """
 
 import csv
+import json
 from pathlib import Path
 
 import pytest
@@ -947,3 +948,46 @@ def test_committed_review_sheets_match_a_fresh_generation():
         + ", ".join(stale)
         + " — run `python3 vocab_review.py --all` and commit the result."
     )
+
+
+# ── the grouping's cost against the context window ───────────────────────────────
+
+
+def _budget_totals(prompt_config):
+    nested = json.loads((VOCAB_DIR / "union_nested.json").read_text(encoding="utf-8"))
+    manager = VocabularyManager(
+        config_path=str(REPO_ROOT / "data_samples" / "taxonomy_config.json")
+    )
+    rows = vr.context_budget_rows(nested, manager, prompt_config=prompt_config)
+    totals: dict = {}
+    for row in rows:
+        totals[row["context_window"]] = totals.get(row["context_window"], 0) + row["surviving"]
+    return totals
+
+
+def test_group_headers_are_charged_against_the_window():
+    """~120 header lines are not free, and they are the whole of what the grouping flag
+    moves. Leaving them uncharged reported the shipped two-level layout at the flat
+    layout's term count — 445 at 8 192 where it actually reaches 419."""
+    if not (VOCAB_DIR / "union_nested.json").exists():
+        pytest.skip("union_nested.json not built")
+
+    grouped = _budget_totals({"PROMPT_VOCAB_GROUPING": "facet_sub"})
+    facet = _budget_totals({"PROMPT_VOCAB_GROUPING": "facet"})
+    flat = _budget_totals({"PROMPT_VOCAB_GROUPING": "flat"})
+
+    assert grouped[8192] < facet[8192] < flat[8192]
+    assert grouped[32768] < facet[32768] < flat[32768]
+    # at a window that fits the whole vocabulary the layout costs nothing
+    assert grouped[128000] == facet[128000] == flat[128000]
+
+
+def test_the_budget_sheet_records_which_layout_it_was_computed_for():
+    """Without it the term counts are ambiguous — they differ by 126 terms at 32k
+    depending on a flag the sheet would not have named."""
+    if not (VOCAB_DIR / "context_budget.csv").exists():
+        pytest.skip("context_budget.csv not generated")
+    with open(VOCAB_DIR / "context_budget.csv", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert rows, "empty budget sheet"
+    assert {r["grouping"] for r in rows} == {"facet_sub"}, "the sheet must state one layout"

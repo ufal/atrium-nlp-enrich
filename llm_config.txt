@@ -101,6 +101,19 @@ PROMPT_EXAMPLES=true
 # prompt and refuses to build a vocabulary that contradicts it.
 PROMPT_GEO_GUARDRAIL=preference
 
+# How the term list is laid out under "THEMATIC VOCABULARY:" — the same terms in the same
+# order, under three amounts of structure. @motyc (issue #6, M2) asked to separate "which
+# terms are available to the model" from "how those terms are grouped for inference", and
+# to check empirically how much the grouping affects results now that the whole
+# vocabulary fits a 128k window. This flag is that experiment's only moving part:
+#   facet_sub — "--- Facet / Subgroup ---", both curated levels (the shipped prompt)
+#   facet     — "--- Facet ---" only, without the source's own second level
+#   flat      — no headers at all
+# All three offer the same terms and truncate identically; `facet_sub` additionally makes
+# each facet's sub-groups contiguous. So `facet` vs `flat` measures the headers alone, and
+# `facet_sub` vs `facet` measures the source's second level.
+PROMPT_VOCAB_GROUPING=facet_sub
+
 # =============================================================================
 # Line-quality filter
 # =============================================================================

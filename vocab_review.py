@@ -598,6 +598,12 @@ def _approx_prompt_chars(cs: str, en: Optional[str]) -> int:
     return len(f"{cs} ({en or ''})") + 2
 
 
+def _header_chars(title: str, grouping: str) -> int:
+    """What one ``\n--- Title ---\n`` group header costs. Zero under ``flat``, which
+    emits none — the difference the grouping ablation is asking about."""
+    return 0 if grouping == "flat" else len(f"\n--- {title} ---\n")
+
+
 def reinstatement_preview_rows(
     per_source: Dict[str, Tuple[List[vs.VocabRecord], Any]], manager: VocabularyManager
 ) -> List[Dict[str, Any]]:
@@ -795,16 +801,22 @@ def context_budget_rows(
 
     The overhead of the instruction preamble and the examples is charged against the
     budget too, and taken from the *configured* prompt (``prompt_template``), so turning
-    a block off in ``llm_config.txt`` shows up here as room for more terms.
+    a block off in ``llm_config.txt`` shows up here as room for more terms. So are the
+    group header lines, which are not free — the shipped two-level layout spends ~120 of
+    them — and which is the whole of what ``PROMPT_VOCAB_GROUPING`` moves. A header is
+    charged when the term that opens its group is reached, so a run that truncates
+    mid-vocabulary is not billed for headers the model never sees.
 
     Estimated, not tokenised: no tokenizer is available offline, so this uses the same
     ~3.35 chars/token ratio as the rest of this module. Read it as "roughly where the
     cut falls", not as a promise about a specific model.
     """
     overhead_chars = 0
+    grouping = prompt_template.DEFAULT_GROUPING
     try:
         preamble, footer = prompt_template.render(prompt_config or {})
         overhead_chars = len(preamble) + len(footer)
+        grouping = prompt_template.resolve_grouping(prompt_config or {})
     except prompt_template.TemplateError:
         pass  # a broken template is vocab_build's error to raise, not this report's
 
@@ -814,11 +826,23 @@ def context_budget_rows(
     # The flattened list build_system_prompt truncates, in the same order, plus the
     # meta-text sentinel it puts at index 0.
     flat: List[Tuple[str, int]] = [
-        ("_sentinel", _approx_prompt_chars("Nerelevantní (meta-text)", "Irrelevant / Meta-text"))
+        (
+            "_sentinel",
+            _approx_prompt_chars("Nerelevantní (meta-text)", "Irrelevant / Meta-text")
+            + _header_chars("Administrative / Meta", grouping),
+        )
     ]
+    seen_titles = {"Administrative / Meta"} if grouping != "flat" else set()
     for facet in order:
         for cs, entry in nested[facet].items():
-            flat.append((facet, _approx_prompt_chars(cs, entry.get("en", ""))))
+            title = facet
+            if grouping == "facet_sub" and entry.get("sub"):
+                title = f"{facet} / {entry['sub']}"
+            cost = _approx_prompt_chars(cs, entry.get("en", ""))
+            if grouping != "flat" and title not in seen_titles:
+                seen_titles.add(title)
+                cost += _header_chars(title, grouping)
+            flat.append((facet, cost))
 
     rows: List[Dict[str, Any]] = []
     for window in windows:
@@ -838,6 +862,7 @@ def context_budget_rows(
                 {
                     "context_window": window,
                     "input_budget_tokens": window - CONTEXT_RESERVED,
+                    "grouping": grouping,
                     "facet": facet,
                     "priority": priorities[facet],
                     "terms": total,
@@ -853,6 +878,7 @@ def context_budget_rows(
 BUDGET_COLUMNS = [
     "context_window",
     "input_budget_tokens",
+    "grouping",
     "facet",
     "priority",
     "terms",
