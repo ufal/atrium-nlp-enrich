@@ -1072,20 +1072,14 @@ def test_census_kept_whole_from_agrees_with_the_budget_sheet():
     for row in rows:
         claimed = row["kept_whole_from"]
         if claimed.startswith(">"):
-            assert not any(
-                b["facet"] == row["facet"] and b["status"] == "full" for b in budget
-            )
+            assert not any(b["facet"] == row["facet"] and b["status"] == "full" for b in budget)
             continue
         match = [
-            b
-            for b in budget
-            if b["facet"] == row["facet"] and str(b["context_window"]) == claimed
+            b for b in budget if b["facet"] == row["facet"] and str(b["context_window"]) == claimed
         ]
         assert match and match[0]["status"] == "full"
         smaller = [
-            b
-            for b in budget
-            if b["facet"] == row["facet"] and b["context_window"] < int(claimed)
+            b for b in budget if b["facet"] == row["facet"] and b["context_window"] < int(claimed)
         ]
         assert all(b["status"] != "full" for b in smaller), "not the *smallest* window"
 
@@ -1154,8 +1148,11 @@ def test_census_counts_same_as_against_the_vocabulary_as_shipped():
     _require_flat()
     rows, nested = _census()
     shipped = sum(
-        1 for f, terms in nested.items() if not f.startswith("_")
-        for e in terms.values() if e.get("same_as")
+        1
+        for f, terms in nested.items()
+        if not f.startswith("_")
+        for e in terms.values()
+        if e.get("same_as")
     )
     assert shipped > 0, "the committed artifact carries same_as; the fixture is wrong"
     assert sum(r["with_same_as"] for r in rows) == shipped
@@ -1174,12 +1171,16 @@ def test_nest_as_built_matches_the_committed_artifact_on_same_as():
 
     fresh = {
         (f, cs)
-        for f, terms in nested.items() if not f.startswith("_")
-        for cs, e in terms.items() if e.get("same_as")
+        for f, terms in nested.items()
+        if not f.startswith("_")
+        for cs, e in terms.items()
+        if e.get("same_as")
     }
     shipped = {
         (f, cs)
-        for f, terms in committed.items() if not f.startswith("_")
-        for cs, e in terms.items() if e.get("same_as")
+        for f, terms in committed.items()
+        if not f.startswith("_")
+        for cs, e in terms.items()
+        if e.get("same_as")
     }
     assert fresh == shipped

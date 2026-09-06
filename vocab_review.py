@@ -1017,7 +1017,9 @@ def facet_census_rows(
                 "teater_terms": sources.get("teater", 0),
                 "feeding_rules": len(counts),
                 "top_rules": "; ".join(f"{rule} ({n})" for rule, n in counts.most_common(4)),
-                "sub_headers": len({str(e.get("sub") or "") for e in terms.values() if e.get("sub")}),
+                "sub_headers": len(
+                    {str(e.get("sub") or "") for e in terms.values() if e.get("sub")}
+                ),
                 "with_discarded_ids": sum(1 for e in terms.values() if e.get("discarded_ids")),
                 "with_same_as": sum(1 for e in terms.values() if e.get("same_as")),
                 "bracketed_splits": sum(1 for e in terms.values() if e.get("bare_cs")),
