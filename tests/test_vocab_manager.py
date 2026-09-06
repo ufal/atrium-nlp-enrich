@@ -6,8 +6,11 @@ never exercised — every test provides an on-disk vocab file or a mock predicto
 """
 
 import json
+from pathlib import Path
 
 from vocab_manager import VocabularyManager, attach_same_as, find_composite_links
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 TAXONOMY = {
     "Site Types": {"priority": 10, "keywords": {"cs": ["hrad", "mohyla"]}},
@@ -774,6 +777,61 @@ def test_prompt_markers_are_config_not_code(tmp_path):
     assert len(m.geo_guardrail_problems(WITH_CLAUSE)) == 1
 
 
+def test_an_armed_guardrail_with_an_empty_scope_is_refused(tmp_path):
+    """`geo_guardrail_problems` loops over `covers`; an empty list makes the gate pass
+    whatever the maps say. M11 relaxed the guardrail and emptied `covers` in the same
+    change, which left re-arming it — the "retire Q1 if problems arise" move M11
+    explicitly deferred — completely unguarded: `active: true` plus the strict wording
+    plus all 982 geographic terms still offered produced zero complaints."""
+    import pytest
+
+    taxonomy = json.loads(json.dumps(FACET_TAXONOMY))
+    taxonomy["_settings"]["geo_guardrail"] = {
+        "active": True,
+        "prompt_markers": ["country name"],
+        "covers": [],
+    }
+    m = _mgr(tmp_path, taxonomy=taxonomy)
+    with pytest.raises(ValueError) as excinfo:
+        m.validate_settings()
+    assert "covers is empty" in str(excinfo.value)
+    assert "check nothing" in str(excinfo.value)
+
+
+def test_a_relaxed_guardrail_may_keep_its_scope_listed(tmp_path):
+    """The complement, and the shipped shape: `covers` names the branches that ARE
+    geographic, which does not stop being true when they are reinstated. Keeping the
+    list populated while `active` is false must stay legal — that is what makes the
+    gate work the moment anyone re-arms it."""
+    taxonomy = json.loads(json.dumps(FACET_TAXONOMY))
+    taxonomy["_settings"]["teater_branch_map"]["2560"] = "Chronology"  # reinstated
+    taxonomy["_settings"]["geo_guardrail"] = {
+        "active": False,
+        "prompt_markers": ["country name"],
+        "covers": ["teater:2560"],
+    }
+    m = _mgr(tmp_path, taxonomy=taxonomy)
+    m.validate_settings()
+    m.settings["geo_guardrail"]["active"] = True
+    problems = m.geo_guardrail_problems("NEVER select a country name")
+    assert any("teater:2560" in p for p in problems), "re-arming must report the conflict"
+
+
+def test_the_shipped_config_can_rearm_its_own_guardrail(tmp_path):
+    """End to end on the real config, because this is the move M11 deferred: flipping
+    `active` back on while the branches are still offered must name every one of them."""
+    manager = VocabularyManager(
+        config_path=str(REPO_ROOT / "data_samples" / "taxonomy_config.json")
+    )
+    manager.validate_settings()
+    assert manager.geo_guardrail()["covers"], "covers must survive reinstatement"
+    manager.settings["geo_guardrail"]["active"] = True
+    problems = manager.geo_guardrail_problems(
+        "NEVER select a country name, language name, or geographic region name"
+    )
+    assert len(problems) == len(manager.geo_guardrail()["covers"])
+
+
 def test_guardrail_scope_and_the_exclusion_register_cannot_drift(tmp_path):
     """`covers` outlives an exclusion (it is what says a reinstated branch conflicts at
     all), so the two lists are cross-checked rather than merged."""
@@ -816,6 +874,52 @@ def test_tie_break_naming_an_undeclared_facet_is_caught(tmp_path):
     never consulted, so the ordering silently is not the one that was written."""
     message = _broken(tmp_path, lambda s: s["tie_break"].append("Chronlogy"))
     assert "tie_break lists undeclared facet 'Chronlogy'" in message
+
+
+def test_facets_sharing_a_priority_must_be_ordered_in_tie_break(tmp_path):
+    """Render order is truncation order, so where a facet sits among its
+    equal-priority peers decides whether a 32k model sees it at all. A facet the
+    tie_break omits is appended after every listed one by the len(tie_break) fallback
+    — a real decision, made by nobody. This is the shape A1-facets takes: splitting the
+    probation facet in two and leaving the new half unordered.
+    """
+
+    def mutate(settings):
+        settings["teater_branch_map"]["3094"] = "Society"
+
+    import pytest
+
+    taxonomy = json.loads(json.dumps(FACET_TAXONOMY))
+    taxonomy["Society"] = {"priority": 6, "keywords": {}}  # ties with Artefact
+    mutate(taxonomy["_settings"])
+    m = _mgr(tmp_path, taxonomy=taxonomy)
+    with pytest.raises(ValueError) as excinfo:
+        m.validate_settings()
+    message = str(excinfo.value)
+    assert "share priority 6" in message
+    assert "'Society'" in message
+    assert "tie_break" in message
+
+
+def test_a_unique_priority_needs_no_tie_break_entry(tmp_path):
+    """The guard must not force every facet into the list — only the ambiguous ones.
+    Documentation sits alone at priority 2 and is absent from tie_break in the shipped
+    fixture; that is unambiguous and must stay legal."""
+    taxonomy = json.loads(json.dumps(FACET_TAXONOMY))
+    assert "Documentation" not in taxonomy["_settings"]["tie_break"]
+    _mgr(tmp_path, taxonomy=taxonomy).validate_settings()
+
+
+def test_listing_both_tied_facets_satisfies_the_guard(tmp_path):
+    """And the fix the message asks for actually works."""
+    taxonomy = json.loads(json.dumps(FACET_TAXONOMY))
+    taxonomy["Society"] = {"priority": 6, "keywords": {}}
+    taxonomy["_settings"]["teater_branch_map"]["3094"] = "Society"
+    taxonomy["_settings"]["tie_break"].append("Society")
+    m = _mgr(tmp_path, taxonomy=taxonomy)
+    m.validate_settings()
+    order = m._theme_order()
+    assert order.index("Artefact") < order.index("Society")
 
 
 def test_a_label_for_an_unmapped_list_is_caught(tmp_path):

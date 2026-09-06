@@ -2,9 +2,9 @@
 """
 vocab_review.py — read-only review artifacts for issue #6's open vocabulary questions.
 
-Five independent reports. Each is a CSV a domain reviewer reads and turns into either
+Eight independent reports. Each is a CSV a domain reviewer reads and turns into either
 a ``taxonomy_overrides.json`` entry or a ``teater_branch_map``/``heslar_map`` flip.
-Nothing here writes to the vocabulary itself, and none of the five guesses a semantic
+Nothing here writes to the vocabulary itself, and none of the eight guesses a semantic
 verdict — they rank and surface candidates; a human still decides.
 
     python3 vocab_review.py --collisions    # M8: same-label groups that might be homonyms
@@ -12,7 +12,10 @@ verdict — they rank and surface candidates; a human still decides.
     python3 vocab_review.py --exclusions    # O3/O4: impact of reinstating each excluded list
     python3 vocab_review.py --subbranches   # O3/O4: the same, one level finer-grained
     python3 vocab_review.py --reinstate     # O3/O4: usable_count / collisions / token delta
-    python3 vocab_review.py --all           # all five, offline from the committed flat files
+    python3 vocab_review.py --specificity   # D1: terms offered alongside their own broader term
+    python3 vocab_review.py --budget        # what survives truncation at each context window
+    python3 vocab_review.py --census        # A1-facets: what is in each facet, and what it costs
+    python3 vocab_review.py --all           # all eight, offline from the committed flat files
 
 Offline and pure: reads ``data_samples/vocab/*_flat.json`` + the taxonomy config, never
 touches the network, never writes anywhere but the report CSVs.
@@ -24,6 +27,7 @@ import argparse
 import csv
 import io
 import sys
+from collections import Counter, defaultdict
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -35,6 +39,7 @@ from vocab_manager import (
     DEFAULT_COMPOSITE_SEPARATORS,
     DEFAULT_EXCLUSION_STATUS,
     VocabularyManager,
+    attach_same_as,
     find_composite_links,
 )
 
@@ -889,6 +894,161 @@ BUDGET_COLUMNS = [
 ]
 
 
+def _nest_as_built(
+    manager: VocabularyManager, records: Sequence[vs.VocabRecord]
+) -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
+    """``vb._nest`` plus the ``same_as`` links, i.e. the vocabulary as it actually ships.
+
+    ``attach_same_as`` runs in ``vocab_build.main``, not in ``_nest`` — a pair can span
+    two facets or two sources and is only resolvable once dedup and placement are done.
+    Any report that counts ``same_as`` off a bare ``_nest`` therefore counts zero, which
+    is how ``facet_census.csv`` first shipped claiming no facet held a linked term while
+    the artifact held 169. Same call, same arguments as the build, so the sheet and the
+    vocabulary cannot disagree.
+    """
+    nested, audit, _collisions = vb._nest(
+        manager, list(records), qualifiers=manager.qualifier_overrides()
+    )
+    extra, suppress = manager.same_as_overrides()
+    attach_same_as(
+        nested,
+        separators=manager.composite_separators(),
+        extra=extra,
+        suppress=suppress,
+    )
+    return nested, audit
+
+
+def facet_census_rows(
+    nested: Dict[str, Dict[str, Any]],
+    audit: Sequence[Dict[str, Any]],
+    manager: VocabularyManager,
+    windows: Sequence[int] = CONTEXT_WINDOWS,
+    prompt_config: Optional[Dict[str, str]] = None,
+) -> List[Dict[str, Any]]:
+    """One row per facet: what is in it, where it came from, and what it costs.
+
+    ``context_budget.csv`` answers *"what survives at window W?"*, listing every facet
+    once per window. This answers the other half of the same question — the one
+    @david-spacil is actually being asked under **A1-facets**: *"what is in each facet,
+    which rules put it there, and what does keeping it cost?"* Ten rows, one screen.
+
+    Three columns carry the argument:
+
+    ``cumulative_tokens``
+        the running total in render order. A facet's own size is not what decides
+        whether it survives truncation — everything ahead of it is already spent, and
+        ``build_system_prompt`` keeps a *prefix*. So a facet is cut when its cumulative
+        total crosses the budget, not when its own size does, and the last row's
+        cumulative total is the whole vocabulary's prompt cost.
+    ``kept_whole_from``
+        the smallest window in ``windows`` at which the facet survives entirely, or
+        ``>{largest}``. Taken from :func:`context_budget_rows` rather than recomputed,
+        so the two sheets cannot disagree.
+    ``top_rules``
+        which ``heslar_map`` / ``teater_branch_map`` entries feed it, largest first.
+        This is what makes a re-layout costable: moving a facet's contents elsewhere
+        means flipping exactly these map values, and no others.
+
+    Token costs are charged the same way :func:`context_budget_rows` charges them —
+    terms plus the group headers the facet introduces — so ``cumulative_tokens`` and
+    the budget sheet's cut points are the same arithmetic. Under ``flat`` there are no
+    headers and the two columns are terms alone.
+
+    Pure and offline. ``audit`` is the list ``_nest`` fills in — the same rows
+    ``*_placement_audit.csv`` is written from — so rule attribution here and in the
+    audit CSV are one computation, not two.
+    """
+    budget = context_budget_rows(nested, manager, windows=windows, prompt_config=prompt_config)
+    kept_whole: Dict[str, str] = {}
+    for row in budget:
+        facet = str(row["facet"])
+        if facet not in kept_whole and row["status"] == "full":
+            kept_whole[facet] = str(row["context_window"])
+
+    grouping = prompt_template.DEFAULT_GROUPING
+    try:
+        grouping = prompt_template.resolve_grouping(prompt_config or {})
+    except prompt_template.TemplateError:
+        pass  # a broken template is vocab_build's error to raise, not this report's
+
+    rules_by_facet: Dict[str, Counter] = defaultdict(Counter)
+    for entry in audit:
+        theme = str(entry.get("theme") or "")
+        rule = str(entry.get("placed_by") or "")
+        # An override names one record, so listing all nine would drown the branch
+        # rules that actually describe the facet's contents. Counted as one bucket.
+        rules_by_facet[theme][rule.rsplit(":", 2)[0] if rule.startswith("override:") else rule] += 1
+
+    themes = manager.themes()
+    order = [f for f in manager._theme_order() if f in nested and nested[f]]
+    total_terms = sum(len(nested[f]) for f in order)
+
+    rows: List[Dict[str, Any]] = []
+    cumulative = 0
+    for position, facet in enumerate(order, start=1):
+        terms = nested[facet]
+        seen_titles: set = set()
+        chars = 0
+        for cs, entry in terms.items():
+            title = facet
+            if grouping == "facet_sub" and entry.get("sub"):
+                title = f"{facet} / {entry['sub']}"
+            chars += _approx_prompt_chars(cs, entry.get("en", ""))
+            if grouping != "flat" and title not in seen_titles:
+                seen_titles.add(title)
+                chars += _header_chars(title, grouping)
+        tokens = round(chars / 3.35)
+        cumulative += tokens
+        counts = rules_by_facet.get(facet, Counter())
+        sources = Counter(str(e.get("source") or "") for e in terms.values())
+        rows.append(
+            {
+                "render_position": position,
+                "facet": facet,
+                "priority": (themes.get(facet) or {}).get("priority", 0),
+                "in_prompt": (themes.get(facet) or {}).get("in_prompt", True),
+                "terms": len(terms),
+                "share_of_vocab": round(len(terms) / total_terms, 3) if total_terms else 0.0,
+                "prompt_tokens": tokens,
+                "cumulative_tokens": cumulative,
+                "kept_whole_from": kept_whole.get(facet, f">{max(windows)}"),
+                "amcr_terms": sources.get("amcr", 0),
+                "teater_terms": sources.get("teater", 0),
+                "feeding_rules": len(counts),
+                "top_rules": "; ".join(f"{rule} ({n})" for rule, n in counts.most_common(4)),
+                "sub_headers": len({str(e.get("sub") or "") for e in terms.values() if e.get("sub")}),
+                "with_discarded_ids": sum(1 for e in terms.values() if e.get("discarded_ids")),
+                "with_same_as": sum(1 for e in terms.values() if e.get("same_as")),
+                "bracketed_splits": sum(1 for e in terms.values() if e.get("bare_cs")),
+                "sample_terms": "; ".join(list(terms)[:6]),
+            }
+        )
+    return rows
+
+
+CENSUS_COLUMNS = [
+    "render_position",
+    "facet",
+    "priority",
+    "in_prompt",
+    "terms",
+    "share_of_vocab",
+    "prompt_tokens",
+    "cumulative_tokens",
+    "kept_whole_from",
+    "amcr_terms",
+    "teater_terms",
+    "feeding_rules",
+    "top_rules",
+    "sub_headers",
+    "with_discarded_ids",
+    "with_same_as",
+    "bracketed_splits",
+    "sample_terms",
+]
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────────
 
 
@@ -920,7 +1080,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="context_budget.csv: what survives truncation at each model's window",
     )
-    p.add_argument("--all", action="store_true", help="all seven reports")
+    p.add_argument(
+        "--census",
+        action="store_true",
+        help="A1-facets: one row per facet — contents, feeding rules, cost, cut point",
+    )
+    p.add_argument("--all", action="store_true", help="all eight reports")
     p.add_argument("--vocab-dir", type=Path, default=DEFAULT_VOCAB_DIR)
     p.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     p.add_argument("--overrides", type=Path, default=None)
@@ -937,11 +1102,12 @@ def main(argv: Any = None) -> int:
         or args.reinstate
         or args.specificity
         or args.budget
+        or args.census
         or args.all
     ):
         print(
             "Nothing to do — pass --collisions, --composites, --exclusions, "
-            "--subbranches, --reinstate, --specificity, --budget, or --all."
+            "--subbranches, --reinstate, --specificity, --budget, --census, or --all."
         )
         return 2
 
@@ -1002,6 +1168,15 @@ def main(argv: Any = None) -> int:
             config = prompt_template.load_run_config(PROMPT_CONFIG)
         rows = context_budget_rows(nested, manager, prompt_config=config)
         _write_csv(args.vocab_dir / "context_budget.csv", rows, BUDGET_COLUMNS)
+
+    if args.census or args.all:
+        records = filtered.get("amcr", []) + filtered.get("teater", [])
+        nested, audit = _nest_as_built(manager, records)
+        config = {}
+        if PROMPT_CONFIG.exists():
+            config = prompt_template.load_run_config(PROMPT_CONFIG)
+        rows = facet_census_rows(nested, audit, manager, prompt_config=config)
+        _write_csv(args.vocab_dir / "facet_census.csv", rows, CENSUS_COLUMNS)
 
     return 0
 

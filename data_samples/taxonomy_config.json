@@ -121,7 +121,13 @@
         "language name",
         "geographic region name"
       ],
-      "covers": []
+      "covers": [
+        "heslar:zeme",
+        "heslar:jazyk",
+        "teater:2560",
+        "teater:2900",
+        "teater:3076"
+      ]
     },
     "heslar_map": {
       "obdobi": "Chronology",

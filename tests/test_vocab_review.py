@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+import prompt_template
 import vocab_build as vb
 import vocab_review as vr
 import vocab_sources as vs
@@ -927,6 +928,25 @@ def test_committed_review_sheets_match_a_fresh_generation():
         ),
     }
 
+    # The two prompt-dependent sheets, generated the way the CLI generates them: from
+    # the committed llm_config.txt, not from the module defaults. That is the whole
+    # point of covering them here — context_budget.csv had no drift gate at all, and it
+    # is the sheet that answers "does the vocabulary fit the model we are running?".
+    # Reading the same config the CLI reads means flipping PROMPT_VOCAB_GROUPING and
+    # regenerating stays green, while flipping it and NOT regenerating fires.
+    prompt_config = {}
+    if vr.PROMPT_CONFIG.exists():
+        prompt_config = prompt_template.load_run_config(vr.PROMPT_CONFIG)
+    expected["context_budget.csv"] = (
+        vr.context_budget_rows(nested, manager, prompt_config=prompt_config),
+        vr.BUDGET_COLUMNS,
+    )
+    census_nested, census_audit = vr._nest_as_built(manager, records)
+    expected["facet_census.csv"] = (
+        vr.facet_census_rows(census_nested, census_audit, manager, prompt_config=prompt_config),
+        vr.CENSUS_COLUMNS,
+    )
+
     import io
 
     stale = []
@@ -991,3 +1011,175 @@ def test_the_budget_sheet_records_which_layout_it_was_computed_for():
         rows = list(csv.DictReader(fh))
     assert rows, "empty budget sheet"
     assert {r["grouping"] for r in rows} == {"facet_sub"}, "the sheet must state one layout"
+
+
+# ── facet_census_rows (A1-facets: what is in each facet, and what it costs) ──────
+
+
+def _census():
+    nested = json.loads((VOCAB_DIR / "union_nested.json").read_text(encoding="utf-8"))
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    filtered = {name: vb._filter_excluded(r, manager) for name, (r, _m) in per_source.items()}
+    records = filtered.get("amcr", []) + filtered.get("teater", [])
+    _n, audit = vr._nest_as_built(manager, records)
+    return vr.facet_census_rows(nested, audit, manager), nested
+
+
+def test_census_has_one_row_per_rendered_facet_in_render_order():
+    """The sheet exists so ten facets fit on one screen — one row each, and the order
+    is the order the prompt renders them, which is what makes cumulative_tokens mean
+    anything."""
+    _require_flat()
+    rows, nested = _census()
+    rendered = [f for f in nested if not f.startswith("_") and nested[f]]
+    assert len(rows) == len(rendered)
+    assert [r["render_position"] for r in rows] == list(range(1, len(rows) + 1))
+    priorities = [r["priority"] for r in rows]
+    assert priorities == sorted(priorities, reverse=True), "render order must follow priority"
+
+
+def test_census_term_counts_reconcile_with_the_vocabulary():
+    """A census that does not add up to the vocabulary is worse than no census."""
+    _require_flat()
+    rows, nested = _census()
+    for row in rows:
+        assert row["terms"] == len(nested[row["facet"]])
+    assert sum(r["terms"] for r in rows) == sum(
+        len(t) for f, t in nested.items() if not f.startswith("_")
+    )
+    assert abs(sum(r["share_of_vocab"] for r in rows) - 1.0) < 0.01
+
+
+def test_census_cumulative_tokens_are_a_running_total():
+    """cumulative_tokens is the column that explains truncation: a facet is cut when
+    everything *before* it has already spent the budget."""
+    _require_flat()
+    rows, _nested = _census()
+    running = 0
+    for row in rows:
+        running += row["prompt_tokens"]
+        assert row["cumulative_tokens"] == running
+
+
+def test_census_kept_whole_from_agrees_with_the_budget_sheet():
+    """The two sheets are one computation seen from two sides; if they can disagree,
+    one of them is lying to a reviewer."""
+    _require_flat()
+    rows, nested = _census()
+    manager = _shipped_manager()
+    budget = vr.context_budget_rows(nested, manager)
+    for row in rows:
+        claimed = row["kept_whole_from"]
+        if claimed.startswith(">"):
+            assert not any(
+                b["facet"] == row["facet"] and b["status"] == "full" for b in budget
+            )
+            continue
+        match = [
+            b
+            for b in budget
+            if b["facet"] == row["facet"] and str(b["context_window"]) == claimed
+        ]
+        assert match and match[0]["status"] == "full"
+        smaller = [
+            b
+            for b in budget
+            if b["facet"] == row["facet"] and b["context_window"] < int(claimed)
+        ]
+        assert all(b["status"] != "full" for b in smaller), "not the *smallest* window"
+
+
+def test_census_rule_attribution_matches_the_placement_audit():
+    """top_rules is the column that makes a re-layout costable — it names the map
+    values a reviewer would flip. It has to come from the same audit rows the
+    placement CSV is written from, not from a second guess at the same question."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    filtered = {name: vb._filter_excluded(r, manager) for name, (r, _m) in per_source.items()}
+    records = filtered.get("amcr", []) + filtered.get("teater", [])
+    nested, audit, _c = vb._nest(manager, records, qualifiers=manager.qualifier_overrides())
+    rows = vr.facet_census_rows(nested, audit, manager)
+
+    for row in rows:
+        in_audit = {
+            str(a.get("placed_by") or "").rsplit(":", 2)[0]
+            if str(a.get("placed_by") or "").startswith("override:")
+            else str(a.get("placed_by") or "")
+            for a in audit
+            if a.get("theme") == row["facet"]
+        }
+        assert row["feeding_rules"] == len(in_audit)
+        for chunk in filter(None, row["top_rules"].split("; ")):
+            assert chunk.rsplit(" (", 1)[0] in in_audit
+
+
+def test_census_charges_group_headers_like_the_budget_sheet_does():
+    """Both sheets bill the same ~120 header lines, so a `flat` census is strictly
+    cheaper than a `facet_sub` one. If only one of them charged headers, the census
+    would under-report the vocabulary's real prompt cost."""
+    _require_flat()
+    nested = json.loads((VOCAB_DIR / "union_nested.json").read_text(encoding="utf-8"))
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    filtered = {name: vb._filter_excluded(r, manager) for name, (r, _m) in per_source.items()}
+    records = filtered.get("amcr", []) + filtered.get("teater", [])
+    _n, audit, _c = vb._nest(manager, records, qualifiers=manager.qualifier_overrides())
+
+    grouped = vr.facet_census_rows(
+        nested, audit, manager, prompt_config={"PROMPT_VOCAB_GROUPING": "facet_sub"}
+    )
+    flat = vr.facet_census_rows(
+        nested, audit, manager, prompt_config={"PROMPT_VOCAB_GROUPING": "flat"}
+    )
+    assert flat[-1]["cumulative_tokens"] < grouped[-1]["cumulative_tokens"]
+
+
+def test_census_is_read_only():
+    """Every sheet in this module is evidence, never an edit."""
+    _require_flat()
+    config = REPO_ROOT / "data_samples" / "taxonomy_config.json"
+    before = config.read_bytes()
+    _census()
+    assert config.read_bytes() == before
+
+
+def test_census_counts_same_as_against_the_vocabulary_as_shipped():
+    """Regression: the census first shipped reporting with_same_as = 0 for every facet
+    while union_nested.json held 169 linked terms. `attach_same_as` runs in
+    vocab_build.main, not in `_nest`, so a report built off a bare `_nest` counts none —
+    and this is the A1-facets evidence sheet, telling a reviewer no facet contains a
+    composite-linked term."""
+    _require_flat()
+    rows, nested = _census()
+    shipped = sum(
+        1 for f, terms in nested.items() if not f.startswith("_")
+        for e in terms.values() if e.get("same_as")
+    )
+    assert shipped > 0, "the committed artifact carries same_as; the fixture is wrong"
+    assert sum(r["with_same_as"] for r in rows) == shipped
+
+
+def test_nest_as_built_matches_the_committed_artifact_on_same_as():
+    """The helper's whole justification: nesting the way the build nests. If it drifts
+    from vocab_build.main, every sheet that reads a linked field is quietly wrong."""
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    filtered = {name: vb._filter_excluded(r, manager) for name, (r, _m) in per_source.items()}
+    records = filtered.get("amcr", []) + filtered.get("teater", [])
+    nested, _audit = vr._nest_as_built(manager, records)
+    committed = json.loads((VOCAB_DIR / "union_nested.json").read_text(encoding="utf-8"))
+
+    fresh = {
+        (f, cs)
+        for f, terms in nested.items() if not f.startswith("_")
+        for cs, e in terms.items() if e.get("same_as")
+    }
+    shipped = {
+        (f, cs)
+        for f, terms in committed.items() if not f.startswith("_")
+        for cs, e in terms.items() if e.get("same_as")
+    }
+    assert fresh == shipped

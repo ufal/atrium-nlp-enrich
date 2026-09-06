@@ -37,9 +37,13 @@ on:
       - "data_samples/taxonomy_config.json"
       - "data_samples/taxonomy_overrides.json"
       - "data_samples/vocab/**"
+      - "vocab_review.py"
+      - "corpus_review.py"
       - "tests/test_vocab_build.py"
       - "tests/test_vocab_manager.py"
       - "tests/test_vocab_sources.py"
+      - "tests/test_vocab_review.py"
+      - "tests/test_corpus_review.py"
       - "tests/test_prompt_template.py"
       - "prompt_template.py"
       - "llm_run.py"
@@ -55,9 +59,13 @@ on:
       - "data_samples/taxonomy_config.json"
       - "data_samples/taxonomy_overrides.json"
       - "data_samples/vocab/**"
+      - "vocab_review.py"
+      - "corpus_review.py"
       - "tests/test_vocab_build.py"
       - "tests/test_vocab_manager.py"
       - "tests/test_vocab_sources.py"
+      - "tests/test_vocab_review.py"
+      - "tests/test_corpus_review.py"
       - "tests/test_prompt_template.py"
       - "prompt_template.py"
       - "llm_run.py"
@@ -131,6 +139,12 @@ jobs:
           fi
           echo "[expected] --check rejected the stale sheet with exit $rc"
 
+      # test_vocab_review.py carries the ONLY drift gate on the eight reviewer sheets
+      # -- the CSVs @david-spacil and @motyc actually rule from. It used to run just
+      # weekly in scheduled-smoke.yml, so a taxonomy edit that left facet_census.csv or
+      # context_budget.csv stale shipped green for up to seven days, and the next
+      # reviewer opened a sheet describing a config that no longer existed.
       - name: Vocabulary unit and end-to-end tests
         run: python3 -m pytest tests/test_vocab_build.py tests/test_vocab_manager.py
-          tests/test_vocab_sources.py tests/test_prompt_template.py -v --tb=short
+          tests/test_vocab_sources.py tests/test_vocab_review.py
+          tests/test_corpus_review.py tests/test_prompt_template.py -v --tb=short

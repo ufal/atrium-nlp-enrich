@@ -819,9 +819,34 @@ class VocabularyManager:
             for key, value in (settings.get(map_name) or {}).items():
                 if value not in known_facets:
                     bad.append(f"{map_name}[{key!r}] -> undeclared facet {value!r}")
-        for name in settings.get("tie_break") or []:
+        tie_break = list(settings.get("tie_break") or [])
+        for name in tie_break:
             if name not in self.themes():
                 bad.append(f"tie_break lists undeclared facet {name!r}")
+
+        # ── shared priorities must be ordered on purpose, not by fallback ──────────
+        # `_theme_order` ranks by (-priority, tie_break index, name), and a facet the
+        # tie_break omits gets index len(tie_break) — it is appended after every listed
+        # one. That is a real decision being made silently: render order is truncation
+        # order, so where a facet sits among its equals is what decides whether a 32k
+        # model sees it at all (issue #6, M11 — the reinstated terms sit last *by
+        # design*, and the design lives in this list). One facet at a priority is
+        # unambiguous and needs no entry; two or more do.
+        by_priority: Dict[Any, List[str]] = {}
+        for name, config in self.themes().items():
+            by_priority.setdefault((config or {}).get("priority", 0), []).append(name)
+        for priority, names in sorted(by_priority.items(), key=lambda kv: str(kv[0])):
+            if len(names) < 2:
+                continue
+            unlisted = sorted(n for n in names if n not in tie_break)
+            if unlisted:
+                bad.append(
+                    f"facets {unlisted} share priority {priority} with "
+                    f"{sorted(n for n in names if n in tie_break)} but are absent from "
+                    "tie_break, so their render order — and what a small context window "
+                    "truncates first — would be decided by fallback rather than by you; "
+                    "list every facet at a shared priority in tie_break"
+                )
 
         # ── labels: a relabel for a list nobody maps never renders ─────────────────
         for label_map, source_map in (
@@ -860,7 +885,25 @@ class VocabularyManager:
         all_rules = {f"heslar:{k}" for k in (settings.get("heslar_map") or {})} | {
             f"teater:{k}" for k in (settings.get("teater_branch_map") or {})
         }
-        covers = set(self.geo_guardrail()["covers"])
+        guard = self.geo_guardrail()
+        covers = set(guard["covers"])
+        # An armed guardrail with nothing in scope checks nothing: `geo_guardrail_problems`
+        # loops over `covers`, so an empty list makes the gate pass whatever the maps say.
+        # That is not a hypothetical — M11 relaxed the guardrail and emptied `covers` in
+        # the same change, which left re-arming it (the "retire Q1 if problems arise" move
+        # M11 explicitly deferred) completely unguarded. `covers` names the branches that
+        # are *geographic*, which does not stop being true when they are reinstated.
+        # Only checked when the block is actually declared: an absent `geo_guardrail`
+        # defaults to active with no scope, which is the pre-M11 shape every fixture and
+        # older config still has, and demanding a scope from those would be a new
+        # requirement rather than a caught mistake.
+        declared = settings.get("geo_guardrail")
+        if isinstance(declared, dict) and guard["active"] and not covers:
+            bad.append(
+                "geo_guardrail.active is true but covers is empty, so the gate would "
+                "check nothing — list the rules the prompt's wording is about "
+                "(they stay listed whether or not they are currently excluded)"
+            )
         for rule in sorted(covers - all_rules):
             bad.append(f"geo_guardrail.covers names {rule!r}, which no map places")
         for rule, note in self.exclusion_notes().items():
