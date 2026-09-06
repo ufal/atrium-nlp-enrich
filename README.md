@@ -39,6 +39,7 @@ lemmas & part-of-sentence tags, and keywords (KER) per page/document.
 - [EXTRA: Extract Keywords (KER / YAKE / KeyBERT)](#extra-extract-keywords-ker--yake--keybert)
 - [EXTRA: Converting Other Input Formats with flexiconv](#extra-converting-other-input-formats-with-flexiconv)
 - [EXTRA: LLM Semantic Enrichment (Vocabulary Mapping)](#extra-llm-semantic-enrichment-vocabulary-mapping)
+  - [Reviewing the vocabulary](#reviewing-the-vocabulary) · runbooks: [vocabulary](data_samples/vocab/RUNBOOK.md) · [prompt & output](prompts/RUNBOOK.md)
 - [EXTRA: REST API Service](#extra-rest-api-service)
 - [Paradata Logs](#paradata-logs)
   - [`<OUTPUT_DIR>/paradata/` — structured run logs 📂](#output_dirparadata--structured-run-logs-)
@@ -870,21 +871,46 @@ MIN_CHAR_COUNT=3
 MIN_CHAR_NON_TEXT=8
 MIN_ALPHA_RATIO_NON_TEXT=0.4
 
-# ── Backend ───────────────────────────────────────────────────────────────────
-# transformers  HuggingFace Transformers + BnB 4-bit + lmformatenforcer.
-#               Best for single-GPU runs on models ≤ 31 B.
-# vllm          vLLM + xgrammar guided decoding + Automatic Prefix Caching.
-#               Required for models ≥ 70 B or any multi-GPU node.
-BACKEND=transformers
+# ── System prompt ─────────────────────────────────────────────────────────────
+# The instruction text lives in prompts/system_prompt.txt as [[named blocks]]; these
+# flags choose which of them render. The run banner prints the resulting on/off list,
+# so a log always says what the model was told. See prompts/RUNBOOK.md.
+PROMPT_TEMPLATE=prompts/system_prompt.txt
+PROMPT_TASK_EXTRACT=true
+PROMPT_TASK_SELECT=true
+PROMPT_METATEXT_RULE=true
+PROMPT_OCR_NORMALISATION=true
+PROMPT_EXACT_TERM=true
+PROMPT_EXAMPLES=true
 
-# ── vLLM-specific (ignored when BACKEND=transformers) ─────────────────────────
-TENSOR_PARALLEL_SIZE=1        # Number of GPUs to shard the model across
-GPU_MEMORY_UTILIZATION=0.90   # Fraction of each GPU's VRAM for the KV cache
-GUIDED_DECODING_BACKEND=xgrammar
-ENABLE_PREFIX_CACHING=true    # Automatic Prefix Caching — highly recommended
-VLLM_BATCH_SIZE=16            # Lines per generate() call; increase on ≥ 160 GB nodes
-# MAX_MODEL_LEN=65536          # Optional: cap context to reduce KV-cache pressure
+# The one three-way switch: strict | preference | off. Paired with
+# taxonomy_config.json's geo_guardrail.active — vocab_build.py refuses a build where
+# the two disagree.
+PROMPT_GEO_GUARDRAIL=preference
+
+# Term-list layout: facet_sub | facet | flat. Same terms, same truncation; only the
+# headers move.
+PROMPT_VOCAB_GROUPING=facet_sub
+
+# ── Inference parameter overrides ─────────────────────────────────────────────
+# ALL of these are COMMENTED OUT in the shipped file. Backend, GPU count, memory
+# utilisation, batch size and context cap are resolved automatically from the model
+# registry in llm_utils.py; the startup log prints every effective value next to
+# where it came from (← llm_config.txt / model default / global default). Uncomment
+# a line only to deviate from the model's recommended configuration.
+# BACKEND=vllm                 # transformers (single GPU, ≤ 31 B) | vllm (multi-GPU)
+# TENSOR_PARALLEL_SIZE=8       # GPUs to shard across (vLLM only)
+# GPU_MEMORY_UTILIZATION=0.88  # Fraction of each GPU's VRAM for the KV cache
+# VLLM_BATCH_SIZE=8            # Lines per generate() call
+# MAX_MODEL_LEN=16384          # Cap the context window to reduce KV-cache pressure
+# CPU_OFFLOAD_GB=0             # Weights to keep in CPU RAM when VRAM is short
+# GUIDED_DECODING_BACKEND=xgrammar
+# ENABLE_PREFIX_CACHING=false  # Not recommended; reduces throughput
 ```
+
+The nine `PROMPT_*` keys are the prompt's whole configuration surface;
+[`prompts/RUNBOOK.md`](prompts/RUNBOOK.md) 📎 documents each block, what it costs, and
+which pairings are unsafe to change alone.
 
 ### 🗂 Workflow
 
@@ -958,7 +984,7 @@ nothing outside the standard library, so these run in a bare checkout:
 ```bash
 python3 prompt_template.py --blocks                  # which rules are on, and what each costs
 python3 prompt_template.py --preview                 # the instruction text, term list elided
-python3 prompt_template.py --full  > prompt.txt      # the whole prompt, all 4 719 terms
+python3 prompt_template.py --full  > prompt.txt      # the whole prompt, all 4 718 terms
 python3 prompt_template.py --diff PROMPT_GEO_GUARDRAIL=strict \
                                  PROMPT_GEO_GUARDRAIL=preference
 python3 prompt_template.py --write                   # regenerate the committed sheets
@@ -986,7 +1012,7 @@ headers only) or `flat` (no headers). It exists to answer @motyc's question in
 whether the facet grouping affects results at all, now that the whole vocabulary fits a
 128k window. All three offer the same terms and truncate identically; `facet` and `flat`
 also preserve term order, while `facet_sub` makes each facet's sub-groups contiguous. So
-`facet` vs `flat` isolates the ~120 header lines and `facet_sub` vs `facet` measures the
+`facet` vs `flat` isolates the ~125 header lines and `facet_sub` vs `facet` measures the
 source's second level. The headers are not free: at an 8 192-token window they cost 26
 terms, at 32 768 they cost 126, and at 128k nothing, since everything fits either way.
 
@@ -996,8 +1022,12 @@ unknown override key, a stale `(source, id)`, a pair both linked and suppressed,
 overrides that would build the same bracketed key — and reports every problem at once
 rather than one per rebuild. `vocab_build.py` additionally renders the prompt the config
 selects and refuses to build a vocabulary that contradicts its geographic guardrail.
-[`data_samples/vocab/RUNBOOK.md`](data_samples/vocab/RUNBOOK.md) 📎 has the full decision
-table and the edit → rebuild → review loop.
+Two runbooks carry the operational detail, and they are the pages to read before
+touching either half:
+[`data_samples/vocab/RUNBOOK.md`](data_samples/vocab/RUNBOOK.md) 📎 — every vocabulary
+script, the eight review sheets, and the full "where a decision gets recorded" table;
+[`prompts/RUNBOOK.md`](prompts/RUNBOOK.md) 📎 — the eleven prompt blocks, the nine flags,
+the guardrail's two halves, and the output contract.
 
 ```bash
 # stage 1 + 2, needs network access to aiscr.cz
@@ -1024,6 +1054,48 @@ runner harvests and uploads the artifacts.
 > rendered to the model as a phantom theme.
 
 `python3 vocab_manager.py` still works and still performs the legacy AMCR-only sync.
+
+#### Reviewing the vocabulary
+
+Two read-only tools turn the built vocabulary into sheets a domain reviewer can rule on.
+Neither writes to the vocabulary, and neither guesses a semantic verdict — they rank and
+surface candidates; a human decides, and the decision goes back as a config edit.
+
+[`vocab_review.py`](vocab_review.py) 📎 — **eight sheets, offline and pure**, built from
+the committed `*_flat.json` plus the taxonomy config:
+
+```bash
+python3 vocab_review.py --all            # all eight, into data_samples/vocab/
+python3 vocab_review.py --collisions     # collision_review.csv        same-label groups (M8/M13)
+python3 vocab_review.py --composites     # composite_pairs.csv         "X/Y" vs standalone X, Y
+python3 vocab_review.py --exclusions     # exclusion_impact.csv        what each exclusion costs
+python3 vocab_review.py --subbranches    # teater_subbranch_impact.csv the same, one level finer
+python3 vocab_review.py --reinstate      # reinstatement_preview.csv   usable count + token delta
+python3 vocab_review.py --specificity    # specificity_pairs.csv       term offered under its own parent
+python3 vocab_review.py --budget         # context_budget.csv          what survives each window
+python3 vocab_review.py --census         # facet_census.csv            what is in each facet, and its cost
+```
+
+[`corpus_review.py`](corpus_review.py) 📎 — **three evidence sheets** matching the
+vocabulary against real report text by UDPipe lemma, which is the evidence standard for
+keeping or dropping a branch:
+
+```bash
+python3 corpus_review.py --all           # corpus_term_evidence.csv, corpus_branch_evidence.csv,
+                                         # gold_workbook.csv (+ corpus_review.meta.json)
+```
+
+⚠️ `corpus_review.py` needs the document corpus, and the repository tracks only three
+**synthetic** demo documents — the real reports arrive as the issue
+[#19](https://github.com/ufal/atrium-nlp-enrich/issues/19) attachment and are untracked.
+Every run prints its corpus size before writing, and the tool **refuses** to overwrite
+sheets built from a larger corpus rather than silently replacing real evidence with
+placeholder numbers. On a clean checkout these three are a smoke test, not evidence.
+
+Both sets are covered by a drift test: a taxonomy edit that is not followed by a
+regeneration fails `tests/test_vocab_review.py`, for the same reason the artifacts have
+their own gate. See [`data_samples/vocab/RUNBOOK.md`](data_samples/vocab/RUNBOOK.md) 📎
+for what each sheet answers and how to read it.
 
 **2. LLM Inference Pipeline ([llm_run.py](llm_run.py) 📎)**
 

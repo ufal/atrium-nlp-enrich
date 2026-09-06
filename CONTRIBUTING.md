@@ -157,22 +157,29 @@ shellcheck -e SC1091 api_*.sh api_util/*.sh setup_api_service.sh
 
 ### Running the test suite
 
-The repository ships a lightweight `pytest` harness that requires **no ML models or GPU**
-for standard unit tests. Heavy tests that do require models or network access are marked
-`slow` and are excluded from the default run.
+The repository ships a `pytest` harness that requires **no ML models or GPU**. The whole
+suite runs offline in well under a minute.
 
 ```bash
-pip install -r requirements-test.txt  # pytest>=8.0 and pytest-cov only
+pip install -r requirements-test.txt
 ```
 
+That file is more than pytest: it also pins `jsonschema` (the `atrium_document` schema
+gate), `lxml` (the TEITOK XSD gate and the OAI-PMH parser), `openpyxl`, and the FastAPI
+test stack — each with a comment saying which gate would silently skip without it.
+
 ```bash
-pytest -m "not slow" --tb=short                              # fast — use before every commit
-pytest --tb=short                                            # full suite (requires model setup)
-pytest -m "not slow" --cov=. --cov-report=term-missing      # with coverage
+pytest -q                                    # the whole suite — use before every commit
+pytest --cov=. --cov-report=term-missing     # with coverage
 ```
+
+> There is **no `slow` marker in this repository** — `grep -rc pytest.mark.slow tests/`
+> returns zero. `pytest -m "not slow"` and a bare `pytest` are the same run, which is
+> what made the old nightly report success having collected nothing (see the v0.19.0
+> row above). Heavy deps are separated by *workflow*, not by marker: `torch` lives in
+> `gpu-inference.yml`, `transformers` in `scheduled-smoke.yml`.
 
 `tests/test_paradata.py` (`ParadataLogger`, `_sanitise`) is shared across all repos.
-Repo-specific modules and GPU-heavy tests are marked `@pytest.mark.slow` and skipped by default.
 
 <details>
 <summary>Test layout, per-repo targets, and fixture conventions</summary>
@@ -194,9 +201,21 @@ tests/
 | `atrium-alto-postprocess` | `test_utils.py`     | `directory_scraper`, `dataframe_results` (Top-1 and Top-N), `collect_images`                                                                       |
 | `atrium-translator`       | `test_utils.py`     | `_resolve_namespaces`, `validate_xml_with_xsd`, `process_alto_xml`, `process_amcr_xml` (mock translator injected)                                  |
 
-**Slow tests** — any test loading a model checkpoint, calling an external API, or requiring a GPU must be decorated with `@pytest.mark.slow`. Document in the PR description which resource it requires and how to enable it locally.
+**Heavy tests** — a test that loads a model checkpoint, calls an external API, or needs a
+GPU does not belong in the default suite. Put it behind the workflow that has the
+resource (`gpu-inference.yml`, `scheduled-smoke.yml`) rather than behind a marker, and
+say in the PR description what it requires.
 
-**Fixtures** — small, self-contained files committed under `tests/fixtures/`. Tests must not read from `data_samples/` directly. Add a minimal fixture file in the same commit as any test that needs new sample data.
+**Fixtures** — small, self-contained files committed under `tests/fixtures/`. Add a
+minimal fixture in the same commit as any test that needs new sample data.
+
+**The one deliberate exception: drift gates read `data_samples/` on purpose.** A test
+that asserts a *committed artefact* still matches what its config would produce has to
+open the committed artefact — a fixture copy would only prove the fixture is
+self-consistent. Eleven modules do this, and it is the point of each:
+`test_vocab_build.py`, `test_vocab_manager.py`, `test_vocab_review.py`,
+`test_corpus_review.py`, `test_prompt_template.py`, `test_validate_teitok.py` and
+friends. Everywhere else, prefer a fixture.
 
 </details>
 
@@ -206,10 +225,17 @@ tests/
 
 Each documentation file has one target audience and one responsibility. Rules are not repeated — cross-references are used instead.
 
-| File              | Audience        | Responsibility                                 |
-|-------------------|-----------------|------------------------------------------------|
-| `README.md`       | GitHub visitors | Project overview, workflow stages, quick start |
-| `CONTRIBUTING.md` | Developers      | Code conventions, branches, PRs, testing       |
+| File                                     | Audience                | Responsibility                                                                          |
+|------------------------------------------|-------------------------|-----------------------------------------------------------------------------------------|
+| `README.md`                              | GitHub visitors         | Project overview, workflow stages, quick start                                          |
+| `CONTRIBUTING.md`                        | Developers              | Code conventions, branches, PRs, testing, generated artefacts                           |
+| `data_samples/vocab/RUNBOOK.md`          | **Vocabulary curators** | Every vocabulary script and flag, the eight review sheets, where a decision is recorded |
+| `prompts/RUNBOOK.md`                     | **Prompt reviewers**    | The prompt blocks and their flags, the guardrail's two halves, the output contract      |
+| `data_samples/vocab/6.*.md`              | Domain reviewers        | One open question each, framed with numbers from the sheets beside them                 |
+| `annotation/README.md` · `GUIDELINES.md` | Annotators              | Label Studio / Doccano setup; the annotation label scheme                               |
+| `service/README.md`                      | API consumers           | REST endpoints, environment variables, deployment                                       |
+| `schemas/teitok/README.md`               | Format maintainers      | The TEITOK XSD and its conformance gate                                                 |
+| `agent_dev_logs/DEVLOG.md`               | Maintainers             | Per-issue history: digests, plans, decisions                                            |
 
 * **Do not duplicate rules:** if a rule is defined in `CONTRIBUTING.md`, other files
 reference it rather than copying it.
@@ -222,12 +248,16 @@ still point correctly.
 
 Some files are modified automatically by scripts or hooks:
 
-| Script              | What it generates                                      |
-|---------------------|--------------------------------------------------------|
-| `api_1_manifest.sh` | `manifest.tsv` — ordered list of all pages to process  |
-| `api_2_udp.sh`      | `UDP/*.conllu` — per-document CoNLL-U files            |
-| `api_3_nt.sh`       | `NE/*/*.tsv` — per-page NER-annotated TSV files        |
-| `api_4_stats.sh`    | `UDP_NE/`, `TEITOK/`, `summary_ne_counts.csv`          |
+| Script                   | What it generates                                                                                                                 |
+|--------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `api_1_manifest.sh`      | `manifest.tsv` — ordered list of all pages to process                                                                             |
+| `api_2_udp.sh`           | `UDP/*.conllu` — per-document CoNLL-U files                                                                                       |
+| `api_3_nt.sh`            | `NE/*/*.tsv` — per-page NER-annotated TSV files                                                                                   |
+| `api_4_stats.sh`         | `UDP_NE/`, `TEITOK/`, `summary_ne_counts.csv`                                                                                     |
+| **`vocab_build.py`**     | the 14 vocabulary artefacts in `data_samples/vocab/` — harvests, nested facets, meta sidecars, placement audits, `vocabulary.csv` |
+| **`vocab_review.py`**    | the 8 reviewer sheets in `data_samples/vocab/` (`--all`)                                                                          |
+| **`corpus_review.py`**   | the 3 corpus-evidence sheets + `corpus_review.meta.json` (`--all`; needs the document corpus)                                     |
+| **`prompt_template.py`** | the 4 committed prompt renders in `prompts/` (`--write`)                                                                          |
 
 Rules:
 
@@ -235,6 +265,22 @@ Rules:
 2. After changing chunking logic, re-run `api_2_udp.sh` to verify CoNLL-U validity.
 3. After changing NER merging logic or TEITOK XML composition, re-run `api_4_stats.sh`
 and inspect `summary_ne_counts.csv`.
+4. **Config and generated artefact move in the same commit.** Editing
+`data_samples/taxonomy_*.json`, `llm_config.txt` or `prompts/system_prompt.txt` without
+regenerating is the failure this repo has already shipped twice (`a5e3c8a`, `d4c46b2`):
+the config said one thing and the artefact the model actually reads said another, with
+nothing failing. Three gates now catch it, and all three run on every PR
+(`.github/workflows/vocab-drift.yml`):
+
+   ```bash
+   python3 vocab_build.py --from-flat && python3 vocab_build.py --from-flat --check
+   python3 vocab_review.py --all
+   python3 prompt_template.py --write && python3 prompt_template.py --check
+   ```
+
+   Full procedure and the decision tables:
+   [`data_samples/vocab/RUNBOOK.md`](data_samples/vocab/RUNBOOK.md) and
+   [`prompts/RUNBOOK.md`](prompts/RUNBOOK.md).
 
 ---
 
