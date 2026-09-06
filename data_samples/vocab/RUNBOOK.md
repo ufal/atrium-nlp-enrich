@@ -24,7 +24,7 @@ Three tools, in dependency order:
 
 ### What is in this directory
 
-25 files, three kinds. Only the first kind is input; everything else is generated and is
+29 files, three kinds. Only the first kind is input; everything else is generated and is
 overwritten without warning by the command in its row.
 
 | Files                                                | Kind                                                                                                       | Written by                               |
@@ -71,6 +71,12 @@ gate; it runs in CI (`.github/workflows/vocab-drift.yml`) and as
 pre-union path). The refresh workflow does not pass it, so that file keeps diverging;
 do not rely on it.
 
+**`vocab_build.py` is the only thing that writes to this directory.** `python3
+vocab_manager.py` is a read-only inspector — it prints a prompt preview and the per-facet
+counts and says so on exit. (It was not always: it used to run the legacy AMCR-only sync
+against `union_nested.json` and save the result, which sent every term to `Other` and left
+the pipeline injecting an empty vocabulary. Looking at the vocabulary destroyed it.)
+
 ## 2. `vocab_review.py` — the eight reviewer sheets
 
 Offline, pure, deterministic. Reads the committed `*_flat.json` plus the taxonomy
@@ -98,7 +104,7 @@ Re-run after **any** taxonomy change, for the same reason as the artifacts:
 `tests/test_vocab_review.py::test_committed_review_sheets_match_a_fresh_generation`
 fails if a committed sheet no longer matches the config it claims to describe.
 
-Reading `collision_review.csv`: 308 rows / 136 groups on the current build, sorted by
+Reading `collision_review.csv`: 308 rows / 135 groups on the current build, sorted by
 `dissimilarity` ascending. Check `aat_verdict` before spending time on a row —
 `agreeing` means both records align to the same Getty AAT concept and can be
 bulk-confirmed as one; `conflicting` is positive homonym evidence.
@@ -106,6 +112,14 @@ bulk-confirmed as one; `conflicting` is positive homonym evidence.
 **The ranking is the weaker signal, and M13 proved it.** Of @david-spacil's 7 splits
 only 1 was in the dissimilarity top 30, while all 3 `conflicting` groups split. Read
 `aat_verdict` first and treat `dissimilarity` as a tie-breaker.
+
+**`holds_bare_label` is the column to read before writing a qualifier.** Exactly one member
+of each group owns the plain Czech word — the lowest-sorting record with no `qualifier_cs`,
+which is how `to_term_pairs` picks it. M13's convention ("qualify only the record that
+*leaves* the group") is precisely: **never put a qualifier on the row marked `yes`**, unless
+you mean to hand the bare word to the next record in the group. The column is computed by
+the same rule the build uses, and three tests hold it to what the built vocabulary actually
+says.
 
 > ⚠️ **`malta` — a live homonym that no column flags, and the one worth looking at
 > first.** M11 reinstated the 250 country names, which brought `amcr:HES-001366`
@@ -119,9 +133,15 @@ only 1 was in the dissimilarity top 30, while all 3 `conflicting` groups split. 
 > Both signals point the wrong way here: all four records read `aat_verdict = agreeing`
 > (the class this runbook tells you to deprioritise), and the glosses *mortar* / *Malta*
 > are far enough apart that dissimilarity does not rank them together either. The fix,
-> if @david-spacil rules it a split, is one `qualifier_cs` on `HES-001366` — but which
-> member carries the qualifier is the part **nothing checks**: putting it on the mortar
-> record instead builds green, validates, and separates the wrong concept.
+> if @david-spacil rules it a split, is one `qualifier_cs` on `HES-001366`.
+>
+> **Which member carries the qualifier is now visible, but still not enforced.** The
+> group's four rows read `holds_bare_label = yes` on `HES-000910` and blank on the other
+> three, so the sheet says plainly that the plain word is a mortar record. Qualifying the
+> country is correct and leaves `malta` where it is; qualifying `HES-000910` instead hands
+> `malta` to `HES-000992` — a different mortar record — and that build is green, validates,
+> and separates the wrong concept. No test can rule which concept deserves the bare word;
+> the column exists so the choice is made with the answer in front of you.
 
 Reading `facet_census.csv`: one row per facet, in render order. `cumulative_tokens` is
 the column that explains truncation — a facet is cut when everything *ahead* of it has

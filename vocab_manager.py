@@ -1259,15 +1259,29 @@ def attach_same_as(
 
 
 if __name__ == "__main__":
+    # READ-ONLY on purpose. This block used to call sync_and_build_nested_taxonomy()
+    # against the shipped union artifact, which was destructive in a way nothing local
+    # caught: the legacy sync harvests AMCR alone and its records carry only cs/en, so
+    # assign_theme sends every one of them to `Other` — and `Other` is in_prompt: false,
+    # so save() left the pipeline injecting an EMPTY vocabulary. CI noticed (drift on
+    # union_nested.json); a curator running the module to look at the vocabulary did not.
+    #
+    # `vocab_build.py` is the builder, and it is the only thing that should write here.
+    # See data_samples/vocab/RUNBOOK.md.
     manager = VocabularyManager(
         vocab_path="data_samples/vocab/union_nested.json",
         config_path="data_samples/taxonomy_config.json",
         llm_predictor=None,
     )
-    manager.sync_and_build_nested_taxonomy(use_llm_fallback=False)
+    try:
+        manager.load(auto_sync=False)
+    except FileNotFoundError as exc:
+        raise SystemExit(f"{exc}\n\nThis entry point never builds — it only inspects.") from exc
+
     prompt_str = manager.get_prompt_string()
     print("\n[Preview of serialised LLM prompt string]")
     print(prompt_str[:500] + "\n… [truncated]")
     print("\n[Vocabulary statistics]")
     for theme, count in manager.vocab_statistics().items():
         print(f"  {theme}: {count} terms")
+    print("\n[read-only] Nothing was written. To rebuild: python3 vocab_build.py --from-flat")

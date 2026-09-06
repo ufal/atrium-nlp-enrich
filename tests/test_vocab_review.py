@@ -178,6 +178,82 @@ def test_collision_review_rows_are_ranked_ascending():
     assert scores == sorted(scores)
 
 
+def _shipped_collision_rows():
+    _require_flat()
+    manager = _shipped_manager()
+    per_source = vb._load_flat(VOCAB_DIR)
+    filtered = [
+        r for _name, (recs, _m) in per_source.items() for r in vb._filter_excluded(recs, manager)
+    ]
+    return vr.collision_review_rows(filtered, manager), manager
+
+
+def test_every_collision_group_names_exactly_one_bare_label_holder():
+    """One member of each group owns the plain Czech word. Zero would mean the label is
+    offered by nobody; two would mean the sheet disagrees with what the build produces."""
+    rows, _ = _shipped_collision_rows()
+    groups: dict = {}
+    for row in rows:
+        groups.setdefault(vs.norm_label(row["cs"]), []).append(row)
+    for label, members in groups.items():
+        holders = [m for m in members if m["holds_bare_label"] == "yes"]
+        assert len(holders) == 1, f"{label}: {len(holders)} bare-label holders"
+
+
+def test_the_bare_label_holder_is_the_record_the_build_actually_gives_it_to():
+    """The column is only worth anything if it agrees with `to_term_pairs`. A holder must
+    own an unqualified entry in the built vocabulary — never a bracketed one."""
+    rows, manager = _shipped_collision_rows()
+    if not (VOCAB_DIR / "union_nested.json").exists():
+        pytest.skip("union_nested.json not built")
+    nested = json.loads((VOCAB_DIR / "union_nested.json").read_text(encoding="utf-8"))
+
+    owner: dict = {}
+    for facet, terms in nested.items():
+        if facet.startswith("_"):
+            continue
+        for cs, entry in terms.items():
+            if entry.get("source") and entry.get("source_id"):
+                owner[(entry["source"], entry["source_id"])] = (cs, entry.get("bare_cs"))
+
+    for row in rows:
+        if row["holds_bare_label"] != "yes":
+            continue
+        entry = owner.get((row["source"], row["id"]))
+        assert entry is not None, f"{row['source']}:{row['id']} holds a label it does not own"
+        cs, bare_cs = entry
+        assert bare_cs is None, f"{row['source']}:{row['id']} carries a qualifier: {cs!r}"
+
+
+def test_a_qualified_record_never_holds_the_bare_label():
+    """M13's convention, as a property: the qualifier goes on the record that *leaves*
+    the group. The seven splits in force must all read blank in this column."""
+    rows, manager = _shipped_collision_rows()
+    qualifiers = manager.qualifier_overrides()
+    assert qualifiers, "the shipped overrides declare no qualifier — test is vacuous"
+    for row in rows:
+        if (row["source"], row["id"]) in qualifiers:
+            assert row["holds_bare_label"] == "", (
+                f"{row['source']}:{row['id']} is qualified and still marked as holding "
+                "the bare label"
+            )
+
+
+def test_the_malta_trap_is_visible_in_the_sheet():
+    """The concrete case the runbook warns about: `malta` is held by a mortar record, so
+    the country amcr:HES-001366 is a discarded id rather than something the model can
+    pick. A reviewer splitting this group has to qualify the country — qualifying the
+    holder instead just hands the plain word to the next mortar record."""
+    rows, _ = _shipped_collision_rows()
+    group = [r for r in rows if vs.norm_label(r["cs"]) == vs.norm_label("malta")]
+    assert len(group) == 4, f"expected the 4-record malta group, got {len(group)}"
+
+    holder = next(r for r in group if r["holds_bare_label"] == "yes")
+    assert holder["en"] == "mortar", "the bare word malta is a mortar record, not the country"
+    country = next(r for r in group if r["id"] == "HES-001366")
+    assert country["holds_bare_label"] == ""
+
+
 # ── composite_pair_rows (O1/F / Track 3) ─────────────────────────────────────────
 
 

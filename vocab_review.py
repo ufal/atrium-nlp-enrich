@@ -219,8 +219,18 @@ def collision_review_rows(
 
     ``aat_verdict`` (see :func:`_aat_verdict`) is a group-level signal, repeated on
     every member row, same as ``dissimilarity``.
+
+    ``holds_bare_label`` names the one member of the group that currently owns the plain
+    Czech word, computed the way :func:`vocab_sources.to_term_pairs` computes it — the
+    lowest-sorting record with no ``qualifier_cs``. It is here because the M13 convention
+    ("qualify only the record that *leaves* the group") is otherwise invisible: putting a
+    qualifier on the row marked ``yes`` hands the bare label to the next record in the
+    group, and that build is green, validates, and separates the wrong concept. The live
+    example is ``malta``, where the bare word belongs to a mortar record and the country
+    ``amcr:HES-001366`` rides along as a discarded id.
     """
     label_index = label_index or {}
+    qualifiers = manager.qualifier_overrides()
     groups = vs.group_by_label(records)
     scored: List[Tuple[float, str, List[vs.VocabRecord]]] = []
     for members in groups.values():
@@ -231,6 +241,15 @@ def collision_review_rows(
 
     rows: List[Dict[str, Any]] = []
     for dissimilarity, aat_verdict, members in scored:
+        # The same rule to_term_pairs applies: the lowest-sorting *unqualified* record
+        # takes the bare key. Recomputed here rather than read off the built vocabulary
+        # so the sheet answers for the records it is actually showing.
+        plain = [
+            m
+            for m in sorted(members, key=vs.record_sort_key)
+            if (m.source, m.source_id) not in qualifiers
+        ]
+        bare_holder = (plain[0].source, plain[0].source_id) if plain else None
         for m in sorted(members, key=vs.record_sort_key):
             facet, rule = manager.assign_theme(m.as_dict())
             rows.append(
@@ -252,6 +271,7 @@ def collision_review_rows(
                     "uri": m.uri or "",
                     "broader_labels": _render_broader(m, label_index),
                     "exact_match": "; ".join(m.exact_match),
+                    "holds_bare_label": "yes" if (m.source, m.source_id) == bare_holder else "",
                     "verdict": "",  # human fills in: "" = same concept (default),
                     # or a qualifier_cs string for a genuine homonym (M8/B3)
                 }
@@ -277,6 +297,7 @@ COLLISION_COLUMNS = [
     "uri",
     "broader_labels",
     "exact_match",
+    "holds_bare_label",
     "verdict",
 ]
 

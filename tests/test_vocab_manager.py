@@ -1395,3 +1395,32 @@ def test_shipped_vocabulary_same_as_links_are_symmetric():
                 assert other is not None, f"{cs}: same_as points at a term not offered"
                 back = {"source": entry.get("source"), "id": entry.get("source_id")}
                 assert back in (other.get("same_as") or []), f"{cs}: one-way same_as link"
+
+
+# ── the module entry point (issue #6, gap 8) ─────────────────────────────────────
+
+
+def test_running_vocab_manager_as_a_script_never_writes_the_vocabulary():
+    """`python3 vocab_manager.py` used to call the legacy AMCR-only sync against the
+    shipped union artifact and save the result. Those records carry only cs/en, so every
+    one landed in `Other` — which is `in_prompt: false`, leaving the next pipeline run
+    injecting an empty vocabulary. CI caught it as artifact drift; a curator running the
+    module to look at the vocabulary did not. The entry point inspects and nothing else.
+
+    Asserted on the source rather than by running it: importing under `__main__` is not
+    something a test can do cleanly, and the property at stake is "this code path cannot
+    write", which the absence of the call is exactly what establishes.
+    """
+    src = (Path(__file__).resolve().parent.parent / "vocab_manager.py").read_text(encoding="utf-8")
+    main_block = src.split('if __name__ == "__main__":', 1)[1]
+    # comments explain the old behaviour by name; only executable lines are the claim
+    code = "\n".join(line for line in main_block.splitlines() if not line.lstrip().startswith("#"))
+
+    assert "sync_and_build_nested_taxonomy" not in code, (
+        "the entry point rebuilds the vocabulary again — it must only read it"
+    )
+    assert ".save()" not in code, "the entry point writes"
+    assert "auto_sync=False" in code, (
+        "load() must be told not to fall back to a harvest, or a missing artifact "
+        "triggers the very rebuild this guard exists to prevent"
+    )
