@@ -45,3 +45,9 @@ jobs:
       # Targets are passed through verbatim since the template fix — "base"
       # now genuinely builds the `AS base` stage, not the last one.
       build-targets: '["base", "api", "llm"]'
+      # issue #55: only `api` is a runnable HTTP server, so only `api` gets the
+      # container smoke (docker run -> wait for HEALTHCHECK healthy -> GET /health
+      # and /ready -> docker stop and assert a clean exit inside the grace period).
+      # `base` and `llm` are batch CLIs — probing either would fail an image that is
+      # behaving exactly as intended.
+      probe-targets: '["api"]'

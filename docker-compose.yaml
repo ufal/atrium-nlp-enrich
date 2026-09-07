@@ -38,6 +38,14 @@ services:
       - ./config_api.txt:/app/config_api.txt:ro
     ports:
       - "8000:8000"
+    # HEALTHCHECK is already declared on the `api` Dockerfile stage — no override
+    # needed here. stop_grace_period raised from Compose's own 10s default (issue
+    # #55): the api stage's ENTRYPOINT sets --timeout-graceful-shutdown 20, and
+    # serve_lifecycle's own drain adds up to another 25s on top for a tracked
+    # /jobs run — 10s would SIGKILL before either has a chance to finish. Same
+    # budget as docs/templates/k8s/atrium-service.deployment.yaml's
+    # terminationGracePeriodSeconds (Compose has no preStop-hook equivalent).
+    stop_grace_period: 60s
 
   nlp-llm:
     profiles: [llm]

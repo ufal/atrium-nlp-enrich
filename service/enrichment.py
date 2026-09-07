@@ -351,6 +351,16 @@ class PipelineManager:
         return facts
 
     def dry_run(self, kw_method: str = "keybert") -> Tuple[int, str]:
+        """Run the pipeline in --dry-run mode — the body of the deep health check
+        (service/api.py's _deep_health, issue #55). Bounded by ``timeout=`` (added in
+        the same issue): this is called from a Docker HEALTHCHECK's deep probe and,
+        via service/api.py, from a human hitting ?deep=true, and an unbounded
+        subprocess here would let a single hung dry-run leak a worker thread
+        indefinitely. subprocess.TimeoutExpired is deliberately left to propagate —
+        attach_health's deep_check wrapper (docs/templates/shared/atrium_service.py)
+        already catches any exception and reports it as a degraded 503 rather than a
+        500, so a second catch here would only duplicate that handling.
+        """
         ws = _API_JOBS_ROOT / f"healthcheck-{uuid.uuid4().hex[:8]}"
         ws.mkdir(parents=True, exist_ok=True)
         try:
@@ -362,6 +372,7 @@ class PipelineManager:
                 env=_stage_env(),
                 capture_output=True,
                 text=True,
+                timeout=30,
             )
             return proc.returncode, (proc.stdout + proc.stderr)[-4000:]
         finally:
