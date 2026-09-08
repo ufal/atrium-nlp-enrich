@@ -5,7 +5,7 @@ service/api.py — FastAPI surface for the nlp-enrich pipeline.
 from __future__ import annotations
 
 import asyncio
-import configparser
+import json
 import os
 import time
 from contextlib import asynccontextmanager
@@ -17,7 +17,16 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from .atrium_service import list_endpoints
+from .atrium_service import (
+    ServiceState,
+    add_cors,
+    attach_health,
+    attach_inflight_middleware,
+    build_info,
+    read_tool_version,
+    resolve_max_upload_mb,
+    serve_lifecycle,
+)
 from .enrichment import (
     KeywordPreflightError,
     PipelineError,
@@ -31,13 +40,10 @@ from .rescale import RescaleError, rescale_teitok
 
 # ── operator-tunable limits ───────────────────────────────────────────────────
 MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "2"))
-MAX_UPLOAD_MB = float(os.environ.get("MAX_UPLOAD_MB", "5"))
+MAX_UPLOAD_MB = resolve_max_upload_mb(5.0)
 MAX_WORDS = int(os.environ.get("MAX_WORDS", "30000"))
 API_JOB_TIMEOUT = int(os.environ.get("API_JOB_TIMEOUT", "600"))
 MAX_RESCALE_DIM = int(os.environ.get("MAX_RESCALE_DIM", "100000"))
-ALLOWED_ORIGINS = [
-    o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()
-]
 DEFAULT_KW_METHOD = os.environ.get("DEFAULT_KW_METHOD", "keybert")
 
 _ALLOWED_KW = ("keybert", "yake", "legacy", "none")
@@ -46,35 +52,32 @@ _ALLOWED_LANG = ("cs",)
 _manager = PipelineManager()
 _semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
 _SERVICE_DIR = Path(__file__).resolve().parent
-
-
-def _read_tool_version() -> str:
-    """Read the tool version from para_config.txt [tool] section.
-
-    Single source of truth — security.reusable.yml already validates this value
-    against CITATION.cff and the release tag, so the API version can never drift
-    from the released version again.
-    """
-    config = configparser.ConfigParser()
-    config.read(_SERVICE_DIR.parent / "para_config.txt", encoding="utf-8")
-    version = config.get("tool", "version", fallback="unknown")
-    return version[1:] if version.lower().startswith("v") else version
+_state = ServiceState()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _manager.warmup, DEFAULT_KW_METHOD)
-    yield
+    _state.warm = True
+    # issue #55: composes with the existing warmup above rather than replacing it.
+    # Installs the SIGTERM/SIGINT handling that flips /ready to 503 and, on shutdown,
+    # waits for in-flight requests AND any job tracked via _state.track() (see
+    # submit_job below) — the mechanism that stops a rolling restart from killing a
+    # background /jobs run mid-pipeline, which counting in-flight requests alone
+    # cannot do (the submitting request already returned).
+    async with serve_lifecycle(_state):
+        yield
 
 
 # DEFINITION OF THE APP
 app = FastAPI(
     title="ATRIUM nlp-enrich API",
-    version=_read_tool_version(),
+    version=read_tool_version(_SERVICE_DIR.parent),
     description="Text lines → NLP-enriched TEITOK XML + keywords.",
     lifespan=lifespan,
 )
+attach_inflight_middleware(app, _state)
 
 # Safely mount static directories if they exist
 if (_SERVICE_DIR / "frontend").exists():
@@ -90,17 +93,9 @@ if (_SERVICE_DIR / "frontend-lindat").exists():
         name="frontend-lindat",
     )
 
-try:
-    from fastapi.middleware.cors import CORSMiddleware
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=ALLOWED_ORIGINS,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-except Exception:  # pragma: no cover
-    pass
+# issue #55, D1b: converged onto the shared helper — same ALLOWED_ORIGINS env var,
+# same default "*", so this is not a behavior change, only a drift-prevention one.
+add_cors(app)
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -114,15 +109,57 @@ def _validate_params(kw_method: str, lang: str, num_keywords: int) -> None:
         raise HTTPException(422, "num_keywords must be between 1 and 100") from None
 
 
-def _run_pipeline_sync(rows, doc_id, kw_method, num_keywords, lang):
+def _schema_verdict(xml_text: str) -> tuple[bool | None, List[str]]:
+    """TEITOK XSD conformance verdict for a document this service produced
+    (issue #28), as ``(valid, diagnostics)``.
+
+    ``valid`` is ``None`` when no verdict could be reached — the validator or
+    lxml is unavailable — so callers can tell "not conformant" apart from
+    "not checked". Never raises: a reporting extra must not be able to fail a
+    transform that already succeeded.
+    """
+    try:
+        from api_util.validate_teitok_xml import validate_xml_text
+
+        errors = validate_xml_text(xml_text)
+    except Exception as exc:  # noqa: BLE001 - advisory field, never fatal
+        return None, [f"schema check unavailable: {exc}"]
+    return not errors, errors
+
+
+async def _read_document_json(part: UploadFile | None) -> bytes | None:
+    """Read an optional ``document_json`` upload part, or None (#10 J3).
+
+    A zero-byte part counts as "not supplied": clients and form builders routinely send an
+    empty file field for an optional upload, and treating that as a baseline would seed the
+    bridge with an unparseable file and then report "no doc_id" — a confusing way to say
+    "you sent nothing". Enforces the same size ceiling as the primary upload, since this
+    part is caller-controlled too.
+    """
+    if part is None:
+        return None
+    data = await part.read()
+    if not data:
+        return None
+    if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(413, f"document_json exceeds {MAX_UPLOAD_MB} MB.") from None
+    return data
+
+
+def _run_pipeline_sync(rows, doc_id, kw_method, num_keywords, lang, document_json=None):
     """Blocking pipeline call with graceful backend degradation configured."""
     return _manager.enrich(
-        rows, doc_id, kw_method=kw_method, num_keywords=num_keywords, lang=lang
+        rows,
+        doc_id,
+        kw_method=kw_method,
+        num_keywords=num_keywords,
+        lang=lang,
+        document_json=document_json,
     ), kw_method
 
 
 def _build_envelope(result, requested_method) -> Dict[str, Any]:
-    return {
+    envelope = {
         "doc_id": result.doc_id,
         "pages": result.pages,
         "stages": result.stages,
@@ -134,13 +171,22 @@ def _build_envelope(result, requested_method) -> Dict[str, Any]:
         "method_used": result.kw_method_used,
         "llm": None,
     }
+    # (atrium-project#10, J3) Present only when the client opted into the accretion flow,
+    # so the envelope of every existing caller is byte-for-byte what it was. `null` here
+    # is meaningful rather than absent-by-default: it says the record was requested and
+    # the pipeline produced none (see PipelineManager.collect_document_json).
+    if result.document_json_out is not None:
+        envelope["document_json"] = PipelineManager.collect_document_json(result)
+    return envelope
 
 
-async def _run_enrichment(rows, doc_id, kw_method, num_keywords, lang, fmt) -> tuple[Any, str, Any]:
+async def _run_enrichment(
+    rows, doc_id, kw_method, num_keywords, lang, fmt, document_json=None
+) -> tuple[Any, str, Any]:
     loop = asyncio.get_event_loop()
     try:
         result, requested = await loop.run_in_executor(
-            None, _run_pipeline_sync, rows, doc_id, kw_method, num_keywords, lang
+            None, _run_pipeline_sync, rows, doc_id, kw_method, num_keywords, lang, document_json
         )
     except KeywordPreflightError as exc:
         raise HTTPException(503, str(exc)) from exc
@@ -158,7 +204,7 @@ async def _run_enrichment(rows, doc_id, kw_method, num_keywords, lang, fmt) -> t
         raise
 
 
-async def _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt):
+async def _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt, document_json=None):
     _validate_params(kw_method, lang, num_keywords)
     if not rows:
         raise HTTPException(422, "No usable text rows found in input.") from None
@@ -172,7 +218,7 @@ async def _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt):
     async with _semaphore:
         try:
             data, out_fmt, result = await asyncio.wait_for(
-                _run_enrichment(rows, doc_id, kw_method, num_keywords, lang, fmt),
+                _run_enrichment(rows, doc_id, kw_method, num_keywords, lang, fmt, document_json),
                 timeout=API_JOB_TIMEOUT,
             )
         except asyncio.TimeoutError as exc:
@@ -190,17 +236,39 @@ async def _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt):
             return JSONResponse(data)
 
 
-async def _run_job_background(job: Job, rows, doc_id, kw_method, num_keywords, lang):
+async def _run_job_background(
+    job: Job, rows, doc_id, kw_method, num_keywords, lang, document_json=None
+):
     try:
         job.status = "running"
         async with _semaphore:
             data, out_fmt, result = await asyncio.wait_for(
-                _run_enrichment(rows, doc_id, kw_method, num_keywords, lang, fmt="json"),
+                _run_enrichment(
+                    rows,
+                    doc_id,
+                    kw_method,
+                    num_keywords,
+                    lang,
+                    fmt="json",
+                    document_json=document_json,
+                ),
                 timeout=API_JOB_TIMEOUT,
             )
             PipelineManager.cleanup(result)
             job.result = data
             job.status = "done"
+    except asyncio.CancelledError:
+        # issue #55: this task is now tracked via _state.track() (see submit_job), so
+        # serve_lifecycle awaits it on shutdown rather than cancelling it — a clean run
+        # to completion or a timeout inside its own budget is the expected path. This
+        # branch exists for the one case that still cancels it directly (the drain
+        # budget in serve_lifecycle elapsing with the job still running): record why
+        # the job never finished, rather than leaving it reporting "running" forever to
+        # a client that polls /jobs/{id} after the process has already exited. Must
+        # still propagate — swallowing CancelledError breaks cooperative cancellation.
+        job.error = "Cancelled: server shutdown interrupted this job before it finished."
+        job.status = "failed"
+        raise  # the outer `finally` below still records finished_at
     except asyncio.TimeoutError:
         job.error = "Pipeline execution timed out."
         job.status = "failed"
@@ -225,17 +293,21 @@ async def root():
 @app.get("/info")
 async def info() -> Dict[str, Any]:
     facts = _manager.config_facts()
-    return {
-        "service": "atrium-nlp-enrich",
-        "version": app.version,
-        "endpoints": list_endpoints(app),
-        "stage_plan": ["manifest", "udp", "nt", "stats"],
-        "core_stages_mandatory": True,
-        "models": {
+    return build_info(
+        app,
+        "atrium-nlp-enrich",
+        limits={
+            "max_upload_mb": MAX_UPLOAD_MB,
+            "max_words": MAX_WORDS,
+            "max_concurrent_jobs": MAX_CONCURRENT_JOBS,
+        },
+        stage_plan=["manifest", "udp", "nt", "stats"],
+        core_stages_mandatory=True,
+        models={
             "udpipe": facts.get("udpipe_model"),
             "nametag": facts.get("nametag_model"),
         },
-        "keyword_methods": {
+        keyword_methods={
             "default": DEFAULT_KW_METHOD,
             "available": {
                 "keybert": "best quality; GPU-capable embedding model",
@@ -244,33 +316,51 @@ async def info() -> Dict[str, Any]:
                 "none": "skip keyword extraction",
             },
         },
-        "limits": {
-            "max_upload_mb": MAX_UPLOAD_MB,
-            "max_words": MAX_WORDS,
-            "max_concurrent_jobs": MAX_CONCURRENT_JOBS,
-        },
-    }
-
-
-@app.get("/health")
-async def health(deep: bool = False) -> JSONResponse:
-    rc, tail = _manager.dry_run(kw_method="none")
-    ok = rc == 0
-    if deep and ok:
-        facts = _manager.config_facts()
-        import urllib.request
-
-        for url in (facts.get("udpipe_url"), facts.get("nametag_url")):
-            if url:
-                try:
-                    urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=5)
-                except Exception as e:
-                    ok = False
-                    tail += f"\nDeep health check failed for {url}: {e}"
-    return JSONResponse(
-        {"status": "ok" if ok else "degraded", "dry_run_returncode": rc, "detail": tail[-1500:]},
-        status_code=200 if ok else 503,
     )
+
+
+def _deep_health() -> str | None:
+    """Deep readiness (§4.1): the pipeline dry-run succeeds and, when configured,
+    the UDPipe/NameTag backends answer.
+
+    issue #55, D1b: this now runs ONLY under ``?deep=true``, via the shared
+    ``attach_health``. Before this, the dry-run subprocess ran on EVERY shallow
+    ``/health`` probe (the old handler was ``async def`` and called it unconditionally
+    before checking ``deep``), which meant a 30s-interval Docker HEALTHCHECK aimed at
+    this route would have spawned a subprocess every interval and blocked the whole
+    event loop for its duration — the worst possible target for a liveness probe. This
+    function is a plain sync ``def``, so FastAPI/Starlette dispatch it to the anyio
+    threadpool instead of the event loop, same as every other repo's ``_deep_health``.
+    """
+    rc, tail = _manager.dry_run(kw_method="none")
+    if rc != 0:
+        return f"dry-run exit {rc}: {tail[-1500:]}"
+    facts = _manager.config_facts()
+    import urllib.request
+
+    for url in (facts.get("udpipe_url"), facts.get("nametag_url")):
+        if url:
+            try:
+                urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=5)
+            except Exception as e:
+                return f"backend unreachable ({url}): {e}"
+    return None
+
+
+attach_health(app, deep_check=_deep_health, state=_state)
+
+
+#: Shared wording for the optional accretion part, so /enrich, /enrich_text and /jobs
+#: describe one contract in one place (atrium-project#10, J3).
+_DOCUMENT_JSON_HELP = (
+    "Optional baseline ATRIUM Document JSON (accretion model, docs/document_schema.md / "
+    "issue #13). When given, the response's `document_json` carries the record back with "
+    "only nlp-enrich's contribution merged in — its `entities[]` rows and `pages[]."
+    "teitok_surface` — while every other tool's block (page_categories, lines, "
+    "translations, enrichment, ...) passes through untouched. A baseline that does not "
+    "validate against atrium_document.schema.json is still accepted (rule 6); the "
+    "pipeline warns and accretes onto it anyway."
+)
 
 
 @app.post("/enrich")
@@ -280,6 +370,7 @@ async def enrich(
     num_keywords: int = Form(20),
     lang: str = Form("cs"),
     format: str = Form("json"),
+    document_json: UploadFile = File(None, description=_DOCUMENT_JSON_HELP),  # noqa: B008
 ):
     data = await file.read()
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
@@ -290,7 +381,8 @@ async def enrich(
         raise HTTPException(422, str(exc)) from exc
     doc_id = file.filename or "document"
     fmt = format if format in ("json", "zip") else "json"
-    return await _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt)
+    baseline = await _read_document_json(document_json)
+    return await _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt, baseline)
 
 
 @app.post("/enrich_text")
@@ -310,7 +402,13 @@ async def enrich_text(payload: Dict[str, Any]):
     lang = payload.get("lang", "cs")
     fmt = payload.get("format", "json")
     fmt = fmt if fmt in ("json", "zip") else "json"
-    return await _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt)
+    # Inline JSON in, inline JSON out — an embedded object rather than an upload part,
+    # matching llm-enrich's /extract_keywords_text (#10 J3).
+    baseline = payload.get("document_json")
+    if baseline is not None and not isinstance(baseline, dict):
+        raise HTTPException(422, "'document_json' must be an object.") from None
+    baseline_bytes = json.dumps(baseline).encode("utf-8") if baseline is not None else None
+    return await _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt, baseline_bytes)
 
 
 @app.post("/rescale")
@@ -353,6 +451,12 @@ async def rescale(
     except RescaleError as exc:
         raise HTTPException(422, str(exc)) from exc
 
+    # TEITOK output contract verdict (issue #28). Advisory, not a 4xx: this
+    # endpoint faithfully transforms whatever it is handed, including legacy
+    # documents that predate the schema, so rejecting them would break a
+    # working tool. Callers that care can gate on `schema_valid`.
+    result["schema_valid"], result["schema_errors"] = _schema_verdict(result["teitok_xml"])
+
     fmt = format if format in ("json", "xml") else "json"
     if fmt == "xml":
         name = Path(file.filename or "document").name
@@ -375,6 +479,7 @@ async def submit_job(
     kw_method: str = Form(DEFAULT_KW_METHOD),
     num_keywords: int = Form(20),
     lang: str = Form("cs"),
+    document_json: UploadFile = File(None, description=_DOCUMENT_JSON_HELP),  # noqa: B008
 ):
     _validate_params(kw_method, lang, num_keywords)
     data = await file.read()
@@ -385,6 +490,9 @@ async def submit_job(
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     doc_id = file.filename or "document"
+    # Read here, not in the background task: the UploadFile's spooled temp file is tied
+    # to the request and is closed once this handler returns (#10 J3).
+    baseline = await _read_document_json(document_json)
 
     now = time.time()
     to_del = [
@@ -398,7 +506,14 @@ async def submit_job(
         del _jobs[jid]
 
     job = await create_job()
-    asyncio.create_task(_run_job_background(job, rows, doc_id, kw_method, num_keywords, lang))
+    # issue #55, D1a: tracked, not a bare asyncio.create_task(). A submitted job
+    # outlives this request — the request returns "queued" immediately, so a plain
+    # in-flight REQUEST counter reaches zero long before the job itself finishes. A
+    # bare create_task() result is also GC-eligible with nothing retaining it, task
+    # or no shutdown involved. _state.track() fixes both: serve_lifecycle's drain
+    # waits for this job before letting the process exit, so a rolling restart no
+    # longer kills it mid-run.
+    _state.track(_run_job_background(job, rows, doc_id, kw_method, num_keywords, lang, baseline))
     return {"job_id": job.job_id, "status": "queued"}
 
 

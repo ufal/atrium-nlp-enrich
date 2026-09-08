@@ -34,6 +34,7 @@ import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
+from typing import Optional
 
 DEFAULT_BASE_URL = os.environ.get("ATRIUM_NE_URL", "http://localhost:8000")
 INPUT_SUFFIXES = {".csv", ".txt", ".xlsx"}
@@ -46,8 +47,12 @@ JOB_POLL_INTERVAL_S = 5
 JOB_POLL_TIMEOUT_S = 900
 
 
-def build_multipart(fields: dict, file_field: str, file_path: Path) -> tuple[bytes, str]:
-    """Encode form fields and one file as multipart/form-data using only the stdlib."""
+def build_multipart(fields: dict, files: dict) -> tuple[bytes, str]:
+    """Encode form fields and one or more files as multipart/form-data using only the stdlib.
+
+    `files` maps the multipart field name to a `Path` (e.g. `{"file": lines.csv,
+    "document_json": baseline.json}` for the accretion contract).
+    """
     boundary = uuid.uuid4().hex
     lines = []
     for name, value in fields.items():
@@ -56,12 +61,15 @@ def build_multipart(fields: dict, file_field: str, file_path: Path) -> tuple[byt
         lines.append(b"")
         lines.append(str(value).encode())
 
-    mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
-    lines.append(f"--{boundary}".encode())
-    lines.append(f'Content-Disposition: form-data; name="{file_field}"; filename="{file_path.name}"'.encode())
-    lines.append(f"Content-Type: {mime}".encode())
-    lines.append(b"")
-    lines.append(file_path.read_bytes())
+    for field_name, file_path in files.items():
+        mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+        lines.append(f"--{boundary}".encode())
+        lines.append(
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{file_path.name}"'.encode()
+        )
+        lines.append(f"Content-Type: {mime}".encode())
+        lines.append(b"")
+        lines.append(file_path.read_bytes())
     lines.append(f"--{boundary}--".encode())
     lines.append(b"")
 
@@ -128,31 +136,50 @@ def check_input(path: Path) -> None:
         sys.exit(1)
 
 
-def enrich_file(base_url: str, path: Path, kw_method: str, num_keywords: int, lang: str, fmt: str) -> dict:
+def enrich_file(
+    base_url: str,
+    path: Path,
+    kw_method: str,
+    num_keywords: int,
+    lang: str,
+    fmt: str,
+    document_json: Optional[Path] = None,
+) -> dict:
     """Synchronous enrichment of one uploaded file via POST /enrich."""
     fields = {"kw_method": kw_method, "num_keywords": num_keywords, "lang": lang, "format": fmt}
-    body, content_type = build_multipart(fields, file_field="file", file_path=path)
+    files = {"file": path}
+    if document_json is not None:
+        files["document_json"] = document_json
+    body, content_type = build_multipart(fields, files)
     if fmt == "zip":
         return {"_zip_bytes": http_raw(f"{base_url}/enrich", data=body, content_type=content_type)}
     return http_json(f"{base_url}/enrich", data=body, content_type=content_type)
 
 
-def enrich_stdin(base_url: str, doc_id: str, kw_method: str, num_keywords: int, lang: str) -> dict:
+def enrich_stdin(
+    base_url: str,
+    doc_id: str,
+    kw_method: str,
+    num_keywords: int,
+    lang: str,
+    document_json: Optional[Path] = None,
+) -> dict:
     """Read plain text lines from stdin and enrich them via POST /enrich_text."""
     lines = [line.strip() for line in sys.stdin.read().splitlines() if line.strip()]
     if not lines:
         print("No text lines on stdin.", file=sys.stderr)
         sys.exit(1)
-    payload = json.dumps(
-        {"doc_id": doc_id, "lines": lines, "kw_method": kw_method, "num_keywords": num_keywords, "lang": lang}
-    ).encode("utf-8")
+    payload_dict = {"doc_id": doc_id, "lines": lines, "kw_method": kw_method, "num_keywords": num_keywords, "lang": lang}
+    if document_json is not None:
+        payload_dict["document_json"] = json.loads(document_json.read_text(encoding="utf-8"))
+    payload = json.dumps(payload_dict).encode("utf-8")
     return http_json(f"{base_url}/enrich_text", data=payload, content_type="application/json")
 
 
 def enrich_via_jobs(base_url: str, path: Path, kw_method: str, num_keywords: int, lang: str) -> dict:
     """Asynchronous enrichment: submit to POST /jobs, poll, fetch the result."""
     fields = {"kw_method": kw_method, "num_keywords": num_keywords, "lang": lang}
-    body, content_type = build_multipart(fields, file_field="file", file_path=path)
+    body, content_type = build_multipart(fields, {"file": path})
     submitted = http_json(f"{base_url}/jobs", data=body, content_type=content_type)
     job_id = submitted.get("job_id")
     if not job_id:
@@ -239,6 +266,17 @@ def main() -> None:
         "--format", choices=["table", "csv", "json"], default="table", help="output format (default: table)"
     )
     parser.add_argument("--info", action="store_true", help="print service capabilities and limits, then exit")
+    parser.add_argument(
+        "--document-json",
+        metavar="PATH",
+        help="baseline ATRIUM Document JSON to accrete this tool's entities[]/pages[].teitok_surface "
+        "onto (docs/document_schema.md); requires exactly one input file, no --jobs/--zip",
+    )
+    parser.add_argument(
+        "--document-json-out-file",
+        metavar="PATH",
+        help="save the returned document_json record to PATH (default: only embedded in --format json output)",
+    )
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/")
@@ -252,11 +290,25 @@ def main() -> None:
     if args.zip and (args.jobs or len(args.files) != 1 or args.files[0] == "-"):
         parser.error("--zip needs exactly one input file and a synchronous call (no --jobs, no stdin)")
 
+    document_json_path = None
+    if args.document_json:
+        if args.jobs or args.zip or len(args.files) != 1:
+            parser.error("--document-json requires exactly one input file and no --jobs/--zip")
+        document_json_path = Path(args.document_json)
+        if not document_json_path.is_file():
+            print(f"--document-json file not found: {document_json_path}", file=sys.stderr)
+            sys.exit(1)
+    if args.document_json_out_file and document_json_path is None:
+        parser.error("--document-json-out-file requires --document-json")
+
     envelopes = {}
     rows = []
+    document_record = None
     for name in args.files:
         if name == "-":
-            envelope = enrich_stdin(base_url, args.doc_id, args.kw_method, args.num_keywords, args.lang)
+            envelope = enrich_stdin(
+                base_url, args.doc_id, args.kw_method, args.num_keywords, args.lang, document_json_path
+            )
         else:
             path = Path(name)
             if not path.is_file():
@@ -271,10 +323,24 @@ def main() -> None:
                 print(f"Workspace ZIP saved to {args.zip}")
                 return
             else:
-                envelope = enrich_file(base_url, path, args.kw_method, args.num_keywords, args.lang, fmt="json")
+                envelope = enrich_file(
+                    base_url,
+                    path,
+                    args.kw_method,
+                    args.num_keywords,
+                    args.lang,
+                    fmt="json",
+                    document_json=document_json_path,
+                )
         envelopes[name] = envelope
         summarize(envelope)
         rows.extend(result_rows(name, envelope))
+        if envelope.get("document_json") is not None:
+            document_record = envelope["document_json"]
+
+    if args.document_json_out_file and document_record is not None:
+        Path(args.document_json_out_file).write_text(json.dumps(document_record, indent=2), encoding="utf-8")
+        print(f"Document JSON record written to {args.document_json_out_file}", file=sys.stderr)
 
     if args.format == "json":
         print(json.dumps(envelopes if len(envelopes) > 1 else next(iter(envelopes.values())), indent=2))

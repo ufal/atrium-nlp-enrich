@@ -28,6 +28,8 @@ directly.
   not seconds - do **not** treat a slow first start as failure.
 - **Limits**: 5 MB per upload, 30 000 words per synchronous request, 2
   concurrent pipeline runs (HTTP 429 when busy - use `--jobs` or retry later).
+- **Readiness**: `GET /health` is liveness (stays 200 while draining); `GET /ready` is the
+  orchestrator-facing readiness probe — 503 while warming up or shutting down.
 
 ## Pipeline & keyword methods 📖
 
@@ -87,7 +89,25 @@ printf 'Výzkum odhalil základy kostela.\n' | python3 scripts/atrium_enrich.py 
 python3 scripts/atrium_enrich.py --info
 ```
 
-### 3. Interpret output
+### 3. ATRIUM Document JSON accretion (optional)
+
+Accrete this tool's `entities[]` and `pages[].teitok_surface` onto an existing baseline
+record (accretion contract, `docs/document_schema.md` in the hub repo; single-file only,
+not combined with `--jobs`/`--zip`):
+
+```bash
+python3 scripts/atrium_enrich.py lines.csv --document-json in.document.json \
+    --document-json-out-file out.document.json
+
+# also works from stdin
+printf 'Výzkum odhalil základy kostela.\n' | python3 scripts/atrium_enrich.py - \
+    --doc-id CTX1 --document-json in.document.json --document-json-out-file out.document.json
+```
+
+Every other tool's block (`page_categories`, `lines`, `translations`, `enrichment`, ...)
+passes through unchanged.
+
+### 4. Interpret output
 
 - `table` (default): `DOC, RANK, KEYWORD, SCORE` rows plus a one-line summary
   (`doc_id`, `pages`, `kw_method` used, entity count) on stderr.

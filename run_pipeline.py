@@ -16,16 +16,20 @@ per-stage paradata JSON produced during THIS run into a single
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from atrium_document import canonical_doc_id
 from atrium_paradata import merge_run_paradata
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -493,6 +497,136 @@ def _build_plan(args: argparse.Namespace, values: Dict[str, str]) -> Dict[str, A
     }
 
 
+def _pipeline_doc_id(input_tables_dir: str) -> Optional[str]:
+    """The doc_id nlp-enrich's own stages will derive for this run, from the single CSV in
+    INPUT_TABLES_DIR (mirrors summarize_nt_udp.py's doc_name, which in turn traces back to
+    this same file via the manifest). None when the directory holds zero or multiple files
+    -- batch runs have no single answer, so callers should fall back to their prior,
+    doc_id-agnostic behavior rather than guess.
+
+    Both ends of that chain now go through `atrium_document.canonical_doc_id()` (issue
+    atrium-project#10, D3). This used to be `matches[0].stem`, and "mirrors" was the whole
+    load-bearing property: the bridge seeds and collects `<doc_id>.document.json`, so if
+    this predicts "X.v2" where the stats stage writes "X", the seeded baseline is orphaned
+    and every upstream block is silently dropped (rule 3) -- the same failure mode
+    _prepare_document_json_bridge already documents for a wrong upstream doc_id.
+    """
+    if not input_tables_dir:
+        return None
+    matches = sorted(Path(input_tables_dir).glob("*.csv"))
+    if len(matches) != 1:
+        return None
+    return canonical_doc_id(matches[0])
+
+
+def _prepare_document_json_bridge(
+    document_json: Optional[str], doc_id: Optional[str] = None
+) -> Path:
+    """Seed a scratch directory for the 'stats' stage's existing --document-json-dir support.
+
+    api_4_stats.sh / api_util/summarize_nt_udp.py already implement the accretion read+write
+    correctly in directory form (one <doc_id>.document.json per document); this only translates
+    the single-file --document-json convenience flag into that existing shape rather than adding
+    a second implementation.
+
+    Scoped to a single document, matching --document-json/--document-json-out on the other tool
+    repos. Seeded under `doc_id` (nlp-enrich's OWN authoritative id, see _pipeline_doc_id) when
+    given, NOT the baseline's own declared `doc_id` field -- an upstream tool can get that field
+    wrong (verified: atrium-translator derives it from a per-page split filename like
+    "CTX000000003-1.alto.xml", producing doc_id "CTX000000003-1" instead of "CTX000000003" when
+    fed one page of a document rather than a whole standalone file). Seeding under the WRONG id
+    left the baseline as an orphaned file nlp-enrich's own stats stage never looked for and never
+    touched, alongside a second, baseline-less file it wrote under the id it actually computed --
+    _collect_document_json_output would then arbitrarily pick one, non-deterministically dropping
+    every upstream block (page_categories, translations, ...) about half the time (observed live:
+    ufal/atrium-project#18 e2e run 30690789869). Seeding under the caller-supplied `doc_id`
+    instead means both ends of the bridge always agree on one filename -- deterministically
+    correct when they match reality, and deterministically "own part only" (rule 3) on the rare
+    doc_id it still can't be determined for, never a coin flip.
+    """
+    scratch_dir = Path(tempfile.mkdtemp(prefix="atrium_document_json_"))
+    if document_json:
+        baseline = Path(document_json)
+        if not baseline.exists():
+            print(
+                f"[document] baseline {baseline} not found — nlp-enrich will emit its own part only",
+                file=sys.stderr,
+            )
+        else:
+            seed_id = doc_id
+            if not seed_id:
+                data = json.loads(baseline.read_text(encoding="utf-8"))
+                seed_id = data.get("doc_id")
+            if not seed_id:
+                print(
+                    f"[document] baseline {baseline} has no doc_id — cannot seed the accretion "
+                    "directory; nlp-enrich will emit its own part only",
+                    file=sys.stderr,
+                )
+            else:
+                shutil.copyfile(baseline, scratch_dir / f"{seed_id}.document.json")
+    return scratch_dir
+
+
+#: (atrium-project#10, J4) The one stdout token an automated caller greps for. On STDOUT and
+#: at the END of the run, deliberately: the failure this reports is a document hook that
+#: failed and degraded to a stderr warning per rule 3 — correct behaviour, but it left the
+#: CLI exiting 0 with the promised --document-json-out file absent and the only evidence
+#: buried mid-stream in stderr, hundreds of lines above the summary. Keeping the graceful
+#: degradation and adding a terminal, greppable line is what makes it *detectable* without
+#: making an inherited upstream gap fatal.
+DOC_JSON_NOT_WRITTEN_MARKER = "[document-json] NOT WRITTEN"
+
+
+def _collect_document_json_output(
+    scratch_dir: Path, document_json_out: str, doc_id: Optional[str] = None
+) -> bool:
+    """Copy the 'stats' stage's accreted record out to the caller's requested path.
+
+    Returns True when `document_json_out` was written, False when no record was produced --
+    the caller reports that once, on stdout, at the end of the run (see
+    DOC_JSON_NOT_WRITTEN_MARKER).
+
+    When `doc_id` is known (see _pipeline_doc_id), collects that exact
+    `<doc_id>.document.json` -- deterministic, and immune to an orphaned, differently-named
+    seed file left behind by a doc_id mismatch (see _prepare_document_json_bridge). Falls back
+    to globbing *.document.json only when doc_id couldn't be determined (batch runs); zero
+    files found means the stage never reached the document-json hook (e.g. no CoNLL-U was
+    produced upstream, or the hook itself raised and summarize_nt_udp.py warned and carried
+    on) -- reported, not silently swallowed either way.
+    """
+    if doc_id:
+        record = scratch_dir / f"{doc_id}.document.json"
+        if not record.exists():
+            print(
+                f"[document] no document record was produced at {record} — "
+                f"{document_json_out} was NOT written",
+                file=sys.stderr,
+            )
+            return False
+        records = [str(record)]
+    else:
+        records = glob.glob(str(scratch_dir / "*.document.json"))
+        if not records:
+            print(
+                f"[document] no document record was produced in {scratch_dir} — "
+                f"{document_json_out} was NOT written",
+                file=sys.stderr,
+            )
+            return False
+        if len(records) > 1:
+            print(
+                f"[document] {len(records)} document records found in {scratch_dir}, expected 1 "
+                "(this bridge is single-document only) — using the first",
+                file=sys.stderr,
+            )
+    out_path = Path(document_json_out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(records[0], out_path)
+    print(f"[document] Record written → {out_path}", flush=True)
+    return True
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Run the ATRIUM nlp-enrich pipeline end-to-end and merge "
@@ -538,6 +672,27 @@ def main(argv=None):
     parser.add_argument("-f", "--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--print-config", choices=["json"], default=None)
+
+    # Document JSON Integration Arguments (issue #13). File-pair form, matching
+    # alto-postprocess/translator/page-classification. The "stats" stage's own
+    # api_4_stats.sh / api_util/summarize_nt_udp.py already implement the accretion
+    # write via a directory-form --document-json-dir; this is a thin single-document
+    # bridge in front of that existing, working path rather than a second
+    # implementation — see _prepare_document_json_bridge().
+    parser.add_argument(
+        "--document-json",
+        type=str,
+        default=None,
+        help="Baseline ATRIUM Document JSON to read before the 'stats' stage and accrete "
+        "nlp-enrich's entities/pages contribution into.",
+    )
+    parser.add_argument(
+        "--document-json-out",
+        type=str,
+        default=None,
+        help="Path to write the updated ATRIUM Document JSON. Requires --stages to include "
+        "'stats' (the only stage that touches the document record).",
+    )
 
     args = parser.parse_args(argv)
 
@@ -587,6 +742,12 @@ def main(argv=None):
     if args.force:
         env["ATRIUM_FORCE_RUN"] = "1"
 
+    doc_json_scratch_dir: Optional[Path] = None
+    doc_json_doc_id: Optional[str] = None
+    if args.document_json or args.document_json_out:
+        doc_json_doc_id = _pipeline_doc_id(values.get("INPUT_TABLES_DIR", ""))
+        doc_json_scratch_dir = _prepare_document_json_bridge(args.document_json, doc_json_doc_id)
+
     before = _snapshot_paradata_dir(paradata_dir)
     results: List[StageResult] = []
     last_start: Optional[float] = None
@@ -608,7 +769,12 @@ def main(argv=None):
         last_start = _space_stages(last_start)
         snapshot = _snapshot_paradata_dir(paradata_dir)
         print(f"\n=== Stage: {name} — {label} ===")
-        rc = _run_subprocess(["bash", str(script_path)], env, _REPO_ROOT)
+        # Only "stats" (api_4_stats.sh) understands --document-json-dir — it's the stage that
+        # calls document_hook.run_document_hook via summarize_nt_udp.py.
+        stage_cmd = ["bash", str(script_path)]
+        if name == "stats" and doc_json_scratch_dir is not None:
+            stage_cmd += ["--document-json-dir", str(doc_json_scratch_dir)]
+        rc = _run_subprocess(stage_cmd, env, _REPO_ROOT)
 
         paradata, ppath = _collect_stage_paradata(paradata_dir, snapshot)
         results.append(StageResult(name, label, rc, paradata, ppath))
@@ -621,6 +787,12 @@ def main(argv=None):
             paradata.get("statistics", {}), strict=args.strict_empty
         ):
             empty_failures.append(name)
+
+    doc_json_written: Optional[bool] = None
+    if doc_json_scratch_dir is not None and args.document_json_out:
+        doc_json_written = _collect_document_json_output(
+            doc_json_scratch_dir, args.document_json_out, doc_json_doc_id
+        )
 
     if getattr(args, "kw", False):
         if plan["skips"]["keywords"]:
@@ -707,6 +879,21 @@ def main(argv=None):
                 empty_failures.append("llm")
 
     _finalize_merge(results, paradata_dir, args, before, skipped_names)
+
+    # (atrium-project#10, J4) The promise the run made and did not keep, restated on stdout
+    # where an automated caller sees it. Still exit 0: a document hook that failed degrades
+    # gracefully by design (rule 3 -- nlp-enrich's own outputs are all present and valid, and
+    # a missing upstream baseline must not fail a standalone run), so turning this into a
+    # non-zero exit would break every caller that does not use the flag's output. Detectable,
+    # not fatal.
+    if doc_json_written is False:
+        print(
+            f"{DOC_JSON_NOT_WRITTEN_MARKER} — --document-json-out "
+            f"{args.document_json_out} was requested but the 'stats' stage produced no "
+            f"document record; see the [document] lines on stderr for the reason. "
+            f"nlp-enrich's other outputs are unaffected.",
+            flush=True,
+        )
 
     if empty_failures and fail_on_empty:
         print(

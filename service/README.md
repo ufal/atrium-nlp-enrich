@@ -24,24 +24,26 @@ python service/test_api.py -f data_samples/DOC_LINE_CATEG/CTX000000001.csv
 
 ## Endpoints
 
-| Method | Path           | Purpose                                                      |
-|--------|----------------|--------------------------------------------------------------|
-| GET    | `/`            | minimal landing page (see `/docs` for OpenAPI UI)            |
-| GET    | `/info`        | service id, endpoints, stage plan, pinned models, keyword methods + default, limits |
-| GET    | `/health`      | config validity via `run_pipeline.py --dry-run`              |
-| POST   | `/enrich`      | **single-file entry point** — upload CSV/XLSX/TXT            |
-| POST   | `/enrich_text` | same pipeline for inline JSON                                |
-| POST   | `/rescale`     | rescale a single-page TEITOK's bboxes to a target image size |
+| Method | Path           | Purpose                                                                                                                                                                      |
+|--------|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| GET    | `/`            | minimal landing page (see `/docs` for OpenAPI UI)                                                                                                                            |
+| GET    | `/info`        | service id, endpoints, stage plan, pinned models, keyword methods + default, limits                                                                                          |
+| GET    | `/health`      | liveness — 200 always, even mid-shutdown. `?deep=true` adds config validity via `run_pipeline.py --dry-run` + UDPipe/NameTag reachability (503 on failure or while draining) |
+| GET    | `/ready`       | readiness — 503 until warmup finishes, 200 while serving, 503 the instant `SIGTERM` arrives. The Kubernetes `readinessProbe`/`startupProbe` target                           |
+| POST   | `/enrich`      | **single-file entry point** — upload CSV/XLSX/TXT                                                                                                                            |
+| POST   | `/enrich_text` | same pipeline for inline JSON                                                                                                                                                |
+| POST   | `/rescale`     | rescale a single-page TEITOK's bboxes to a target image size                                                                                                                 |
 
 ### `POST /enrich` (multipart form)
 
 | Field          | Default    | Notes                                                   |
 |----------------|------------|---------------------------------------------------------|
-| `file`         | *required* | `.csv` (needs a `text` column), `.xlsx`, or `.txt`      |
-| `kw_method`    | `keybert`  | `keybert` \| `yake` \| `legacy` \| `none`               |
-| `num_keywords` | `20`       | 1–100                                                   |
-| `lang`         | `cs`       | Czech-pinned in v1                                      |
-| `format`       | `json`     | `json` envelope, or `zip` of the workspace `OUTPUT_DIR` |
+| `file`          | *required* | `.csv` (needs a `text` column), `.xlsx`, or `.txt`      |
+| `kw_method`     | `keybert`  | `keybert` \| `yake` \| `legacy` \| `none`               |
+| `num_keywords`  | `20`       | 1–100                                                   |
+| `lang`          | `cs`       | Czech-pinned in v1                                      |
+| `format`        | `json`     | `json` envelope, or `zip` of the workspace `OUTPUT_DIR` |
+| `document_json` | *optional* | baseline ATRIUM Document JSON to accrete onto — see below |
 
 `keybert` is the best/default backend. If its preflight fails at runtime the
 service **degrades once to `yake`** and reports `method_requested` vs
@@ -51,8 +53,33 @@ service **degrades once to `yake`** and reports `method_requested` vs
 
 ```json
 { "doc_id": "CTX1", "lines": ["Výzkum odhalil základy kostela.", "..."],
-  "kw_method": "keybert", "num_keywords": 20, "format": "json" }
+  "kw_method": "keybert", "num_keywords": 20, "format": "json",
+  "document_json": { "...optional baseline record, inline..." } }
 ```
+
+### The `document_json` accretion part
+
+Rule 1 of the document-JSON contract (`docs/document_schema.md`, issue
+[#13](https://github.com/ufal/atrium-project/issues/13)): a service **accepts and returns an
+optional `document_json` part**. `/enrich` and `/jobs` take it as an upload part;
+`/enrich_text` takes it as an embedded object.
+
+When supplied, the response's `document_json` carries the record back with only
+nlp-enrich's contribution merged in — its `entities[]` rows and `pages[].teitok_surface` —
+while every other tool's block (`page_categories`, `lines`, `translations`, `enrichment`, …)
+passes through **untouched**. This is the same accretion the CLI performs via
+`run_pipeline.py --document-json/--document-json-out`; the service simply threads the flags
+through to it, so there is one implementation, not two.
+
+* Omit the part and the key is **absent** from the envelope — not `null`. Existing clients
+  see no change at all.
+* Supply it and get `null` back, and the pipeline produced no record (no CoNLL-U reached the
+  document hook, or the hook failed and degraded per rule 3). `run_pipeline.py` prints
+  `[document-json] NOT WRITTEN` on stdout in that case; the service's `stages` and the
+  pipeline log say why.
+* A baseline that does not validate against `atrium_document.schema.json` is still accepted
+  (rule 6): the pipeline warns, names the schema error, and accretes onto it anyway rather
+  than turning one bad upstream record into a stalled pipeline.
 
 ### JSON envelope
 
@@ -65,12 +92,14 @@ service **degrades once to `yake`** and reports `method_requested` vs
   "ne_summary": [ {"file": "...", "page": "1", "entities": [...] } ],
   "paradata": { "...merged pipeline-run record incl. license union..." },
   "method_requested": "keybert", "method_used": "keybert",
-  "llm": null
+  "llm": null,
+  "document_json": { "...only when a baseline was supplied..." }
 }
 ```
 
 `format=zip` instead streams the full workspace `OUTPUT_DIR`
-(`TEITOK/`, `UDP_NE/`, `KW_PER_DOC_*/`, summary CSVs, `paradata/`).
+(`TEITOK/`, `UDP_NE/`, `KW_PER_DOC_*/`, summary CSVs, `paradata/`, and
+`<doc_id>.document.json` when a baseline was supplied).
 
 ### `POST /rescale` (multipart form)
 
@@ -145,16 +174,45 @@ error).
 
 ## Configuration (environment)
 
-| Variable                       | Default   | Meaning                                        |
-|--------------------------------|-----------|------------------------------------------------|
-| `MAX_CONCURRENT_JOBS`          | `2`       | concurrent pipeline runs (also shields LINDAT) |
-| `MAX_UPLOAD_MB`                | `5`       | upload size guard                              |
-| `MAX_WORDS`                    | `30000`   | sync request word cap                          |
-| `MAX_RESCALE_DIM`              | `100000`  | max target width/height for `/rescale`         |
-| `DEFAULT_KW_METHOD`            | `keybert` | default keyword backend                        |
-| `ALLOWED_ORIGINS`              | `*`       | CORS origins                                   |
-| `API_KEEP_WORKSPACES`          | unset     | keep per-request workspaces for debugging      |
-| `ATRIUM_RUNNER_IMAGE/REPO/REF` | —         | forwarded to the runner for provenance         |
+| Variable                       | Default   | Meaning                                          |
+|--------------------------------|-----------|--------------------------------------------------|
+| `MAX_CONCURRENT_JOBS`          | `2`       | concurrent pipeline runs (also shields LINDAT)   |
+| `MAX_UPLOAD_MB`                | `5`       | upload size guard                                |
+| `MAX_WORDS`                    | `30000`   | sync request word cap                            |
+| `MAX_RESCALE_DIM`              | `100000`  | max target width/height for `/rescale`           |
+| `DEFAULT_KW_METHOD`            | `keybert` | default keyword backend                          |
+| `ALLOWED_ORIGINS`              | `*`       | CORS origins                                     |
+| `API_KEEP_WORKSPACES`          | unset     | keep per-request workspaces for debugging        |
+| `ATRIUM_RUNNER_IMAGE/REPO/REF` | —         | forwarded to the runner for provenance           |
+| `PORT`                         | `8000`    | port `service/healthcheck.py` probes (issue #55) |
+
+## Shutdown behavior (issue #55)
+
+The `api` image declares `HEALTHCHECK` (shallow `GET /health`, via the vendored
+`service/healthcheck.py`) and `STOPSIGNAL SIGTERM`, and its `ENTRYPOINT` passes
+`--timeout-graceful-shutdown 20`.
+
+On `SIGTERM` the service:
+
+1. flips `GET /ready` to **503** immediately, so an orchestrator stops routing new
+   requests here (`GET /health` deliberately stays 200 — a liveness probe failing
+   mid-shutdown would get the container killed before it finished draining);
+2. lets uvicorn drain in-flight HTTP requests (up to 20s);
+3. **then waits up to a further 25s for any background `/jobs` run to finish.** This
+   step is what a plain in-flight-request count cannot do: `POST /jobs` returns
+   `{"status": "queued"}` straight away, so the request is long gone while the job is
+   still running. Jobs are registered with `ServiceState.track()`
+   (`service/atrium_service.py`) specifically so shutdown waits for them.
+
+⚠️ A job that needs longer than that drain budget is still cut short, and the job
+**record** is in-memory (`service/jobs.py`) — so a client polling `/jobs/{id}` across a
+restart gets 404 rather than a result. Durable job storage is out of scope here (hub
+issue #53, factors IV/VI). See `docs/k8s_deployment.md` in the hub for the full
+grace-period budget and the Kubernetes probe contract.
+
+The container exits **143** (128 + SIGTERM) after a clean shutdown, not 0 — uvicorn
+re-raises the captured signal on purpose so a supervisor sees the real cause. That is a
+normal stop, not a crash.
 
 ## Tests
 
