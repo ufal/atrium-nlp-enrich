@@ -179,12 +179,16 @@ def _date_published(record: Dict[str, Any]) -> str:
         for b in ((record.get("assembled") or {}).get("blocks") or {}).values()
         if isinstance(b, dict)
     ]
-    stamps += [str(c.get("at") or "") for c in ((record.get("provenance") or {}).get("contributors") or [])]
+    stamps += [
+        str(c.get("at") or "") for c in ((record.get("provenance") or {}).get("contributors") or [])
+    ]
     newest = max((s for s in stamps if s), default="")
     return newest[:10] if len(newest) >= 10 else "1970-01-01"
 
 
-def _license_entity(provenance: Dict[str, Any]) -> Tuple[Optional[Dict[str, str]], List[Dict[str, Any]]]:
+def _license_entity(
+    provenance: Dict[str, Any],
+) -> Tuple[Optional[Dict[str, str]], List[Dict[str, Any]]]:
     """The root's `license`, plus the contextual entity it points at.
 
     `para_licenses.merge_effective_licenses()` has already done the hard part — the
@@ -360,7 +364,9 @@ def document_crate(
                     "@id": path,
                     "@type": "File",
                     "name": key,
-                    "description": "Persistent step output recorded in derived_from[{!r}].".format(key),
+                    "description": "Persistent step output recorded in derived_from[{!r}].".format(
+                        key
+                    ),
                     "encodingFormat": _encoding_format(path),
                 }
             )
@@ -387,7 +393,9 @@ def document_crate(
                     "description": (
                         "DISPOSABLE derivation, recorded as a reproducible recipe rather than a "
                         "stored path (detail: {}). Deliberately absent from hasPart: the file is "
-                        "not in this crate and is not meant to be.".format(recipe.get("detail") or "unspecified")
+                        "not in this crate and is not meant to be.".format(
+                            recipe.get("detail") or "unspecified"
+                        )
                     ),
                 }
             )
@@ -409,7 +417,9 @@ def document_crate(
                     "recordBlock": name_,
                     "dateModified": stamp.get("updated_at"),
                     "creator": _ref(_tool_id(str(stamp.get("program") or "unknown"))),
-                    "description": "Block {!r} of the document record, as stamped by assembled.blocks.".format(name_),
+                    "description": "Block {!r} of the document record, as stamped by assembled.blocks.".format(
+                        name_
+                    ),
                 }
             )
         )
@@ -544,7 +554,9 @@ def run_crate(
         graph.append({"@id": author["orcid"], "@type": "Person", "name": author["name"]})
 
     provenance = (records[0].get("provenance") if records else {}) or {}
-    license_ref, license_entities = _license_entity((run_paradata or {}) if run_paradata else provenance)
+    license_ref, license_entities = _license_entity(
+        (run_paradata or {}) if run_paradata else provenance
+    )
     if license_ref is None:
         license_ref, license_entities = _license_entity(provenance)
     if license_ref is not None:
@@ -563,7 +575,9 @@ def run_crate(
                 "identifier": doc_id,
                 "name": "ATRIUM document record {}".format(doc_id),
                 "conformsTo": _ref(ROCRATE_CONFORMS_TO),
-                "description": "Nested per-document RO-Crate; see its own {}.".format(METADATA_FILENAME),
+                "description": "Nested per-document RO-Crate; see its own {}.".format(
+                    METADATA_FILENAME
+                ),
             }
         )
     for ref in sorted(set(paradata_refs)):
@@ -619,7 +633,9 @@ def run_crate(
                     "@type": "SoftwareApplication",
                     "name": program,
                     "url": REPO_URLS.get(program),
-                    "softwareVersion": (run_paradata or {}).get("tool_version") if len(programs) == 1 else None,
+                    "softwareVersion": (run_paradata or {}).get("tool_version")
+                    if len(programs) == 1
+                    else None,
                 }
             )
         )
@@ -636,7 +652,9 @@ def run_crate(
     return _assemble(graph, conforms_to=[ROCRATE_CONFORMS_TO, PROCESS_RUN_PROFILE])
 
 
-def _run_date_published(records: Sequence[Dict[str, Any]], run_paradata: Optional[Dict[str, Any]]) -> str:
+def _run_date_published(
+    records: Sequence[Dict[str, Any]], run_paradata: Optional[Dict[str, Any]]
+) -> str:
     explicit = str((run_paradata or {}).get("end_time") or "")
     if len(explicit) >= 10:
         return explicit[:10]
@@ -751,7 +769,11 @@ def _sample_record() -> Dict[str, Any]:
             "paradata": "paradata/260724-101112_pipeline-run.json",
         },
         "regenerable": {
-            "markdown": {"from": "TEITOK/CTX000000001.teitok.xml", "converter": "xml_to_md@0.3.0", "detail": "full"}
+            "markdown": {
+                "from": "TEITOK/CTX000000001.teitok.xml",
+                "converter": "xml_to_md@0.3.0",
+                "detail": "full",
+            }
         },
         "provenance": {
             "license": "CC BY-NC-SA 4.0",
@@ -802,7 +824,9 @@ def _sample_record() -> Dict[str, Any]:
         "page_categories": {"1": "TEXT"},
         "pages": [{"page": "1", "page_index": 1, "quality_band": "Clear", "category": "TEXT"}],
         "content": {"text": "Náčrt sondy.", "reading_order": "ltr-columns"},
-        "entities": [{"surface": "Praha", "type_teitok": "LOC", "type_cnec": "gu", "page": "1", "line": 0}],
+        "entities": [
+            {"surface": "Praha", "type_teitok": "LOC", "type_cnec": "gu", "page": "1", "line": 0}
+        ],
     }
 
 
@@ -888,7 +912,9 @@ def _selftest(stream: Any = None) -> int:
         run_paradata={
             "run_id": "260724-101112",
             "end_time": "2026-07-24T11:00:00+00:00",
-            "pipeline_stages": [{"order": 1, "program": "alto-postprocess", "run_id": "260724-101112"}],
+            "pipeline_stages": [
+                {"order": 1, "program": "alto-postprocess", "run_id": "260724-101112"}
+            ],
         },
         paradata_refs=["paradata/260724-101112_pipeline-run.json"],
     )
@@ -907,7 +933,9 @@ def _selftest(stream: Any = None) -> int:
     for problem in problems:
         print("PROBLEM: " + problem, file=out)
     print(
-        "atrium_rocrate selftest: {} problem(s); {} entities in the document crate".format(len(problems), len(graph)),
+        "atrium_rocrate selftest: {} problem(s); {} entities in the document crate".format(
+            len(problems), len(graph)
+        ),
         file=out,
     )
     return 1 if problems else 0
@@ -929,9 +957,13 @@ def _cli(argv: Optional[Sequence[str]] = None) -> int:
     p = argparse.ArgumentParser(prog="python atrium_rocrate.py")
     p.add_argument("--selftest", action="store_true", help="structural checks; exit 1 on any")
     p.add_argument("--document", metavar="RECORD", help="path to one <doc_id>.document.json")
-    p.add_argument("--run", nargs="+", metavar="RECORD", help="several document records -> one run crate")
+    p.add_argument(
+        "--run", nargs="+", metavar="RECORD", help="several document records -> one run crate"
+    )
     p.add_argument("--paradata", metavar="JSON", default=None, help="paradata run record for --run")
-    p.add_argument("--out-dir", metavar="DIR", default=None, help="write ro-crate-metadata.json here")
+    p.add_argument(
+        "--out-dir", metavar="DIR", default=None, help="write ro-crate-metadata.json here"
+    )
     args = p.parse_args(argv)
 
     if args.selftest:

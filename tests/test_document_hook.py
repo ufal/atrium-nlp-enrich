@@ -27,11 +27,37 @@ def _tok(form, lemma, ner, page_idx, line_id, left, top, right, bottom, space_af
     }
 
 
+def _record(doc_id="CTX000000001", **blocks):
+    """A record carrying the schema's top-level envelope, plus whatever blocks are asked for.
+
+    Every hand-built record in this file goes through here so the envelope lives in one
+    place. It has already drifted once: atrium-project#54 froze the contract at 1.0 and
+    `required` grew from ``[schema_version, doc_id]`` to include ``record_type``,
+    ``provenance`` and ``assembled``, which silently invalidated every literal here.
+
+    ``source`` is not decoration. On top of ``required`` the schema has an anyOf: a record
+    must carry EITHER ``source`` — the originator's handshake, which ``set_source()`` writes
+    without stamping a block — OR an ``assembled.blocks`` naming at least one block it
+    actually holds. An empty ``assembled`` satisfies neither, so a fixture that stamps
+    nothing is legal only via ``source``. That is also what a real record looks like: every
+    one descends from an originator that set it.
+    """
+    return {
+        "schema_version": "1.0",
+        "record_type": "atrium-document",
+        "doc_id": doc_id,
+        "provenance": {},
+        "assembled": {},
+        "source": {"origin": "ABBYY-ALTO"},
+        **blocks,
+    }
+
+
 #: A minimal record that satisfies atrium_document.schema.json, used as the mocked
 #: ``to_dict()`` payload below. The hook validates its own output before finalize()
 #: (atrium-project#10, D4), so a bare MagicMock — which is not a JSON object at all —
 #: would fail that gate for a reason that has nothing to do with the test.
-_VALID_STUB_RECORD = {"schema_version": "1.0", "record_type": "atrium-document", "doc_id": "CTX0"}
+_VALID_STUB_RECORD = _record(doc_id="CTX0")
 
 
 @pytest.fixture
@@ -267,25 +293,20 @@ def _reset_validation_warning_latch():
     hook_module._VALIDATION_UNAVAILABLE_WARNED = False
 
 
-_VALID_BASELINE = {
-    "schema_version": "1.0",
-    "record_type": "atrium-document",
-    "doc_id": "CTX000000001",
-    "pages": [{"page": "1", "page_index": 1, "quality_score": 0.9}],
+_VALID_BASELINE = _record(
+    pages=[{"page": "1", "page_index": 1, "quality_score": 0.9}],
     # An object keyed by page label, not a list of rows — page-classification's block, in
     # the shape the schema actually declares.
-    "page_categories": {"1": "Drawing"},
-}
+    page_categories={"1": "Drawing"},
+)
 
 #: `pages[].quality_score` is `{"minimum": 0, "maximum": 1}`, so 5.0 is a real schema
 #: violation in a field that belongs to ANOTHER tool (alto-postprocess) — the inherited
-#: defect D4's warn-not-refuse policy is written for.
-_INVALID_BASELINE = {
-    "schema_version": "1.0",
-    "record_type": "atrium-document",
-    "doc_id": "CTX000000001",
-    "pages": [{"page": "1", "quality_score": 5.0}],
-}
+#: defect D4's warn-not-refuse policy is written for. Built from _record() like the valid
+#: one so that quality_score is the ONLY thing wrong with it: an inherited-defect test
+#: proves nothing if the baseline is also rejected for a missing top-level key, since the
+#: warn-not-refuse path would fire either way. TestFixtureContract below pins that.
+_INVALID_BASELINE = _record(pages=[{"page": "1", "quality_score": 5.0}])
 
 
 def _span_token(char_start=0, char_end=5):
@@ -480,3 +501,46 @@ def test_declared_grant_covers_every_field_the_hook_writes(tmp_path):
     for field in ("surface", "lemma", "type_onto", "type_teitok", "char_span", "teitok_ref"):
         assert field in entity, f"{field} was dropped by merge_block — grant is wrong"
     assert "teitok_surface" in record["pages"][0]
+
+
+# ── the fixtures' own contract ───────────────────────────────────────────────
+
+
+def _schema_errors(record):
+    """Every schema error in `record`, as (json_path, message) pairs.
+
+    `validate_document()` raises on the FIRST problem, which is the right shape for a
+    gate and the wrong shape for asking "is this wrong for exactly one reason?".
+    """
+    import jsonschema
+
+    from atrium_document import load_schema
+
+    return [
+        (err.json_path, err.message)
+        for err in jsonschema.Draft202012Validator(load_schema()).iter_errors(record)
+    ]
+
+
+class TestFixtureContract:
+    """What the fixtures above claim about themselves, checked against the schema.
+
+    Without this, a schema change invalidates a fixture named `_VALID_...` and most tests
+    using it keep passing — they just start exercising the inherited-defect path instead
+    of the one they document. That is what atrium-project#54's tightening did here, and it
+    surfaced as five failures in this file plus three silently degraded tests in
+    atrium-page-classification, which nothing caught until CI went red for one of them.
+    """
+
+    @pytest.mark.parametrize(
+        "name,record",
+        [("_VALID_STUB_RECORD", _VALID_STUB_RECORD), ("_VALID_BASELINE", _VALID_BASELINE)],
+    )
+    def test_valid_fixtures_really_validate(self, name, record):
+        assert _schema_errors(record) == [], f"{name} no longer satisfies the schema"
+
+    def test_invalid_baseline_is_wrong_about_exactly_one_thing(self):
+        """And that one thing is the inherited defect the D4 tests are about."""
+        assert [path for path, _ in _schema_errors(_INVALID_BASELINE)] == [
+            "$.pages[0].quality_score"
+        ]
