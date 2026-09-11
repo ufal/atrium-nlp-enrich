@@ -137,7 +137,12 @@ def main():
     parser.add_argument("--output", required=True, help="Output merged CoNLL-U file.")
     parser.add_argument(
         "--url",
-        default=os.environ.get("UDPIPE_URL", UDPIPE_URL),
+        # `or` rather than a get() default: a container started from
+        # docker-compose.yml always HAS this variable, possibly empty (the
+        # `${UDPIPE_URL:-}` passthrough), and get(key, default) returns the
+        # empty string in that case — which would POST to "". Empty means
+        # "unset" here, matching bash's ${VAR:-default} in config_api.txt.
+        default=os.environ.get("UDPIPE_URL") or UDPIPE_URL,
         help="UDPipe API endpoint URL.",
     )
     parser.add_argument("--timeout", type=int, default=60, help="Request timeout in seconds.")

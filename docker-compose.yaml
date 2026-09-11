@@ -13,6 +13,18 @@ services:
       ATRIUM_RUNNER_REPO: https://github.com/ufal/atrium-nlp-enrich
       ATRIUM_RUNNER_REF: ${ATRIUM_RUNNER_REF:-dev}
       HF_HOME: /cache/huggingface
+      # Backing service endpoints (atrium-project#63). Compose injects ONLY what
+      # is listed here, so without these two lines `UDPIPE_URL=... docker compose
+      # up` never reaches the container and the endpoints are attachable in the
+      # process but unreachable from outside it. Same shape as PORT in the api
+      # service below (atrium-project#58).
+      #
+      # The empty default is deliberate: the variable is then always present but
+      # blank when the operator sets nothing, and blank means "unset" to both
+      # config_api.txt's ${UDPIPE_URL:-...} and the helper scripts' argparse
+      # defaults. Repeating the LINDAT literal here would make it a fourth copy.
+      UDPIPE_URL: ${UDPIPE_URL:-}
+      NAMETAG_URL: ${NAMETAG_URL:-}
     volumes:
       - ./data:/data
       - hf-cache:/cache/huggingface
@@ -33,6 +45,10 @@ services:
       DEFAULT_KW_METHOD: "keybert"
       HF_HOME: /cache/huggingface
       PORT: ${PORT:-8000}
+      # Also needed on the api service: /info reports these and ?deep=true
+      # probes them, and both must name the endpoint the pipeline calls.
+      UDPIPE_URL: ${UDPIPE_URL:-}
+      NAMETAG_URL: ${NAMETAG_URL:-}
     volumes:
       - ./data:/data
       - hf-cache:/cache/huggingface
