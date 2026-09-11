@@ -6,7 +6,7 @@
 # so the first request does not pay model-load latency, then start uvicorn.
 #
 # Usage:
-#   ./setup_api_service.sh            # install + launch on :8000
+#   ./setup_api_service.sh            # install + launch on ${PORT:-8000}
 #   ./setup_api_service.sh --no-serve # install only
 set -euo pipefail
 

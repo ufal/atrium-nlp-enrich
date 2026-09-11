@@ -32,12 +32,17 @@ services:
       MAX_CONCURRENT_JOBS: "2"
       DEFAULT_KW_METHOD: "keybert"
       HF_HOME: /cache/huggingface
+      PORT: ${PORT:-8000}
     volumes:
       - ./data:/data
       - hf-cache:/cache/huggingface
       - ./config_api.txt:/app/config_api.txt:ro
     ports:
-      - "8000:8000"
+    # PORT is passed through so `PORT=9000 docker compose --profile api up` moves the
+    # listener, the published port and the container's own HEALTHCHECK together — the
+    # service reads it in service/api.py's __main__ block and service/healthcheck.py
+    # probes it. (atrium-project#58)
+      - "${PORT:-8000}:${PORT:-8000}"
     # HEALTHCHECK is already declared on the `api` Dockerfile stage — no override
     # needed here. stop_grace_period raised from Compose's own 10s default (issue
     # #55): the api stage's ENTRYPOINT sets --timeout-graceful-shutdown 20, and

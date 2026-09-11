@@ -24,7 +24,9 @@ server (hypercorn, granian, …) keeps the gate honest instead of making it a li
 
 from __future__ import annotations
 
+import json
 import re
+import shlex
 from pathlib import Path
 
 import pytest
@@ -72,12 +74,44 @@ def _includes(path: Path) -> set[str]:
     return out
 
 
+def _api_launch_text() -> str:
+    """What the `api` stage ACTUALLY launches: its ENTRYPOINT argv, plus — for a `python
+    -m <module>` form — the source of the module it hands control to.
+
+    Not the raw Dockerfile text. Since atrium-project#58 the stage runs
+    `python -m service.api`, so the server name appears nowhere on the ENTRYPOINT line:
+    it is imported inside service/api.py's __main__ block. Grepping the whole Dockerfile
+    would still "find" uvicorn today — but only in the prose comments explaining that
+    move, which is a guard passing for the wrong reason, and one that would keep passing
+    after the import it is meant to police was deleted.
+    """
+    stage, argv = None, []
+    for raw in (_REPO_ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        match = re.match(r"^FROM\s+\S+\s+AS\s+(\S+)", line, re.IGNORECASE)
+        if match:
+            stage = match.group(1)
+            continue
+        if stage != "api" or not line.upper().startswith("ENTRYPOINT"):
+            continue
+        payload = line[len("ENTRYPOINT") :].strip()
+        try:
+            argv = json.loads(payload) if payload.startswith("[") else shlex.split(payload)
+        except ValueError:
+            argv = []
+
+    text = " ".join(argv)
+    if len(argv) >= 3 and argv[1] == "-m":
+        module = _REPO_ROOT / Path(argv[2].replace(".", "/") + ".py")
+        if module.is_file():
+            text += "\n" + module.read_text(encoding="utf-8")
+    return text
+
+
 def _launch_commands() -> dict[str, str]:
     """Every place the repo says to start the service, as raw text to search."""
     return {
-        "Dockerfile (api target ENTRYPOINT)": (_REPO_ROOT / "Dockerfile").read_text(
-            encoding="utf-8"
-        ),
+        "Dockerfile (api target ENTRYPOINT)": _api_launch_text(),
         "docker-compose.yaml": (_REPO_ROOT / "docker-compose.yaml").read_text(encoding="utf-8"),
         "setup_api_service.sh": (_REPO_ROOT / "setup_api_service.sh").read_text(encoding="utf-8"),
         "service/README.md": (_REPO_ROOT / "service" / "README.md").read_text(encoding="utf-8"),

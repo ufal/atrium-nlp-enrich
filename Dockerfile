@@ -48,18 +48,39 @@ RUN pip install -r service_requirements.txt
 RUN chown -R atrium:atrium /app
 USER atrium
 
+# EXPOSE tracks the DEFAULT port: it is image metadata and cannot read $PORT at
+# runtime. Set PORT to move the listener, and publish with `-p <port>:<port>` to
+# match. (issue #58)
 EXPOSE 8000
+
 # STOPSIGNAL is the default (SIGTERM) — declared explicitly so it is never silently
 # changed by a future edit; service/api.py's lifespan (via serve_lifecycle,
 # service/atrium_service.py) chains to uvicorn's own handler for it (issue #55).
 STOPSIGNAL SIGTERM
-# --timeout-graceful-shutdown bounds uvicorn's own wait for in-flight HTTP requests
-# (20s here; nlp-enrich's own background /jobs queue is a SEPARATE mechanism — see
-# service/api.py's ServiceState.track() — not covered by this flag at all, since a
-# job-submission request already returned before the job finishes). --start-period
+
+# PORT and HOST are read by service/api.py's __main__ block; PORT is also the port
+# service/healthcheck.py probes, which is why setting it used to make the container
+# permanently unhealthy — the probe moved and the listener did not. Declared here so
+# `docker inspect` is self-documenting and so the probe still has a value if the code
+# default ever drifts. (issue #58)
+#
+# GRACEFUL_SHUTDOWN_S carries the `--timeout-graceful-shutdown 20` that used to sit on
+# the ENTRYPOINT line. It bounds uvicorn's own wait for in-flight HTTP
+# requests (20s here; nlp-enrich's background /jobs queue is a SEPARATE mechanism — see
+# service/api.py's ServiceState.track() — not covered by this budget at all, since a
+# job-submission request has already returned before the job finishes). --start-period
 # on HEALTHCHECK below covers first-run model downloads; see docs/docker_gha.md §3.4
 # and docs/k8s_deployment.md for the full grace-period budget this is sized against.
-ENTRYPOINT ["uvicorn", "service.api:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "20"]
+ENV PORT=8000 GRACEFUL_SHUTDOWN_S=20
+
+# `python -m service.api`, NOT `python service/api.py`: a script launch puts
+# sys.path[0] at /app/service with no package context, so `from .atrium_service import ...`
+# raises "attempted relative import with no known parent package" before the app is
+# built. `-m` keeps sys.path[0] at /app — byte for byte the environment the old
+# `uvicorn service.api:app` entrypoint ran in, so every repo-root import still
+# resolves. (issue #58)
+ENTRYPOINT ["python", "-m", "service.api"]
+CMD []
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
     CMD ["python", "/app/service/healthcheck.py"]
 
