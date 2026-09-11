@@ -219,6 +219,23 @@ _RELOCATED_KEYS = {
 
 _ASSIGN_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
 
+#: Right-hand sides written as ``${VAR:-default}`` so that `source config_api.txt`
+#: cannot clobber a deployment-set variable (atrium-project#63, see the comment
+#: above ``UDPIPE_URL`` in config_api.txt). The shell resolves this form; a plain
+#: text read of the file does not, so ``config_facts`` must unwrap it or the raw
+#: ``${…}`` string reaches ``_deep_health``'s urllib call and every deep probe
+#: reports "backend unreachable".
+_SHELL_DEFAULT_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*):-(.*)\}$", re.DOTALL)
+
+#: Config keys whose value the environment is allowed to override at run time —
+#: the attachable backing services. The stage scripts resolve these through the
+#: shell, so reporting the file's default here would name a host the pipeline
+#: does not call. Model/limit keys are deliberately absent: they are file-only.
+_ENV_OVERRIDABLE = {
+    "UDPIPE_URL": "udpipe_url",
+    "NAMETAG_URL": "nametag_url",
+}
+
 
 def _derive_config(workspace: Path) -> Path:
     out = workspace / "config_api.txt"
@@ -347,7 +364,23 @@ class PipelineManager:
             if key in key_map:
                 val = raw.split("=", 1)[1].strip().strip('"').strip("'")
                 val = val.split("#", 1)[0].strip()
+                expanded = _SHELL_DEFAULT_RE.match(val)
+                if expanded:
+                    # "${UDPIPE_URL:-https://…}" → the default the shell would use
+                    # when the variable is unset. The environment branch below
+                    # covers the case where it is set.
+                    val = expanded.group(2).strip()
                 facts[key_map[key]] = val
+
+        # Environment wins over the file, matching the precedence the stage
+        # scripts implement (atrium-project#63). Without this, /info and the
+        # ?deep=true probe in service/api.py would report and HEAD-request the
+        # file's default while the pipeline talked to the operator's endpoint.
+        for env_key, fact_key in _ENV_OVERRIDABLE.items():
+            env_val = os.environ.get(env_key, "").strip()
+            if env_val:
+                facts[fact_key] = env_val
+
         return facts
 
     def dry_run(self, kw_method: str = "keybert") -> Tuple[int, str]:

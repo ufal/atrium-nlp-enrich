@@ -52,6 +52,32 @@ def test_process_chunk_posts_expected_payload_and_returns_result():
     assert kwargs["timeout"] == 30
 
 
+def test_process_chunk_posts_to_an_explicit_url():
+    """The endpoint is a parameter, not a module global (atrium-project#63)."""
+    session = MagicMock()
+    resp = MagicMock()
+    resp.json.return_value = {"result": "ok"}
+    session.post.return_value = resp
+
+    process_chunk(session, "hello", "czech-pdt", 30, "http://127.0.0.1:9991/udpipe")
+
+    args, _ = session.post.call_args
+    assert args[0] == "http://127.0.0.1:9991/udpipe"
+
+
+def test_process_chunk_url_defaults_to_the_module_constant():
+    """Omitting *url* keeps the pre-#63 behaviour for existing callers."""
+    session = MagicMock()
+    resp = MagicMock()
+    resp.json.return_value = {"result": "ok"}
+    session.post.return_value = resp
+
+    process_chunk(session, "hello", "czech-pdt", 30)
+
+    args, _ = session.post.call_args
+    assert args[0] == UDPIPE_URL
+
+
 def test_process_chunk_empty_result_returns_empty_string():
     session = MagicMock()
     resp = MagicMock()

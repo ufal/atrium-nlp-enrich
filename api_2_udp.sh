@@ -11,6 +11,7 @@ PARA_STATE=$(python3 atrium_paradata.py start \
     --config \
         "script=api_2_udp" \
         "model_udpipe=${MODEL_UDPIPE}" \
+        "udpipe_url=${UDPIPE_URL}" \
         "word_chunk_limit=${WORD_CHUNK_LIMIT}" \
         "timeout=${TIMEOUT}" \
         "max_retries=${MAX_RETRIES}" \
@@ -35,6 +36,7 @@ while IFS=$'\t' read -r file page path; do
            --chunk-dir "$chunk_dir" \
            --model     "$MODEL_UDPIPE" \
            --output    "$out" \
+           --url       "$UDPIPE_URL" \
            --timeout   "$TIMEOUT" \
            --retries   "$MAX_RETRIES"; then
         python3 atrium_paradata.py success --state "$PARA_STATE" --type conllu

@@ -60,8 +60,20 @@ def get_robust_session(retries: int) -> requests.Session:
     return session
 
 
-def process_chunk(session: requests.Session, text: str, model: str, timeout: int) -> str:
-    """Send a single text chunk to UDPipe."""
+def process_chunk(
+    session: requests.Session,
+    text: str,
+    model: str,
+    timeout: int,
+    url: str = UDPIPE_URL,
+) -> str:
+    """Send a single text chunk to UDPipe.
+
+    *url* is the endpoint to POST to (atrium-project#63). It is appended after
+    *timeout* rather than placed before it as in ``call_nametag.call_nametag``
+    so that the existing four-positional-argument callers keep working; the
+    default preserves the pre-#63 behaviour for any caller that omits it.
+    """
     data = {
         "model": model,
         "tokenizer": "",
@@ -70,7 +82,7 @@ def process_chunk(session: requests.Session, text: str, model: str, timeout: int
         "data": text,
     }
     # If the session exhausts retries or hits a timeout, this will raise a RequestException
-    response = session.post(UDPIPE_URL, data=data, timeout=timeout)
+    response = session.post(url, data=data, timeout=timeout)
     response.raise_for_status()
 
     result = response.json().get("result", "")
@@ -123,6 +135,11 @@ def main():
     )
     parser.add_argument("--model", required=True, help="UDPipe model identifier.")
     parser.add_argument("--output", required=True, help="Output merged CoNLL-U file.")
+    parser.add_argument(
+        "--url",
+        default=os.environ.get("UDPIPE_URL", UDPIPE_URL),
+        help="UDPipe API endpoint URL.",
+    )
     parser.add_argument("--timeout", type=int, default=60, help="Request timeout in seconds.")
     parser.add_argument("--retries", type=int, default=5, help="Max retry attempts for 5xx errors.")
     args = parser.parse_args()
@@ -147,7 +164,7 @@ def main():
 
         try:
             print(f"  [UDPipe] Processing chunk {idx + 1}/{len(chunk_files)}...")
-            result = process_chunk(session, text, args.model, args.timeout)
+            result = process_chunk(session, text, args.model, args.timeout, args.url)
             if result:
                 processed_chunks.append(result)
         except requests.exceptions.RequestException as e:

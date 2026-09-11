@@ -242,8 +242,10 @@ INPUT_ALTO_DIR="$OUTPUT_DIR/altos"              # Source ALTO XML files - for TE
 # If left empty, the pipeline calibrates layout shifts natively using ALTO PrintSpace.
 INPUT_PAGES_DIR=""
 
-UDPIPE_URL="https://lindat.mff.cuni.cz/services/udpipe/api/process"
-NAMETAG_URL="https://lindat.mff.cuni.cz/services/nametag/api/recognize"
+# Backing services. Environment wins, this file is the default — see
+# "Backing Service Endpoints" below for why the ${VAR:-...} form is required.
+UDPIPE_URL="${UDPIPE_URL:-https://lindat.mff.cuni.cz/services/udpipe/api/process}"
+NAMETAG_URL="${NAMETAG_URL:-https://lindat.mff.cuni.cz/services/nametag/api/recognize}"
 
 MODEL_UDPIPE="czech-pdt-ud-2.15-241121"
 MODEL_NAMETAG="nametag3-czech-cnec2.0-240830"
@@ -257,6 +259,27 @@ SAVE_CSV=true                  # write token-level summary CSV
 SAVE_CONLLU_NE=true            # keep merged CoNLL-U with NER in MISC
 SAVE_TEITOK=true               # write TEITOK-style TEI XML (flexiconv-compatible)
 ```
+
+#### Backing Service Endpoints
+
+`UDPIPE_URL` and `NAMETAG_URL` are **attachable** (12-factor IV): point them at a
+self-hosted UDPipe 2 / NameTag 3 instance, or a local stub, without touching code.
+Precedence, highest first:
+
+1. **`--url`** on `call_udpipe.py` / `call_nametag.py`.
+2. **The environment** — `UDPIPE_URL` / `NAMETAG_URL` exported by docker compose
+   `environment:`, a k8s `env:` block, or the shell.
+3. **[config_api.txt](config_api.txt) 📎**, which supplies the LINDAT defaults.
+
+Both keys must be written in the `${UDPIPE_URL:-https://…}` form shown above.
+A bare assignment breaks the first two tiers: every stage script begins with
+`source config_api.txt`, and bash preserves the export attribute of an
+already-exported variable, so a plain `UDPIPE_URL="https://…"` silently
+overwrites *and re-exports* the value the deployment set — the helper scripts
+would then read this file's endpoint rather than the operator's.
+
+The `/info` endpoint and the `?deep=true` health probe resolve the same
+precedence, so they always report and probe the endpoint the pipeline uses.
 
 #### Execution Pipeline
 

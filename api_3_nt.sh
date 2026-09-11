@@ -11,6 +11,7 @@ PARA_STATE=$(python3 atrium_paradata.py start \
     --config \
         "script=api_3_nt" \
         "model_nametag=${MODEL_NAMETAG}" \
+        "nametag_url=${NAMETAG_URL}" \
         "timeout=${TIMEOUT}" \
         "max_retries=${MAX_RETRIES}" \
         "conllu_input_dir=${CONLLU_INPUT_DIR}" \
@@ -38,6 +39,7 @@ while IFS= read -r -d '' conllu; do
             --input      "$conllu" \
             --model      "$MODEL_NAMETAG" \
             --output-dir "$out_dir" \
+            --url        "$NAMETAG_URL" \
             --timeout    "$TIMEOUT" \
             --retries    "$MAX_RETRIES"; then
         n_pages=$(find "$out_dir" -maxdepth 1 -name '*.tsv' 2>/dev/null | wc -l)
