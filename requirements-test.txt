@@ -16,6 +16,11 @@ fastapi
 httpx
 python-multipart
 openapi-spec-validator
+# tests/test_env_contract.py parses docker-compose.yaml to confirm the env-var
+# contract is actually delivered (atrium-project#60). Declared explicitly rather than
+# relying on openapi-spec-validator to pull it in transitively, so this guard does not
+# silently stop running the day that transitive edge disappears.
+PyYAML
 # TEITOK XSD gate (issue #28). Also in requirements.txt — repeated here so a
 # lane that installs only the test deps can still collect
 # tests/test_validate_teitok.py.

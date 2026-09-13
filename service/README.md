@@ -38,13 +38,13 @@ python service/test_api.py -f data_samples/DOC_LINE_CATEG/CTX000000001.csv
 
 ### `POST /enrich` (multipart form)
 
-| Field          | Default    | Notes                                                   |
-|----------------|------------|---------------------------------------------------------|
-| `file`          | *required* | `.csv` (needs a `text` column), `.xlsx`, or `.txt`      |
-| `kw_method`     | `keybert`  | `keybert` \| `yake` \| `legacy` \| `none`               |
-| `num_keywords`  | `20`       | 1–100                                                   |
-| `lang`          | `cs`       | Czech-pinned in v1                                      |
-| `format`        | `json`     | `json` envelope, or `zip` of the workspace `OUTPUT_DIR` |
+| Field           | Default    | Notes                                                     |
+|-----------------|------------|-----------------------------------------------------------|
+| `file`          | *required* | `.csv` (needs a `text` column), `.xlsx`, or `.txt`        |
+| `kw_method`     | `keybert`  | `keybert` \| `yake` \| `legacy` \| `none`                 |
+| `num_keywords`  | `20`       | 1–100                                                     |
+| `lang`          | `cs`       | Czech-pinned in v1                                        |
+| `format`        | `json`     | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`   |
 | `document_json` | *optional* | baseline ATRIUM Document JSON to accrete onto — see below |
 
 `keybert` is the best/default backend. If its preflight fails at runtime the
@@ -176,21 +176,24 @@ error).
 
 ## Configuration (environment)
 
-| Variable                       | Default   | Meaning                                                                                   |
-|--------------------------------|-----------|-------------------------------------------------------------------------------------------|
-| `MAX_CONCURRENT_JOBS`          | `2`       | concurrent pipeline runs (also shields LINDAT)                                            |
-| `MAX_UPLOAD_MB`                | `5`       | upload size guard                                                                         |
-| `MAX_WORDS`                    | `30000`   | sync request word cap                                                                     |
-| `MAX_RESCALE_DIM`              | `100000`  | max target width/height for `/rescale`                                                    |
-| `DEFAULT_KW_METHOD`            | `keybert` | default keyword backend                                                                   |
-| `ALLOWED_ORIGINS`              | `*`       | CORS origins                                                                              |
-| `API_KEEP_WORKSPACES`          | unset     | keep per-request workspaces for debugging                                                 |
-| `ATRIUM_RUNNER_IMAGE/REPO/REF` | —         | forwarded to the runner for provenance                                                    |
-| `PORT`                         | `8000`    | port the service **binds**, and the one `service/healthcheck.py` probes (issues #55, #58) |
-| `HOST`                         | `0.0.0.0` | bind address (issue #58). ⚠️ see the warning below                                        |
-| `GRACEFUL_SHUTDOWN_S`          | `20`      | seconds uvicorn waits for in-flight requests (issue #55)                                  |
-| `RELOAD`                       | `false`   | filesystem auto-reload — development only                                                 |
-| `LOG_LEVEL`                    | `INFO`    | root logger level for the `python -m service.api` start path (issue #61)                  |
+| Variable              | Default   | Meaning                                                                                   |
+|-----------------------|-----------|-------------------------------------------------------------------------------------------|
+| `PORT`                | `8000`    | port the service **binds**, and the one `service/healthcheck.py` probes (issues #55, #58) |
+| `HOST`                | `0.0.0.0` | bind address (issue #58). ⚠️ see the warning below                                        |
+| `GRACEFUL_SHUTDOWN_S` | `20`      | seconds uvicorn waits for in-flight requests (issue #55)                                  |
+| `RELOAD`              | `false`   | filesystem auto-reload — development only                                                 |
+| `LOG_LEVEL`           | `INFO`    | root logger level for the `python -m service.api` start path (issue #61)                  |
+| `ALLOWED_ORIGINS`     | `*`       | CORS origins                                                                              |
+| `MAX_UPLOAD_MB`       | `5`       | upload size guard — no shared default across the five services                            |
+| `UDPIPE_URL`          | LINDAT    | attachable UDPipe 2 endpoint (issue #63); same variable name as atrium-translator         |
+| `NAMETAG_URL`         | LINDAT    | attachable NameTag 3 endpoint (issue #63)                                                 |
+| `MAX_CONCURRENT_JOBS` | `2`       | concurrent pipeline runs (also shields LINDAT)                                            |
+| `DEFAULT_KW_METHOD`   | `keybert` | default keyword backend                                                                   |
+| `API_JOB_TIMEOUT`     | `600`     | seconds a single job may run before it is killed                                          |
+| `MAX_WORDS`           | `30000`   | sync request word cap                                                                     |
+| `MAX_RESCALE_DIM`     | `100000`  | max target width/height for `/rescale`                                                    |
+| `API_JOBS_ROOT`       | see below | where per-job workspaces are created; computed from the repo root, not a literal          |
+| `API_KEEP_WORKSPACES` | unset     | keep per-request workspaces for debugging                                                 |
 
 `PORT` and `HOST` are read by `service/api.py`'s `__main__` block, which is what the `api`
 image's `ENTRYPOINT` (`python -m service.api`) runs. Before issue #58 the entrypoint baked

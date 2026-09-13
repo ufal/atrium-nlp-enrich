@@ -40,9 +40,22 @@ services:
         ATRIUM_RUNNER_IMAGE: ghcr.io/ufal/atrium-nlp-enrich:${ATRIUM_VERSION:-dev}-api
         ATRIUM_RUNNER_REPO: https://github.com/ufal/atrium-nlp-enrich
         ATRIUM_RUNNER_REF: ${ATRIUM_RUNNER_REF:-dev}
+    # env_file delivers every OTHER variable in .env.example into the container --
+    # LOG_LEVEL, HOST, GRACEFUL_SHUTDOWN_S, RELOAD, ALLOWED_ORIGINS, MAX_UPLOAD_MB,
+    # API_JOB_TIMEOUT, MAX_WORDS, MAX_RESCALE_DIM, API_JOBS_ROOT and
+    # API_KEEP_WORKSPACES were all documented but undeliverable under compose until
+    # atrium-project#60 added this. `required: false` because .env is gitignored --
+    # a fresh clone has none and compose must still start.
+    env_file:
+      - path: .env
+        required: false
     environment:
-      MAX_CONCURRENT_JOBS: "2"
-      DEFAULT_KW_METHOD: "keybert"
+      # These two were literals until atrium-project#60 -- a literal here OVERRIDES
+      # whatever .env says, so `MAX_CONCURRENT_JOBS=8 docker compose up` was
+      # silently reset to 2. ${VAR:-default} lets .env (or a shell export) win while
+      # keeping the same default when neither is set.
+      MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-2}
+      DEFAULT_KW_METHOD: ${DEFAULT_KW_METHOD:-keybert}
       HF_HOME: /cache/huggingface
       PORT: ${PORT:-8000}
       # Also needed on the api service: /info reports these and ?deep=true
