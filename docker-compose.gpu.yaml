@@ -1,6 +1,6 @@
-# GPU override — combine with docker-compose.yml:
-#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm nlp
-#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile llm run --rm nlp-llm
+# GPU override — combine with docker-compose.yaml:
+#   docker compose -f docker-compose.yaml -f docker-compose.gpu.yaml run --rm nlp
+#   docker compose -f docker-compose.yaml -f docker-compose.gpu.yaml --profile llm run --rm nlp-llm
 #
 # Requires NVIDIA Container Toolkit on the host:
 #   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html

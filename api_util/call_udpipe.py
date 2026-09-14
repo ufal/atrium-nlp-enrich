@@ -138,7 +138,7 @@ def main():
     parser.add_argument(
         "--url",
         # `or` rather than a get() default: a container started from
-        # docker-compose.yml always HAS this variable, possibly empty (the
+        # docker-compose.yaml always HAS this variable, possibly empty (the
         # `${UDPIPE_URL:-}` passthrough), and get(key, default) returns the
         # empty string in that case — which would POST to "". Empty means
         # "unset" here, matching bash's ${VAR:-default} in config_api.txt.
