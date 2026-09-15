@@ -193,7 +193,7 @@ error).
 | `MAX_WORDS`           | `30000`   | sync request word cap                                                                     |
 | `MAX_RESCALE_DIM`     | `100000`  | max target width/height for `/rescale`                                                    |
 | `API_JOBS_ROOT`       | see below | where per-job workspaces are created; computed from the repo root, not a literal          |
-| `API_KEEP_WORKSPACES` | unset     | keep per-request workspaces for debugging                                                 |
+| `API_KEEP_WORKSPACES` | unset     | keep per-request workspaces for debugging -- survives only as long as the pod (#35)       |
 
 `PORT` and `HOST` are read by `service/api.py`'s `__main__` block, which is what the `api`
 image's `ENTRYPOINT` (`python -m service.api`) runs. Before issue #58 the entrypoint baked

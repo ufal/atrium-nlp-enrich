@@ -11,7 +11,7 @@ The core campaign workflow consists of:
 
 | File                                 | Purpose                                                                     |
 |--------------------------------------|-----------------------------------------------------------------------------|
-| `docker-compose.yml`, `.env.example` | Standalone Label Studio campaign deployment (host port 8001)                |
+| `docker-compose.yml`, `env.example`  | Standalone Label Studio campaign deployment (host port 8001)                |
 | `archaeo_labels.xml`                 | 6-type XML label configuration for Label Studio interface                   |
 | `GUIDELINES.md`                      | Boundary rules and entity definitions for annotators                        |
 | `conllu_to_ls.py`                    | Converts UDPipe CoNLL-U or NameTag TSV into Label Studio task JSON          |
@@ -25,7 +25,7 @@ Deploy the campaign server using Docker Compose:
 
 ```bash
 cd annotation
-cp .env.example .env          # Edit LS_ADMIN_USERNAME and LS_ADMIN_PASSWORD
+cp env.example .env           # Edit LS_ADMIN_USERNAME and LS_ADMIN_PASSWORD
 docker compose up -d          # Access interface at http://localhost:8001
 ```
 
