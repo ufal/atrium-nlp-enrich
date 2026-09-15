@@ -92,14 +92,28 @@ def _base_meta(config_path: Path, overrides_path: Optional[Path] = None) -> Dict
 # ── writing, with --check ─────────────────────────────────────────────────────
 
 
+_CHECK_BLANKED_KEYS = ('"generated_utc"', '"tool_version"')
+
+
 def _normalise_for_check(text: str) -> str:
-    """Blank the timestamp on both sides so --check compares content, not clock."""
+    """Blank fields that vary independently of taxonomy content so --check compares
+    content, not clock or provenance stamps.
+
+    ``generated_utc`` moves on every run (the clock). ``tool_version`` is read from
+    para_config.txt's ``[tool] version`` — a paradata/licensing marker bumped for
+    reasons that have nothing to do with data_samples/taxonomy_config.json or
+    taxonomy_overrides.json. Comparing either verbatim makes this drift gate fire on
+    an unrelated para_config.txt edit even though the nested vocabulary a fresh build
+    would produce is byte-identical, which is exactly the false positive this gate
+    must not have (see the drift-vs-no-drift contract in the module docstring).
+    """
     out = []
     for line in text.splitlines(keepends=True):
-        if '"generated_utc"' in line:
+        key = next((k for k in _CHECK_BLANKED_KEYS if k in line), None)
+        if key is not None:
             indent = line[: len(line) - len(line.lstrip())]
             comma = "," if line.rstrip().endswith(",") else ""
-            out.append(f'{indent}"generated_utc": "{CHECK_PLACEHOLDER}"{comma}\n')
+            out.append(f'{indent}{key}: "{CHECK_PLACEHOLDER}"{comma}\n')
         else:
             out.append(line)
     return "".join(out)
