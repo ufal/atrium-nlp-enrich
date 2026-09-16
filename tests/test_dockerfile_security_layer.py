@@ -43,6 +43,20 @@ rather than breaking:
 This file deliberately has no imports beyond the standard library and no
 repo-local helper import, so that it is byte-identical in all five tool repos
 (``preconditions: []`` in ``docs/templates/shared/MANIFEST.json``).
+
+It is also a ruff-format FIXED POINT at line-length 100 *and* 120 -- the two values
+in use across this ecosystem (100 in nlp-enrich and llm-enrich, 120 in the other
+three). ``docs/templates/ruff.toml``'s ``[format] exclude`` already shields the
+canonical files from being reflowed by whichever repo committed last, but that
+protection is a config entry someone can omit; being stable at both widths means an
+omission cannot split this file into two variants the way it split
+``tests/test_document_originators.py`` on 2026-08-05. If you edit a message here,
+re-check with::
+
+    ruff format --line-length 100 --diff tests/test_dockerfile_security_layer.py
+    ruff format --line-length 120 --diff tests/test_dockerfile_security_layer.py
+
+Both must report no change.
 """
 
 from __future__ import annotations
@@ -115,7 +129,7 @@ def test_upgrade_runs_as_root():
     assert user_switch != -1, "the non-root USER switch is gone — that is its own problem"
     assert upgrade < user_switch, (
         f"apt-get upgrade at line {upgrade + 1} runs after USER atrium at line "
-        f"{user_switch + 1}; apt requires root"
+        f"{user_switch + 1}; apt requires root, so the build would fail outright here"
     )
 
 
@@ -123,5 +137,5 @@ def test_base_image_is_still_a_known_distro():
     """If the base moves off Debian, `apt-get upgrade` stops being the right fix."""
     assert re.search(r"^FROM\s+python:3\.11-slim", DOCKERFILE, re.MULTILINE), (
         "base image changed; re-check that apt-get upgrade is still the correct "
-        "mechanism for applying security patches"
+        "mechanism for applying this distribution's available security patches"
     )
