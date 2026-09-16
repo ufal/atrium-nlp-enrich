@@ -64,12 +64,38 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 # Inline rather than `from atrium_test_support import REPO_ROOT`: that helper
 # exists in exactly one of the five tool repos, and this file has to be
 # byte-identical in all of them to be para-drift-guarded.
 REPO_ROOT = Path(__file__).resolve().parents[1]
+DOCKERFILE_PATH = REPO_ROOT / "Dockerfile"
 
-DOCKERFILE = (REPO_ROOT / "Dockerfile").read_text()
+# In a tool repo this file sits at tests/, so REPO_ROOT is the repo root and the
+# Dockerfile is beside it. In the hub the canonical copy sits at
+# docs/templates/shared/, so REPO_ROOT is docs/templates/ -- which is why
+# `docs/templates/Dockerfile` exists: the hub's reference Dockerfile template is
+# then held to the same five assertions as the five real ones, by the same file.
+#
+# The skip is the safety net for every OTHER context. Reading the Dockerfile at
+# import time with no guard turns a missing file into a COLLECTION ERROR, which
+# does not fail one test -- it aborts the whole run. That is not hypothetical:
+# this file shipped without the guard on 2026-09-16 and broke `pytest` at the hub
+# root and `hub-self-check.yml`'s "Run canonical shared-module tests" step, which
+# runs `pytest .` with working-directory docs/templates/shared. Every other
+# canonical test that inspects a consuming repo's tree (test_logging_contract.py,
+# test_env_contract.py) already skips at module level for exactly this reason.
+# An honest skip beats an aborted run.
+if not DOCKERFILE_PATH.is_file():
+    pytest.skip(
+        f"no Dockerfile at {DOCKERFILE_PATH} -- this file inspects a TOOL REPO's "
+        "Dockerfile, or the hub's docs/templates/Dockerfile when run from "
+        "docs/templates/shared/ (atrium-project#53)",
+        allow_module_level=True,
+    )
+
+DOCKERFILE = DOCKERFILE_PATH.read_text()
 LINES = DOCKERFILE.splitlines()
 
 
