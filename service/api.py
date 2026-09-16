@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -54,12 +55,23 @@ _semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
 _SERVICE_DIR = Path(__file__).resolve().parent
 _state = ServiceState()
 
+# (12-factor XI) No basicConfig() here -- this module is imported by api's own
+# __main__ and by tests; the entry point decides handlers and level. (issue #61)
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _manager.warmup, DEFAULT_KW_METHOD)
     _state.warm = True
+    # issue #35: /jobs state (service/jobs.py's _jobs dict) is process-local -- this
+    # service expects a single replica. Said once at boot, in the log a partner
+    # reads when something is already wrong, not only in the 404 body.
+    logger.info(
+        "nlp-enrich: /jobs state is process-local; expects a single replica "
+        "(atrium-project#53 factors IV/VI)"
+    )
     # issue #55: composes with the existing warmup above rather than replacing it.
     # Installs the SIGTERM/SIGINT handling that flips /ready to 503 and, on shutdown,
     # waits for in-flight requests AND any job tracked via _state.track() (see
@@ -517,11 +529,22 @@ async def submit_job(
     return {"job_id": job.job_id, "status": "queued"}
 
 
+# nlp-enrich is the ecosystem's only stateful service: _jobs is a process-local
+# dict (service/jobs.py), so a job's record does not survive a restart and is not
+# visible to any other replica (atrium-project#53 factors IV/VI, atrium-project
+# docs/k8s_deployment.md "Known limits"). Name that in the 404 rather than leaving
+# it a bare "not found", so an operator seeing an intermittent 404 has the answer.
+_JOB_NOT_FOUND_DETAIL = (
+    "Job not found (job ids are local to the replica that accepted the request -- "
+    "see atrium-project#53 factors IV/VI)"
+)
+
+
 @app.get("/jobs/{job_id}")
 async def get_job_status(job_id: str):
     job = _jobs.get(job_id)
     if not job:
-        raise HTTPException(404, "Job not found") from None
+        raise HTTPException(status_code=404, detail=_JOB_NOT_FOUND_DETAIL) from None
     return {"job_id": job_id, "status": job.status, "error": job.error}
 
 
@@ -529,7 +552,7 @@ async def get_job_status(job_id: str):
 async def get_job_result(job_id: str):
     job = _jobs.get(job_id)
     if not job:
-        raise HTTPException(404, "Job not found") from None
+        raise HTTPException(status_code=404, detail=_JOB_NOT_FOUND_DETAIL) from None
     if job.status != "done":
         raise HTTPException(409, f"Job not complete (status: {job.status})") from None
     return job.result
@@ -540,4 +563,55 @@ async def cleanup_job(job_id: str):
     if job_id in _jobs:
         del _jobs[job_id]
         return {"status": "deleted"}
-    raise HTTPException(status_code=404, detail="Job not found") from None
+    raise HTTPException(status_code=404, detail=_JOB_NOT_FOUND_DETAIL) from None
+
+
+if __name__ == "__main__":
+    import logging
+    import os
+    import sys
+
+    import uvicorn
+
+    # (12-factor XI) Logs are an event stream: emit to stdout and let the supervisor
+    # route them. The library modules only getLogger(); this is the one place allowed
+    # to configure handlers. The format string is alto-postprocess's, verbatim, in all
+    # five services — a partner tailing five logs wants one shape, and format drift is
+    # never fixed later. (issue #61)
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stdout,
+    )
+
+    # (12-factor VII) The service exports itself by binding a port, and which port is
+    # configuration. This was baked into an exec-form ENTRYPOINT array, where no shell
+    # exists to expand a variable even if one is set — while the reference manifest we
+    # hand ARÚP/ARÚB (atrium-project docs/templates/k8s/atrium-service.deployment.yaml)
+    # declares `env: PORT` and service/healthcheck.py already reads it. Setting PORT
+    # therefore moved the health PROBE and not the listener, so the container reported
+    # unhealthy forever rather than simply ignoring the knob. (issue #58)
+    reload = os.getenv("RELOAD", "false").strip().lower() in ("true", "1", "yes", "on")
+
+    # uvicorn needs an IMPORT STRING to respawn workers on reload; everywhere else the
+    # app OBJECT is correct and strictly better. Passing a string under the container
+    # entrypoint (`python -m service.api`) re-imports this module under its real name
+    # while it is already running as __main__: the whole body executes twice, and the
+    # copy uvicorn serves is not the one __main__ built. __spec__ is None under a direct
+    # `python api.py` from service/ (service/README.md's documented start), where no
+    # import string resolves anyway — so reload degrades to a uvicorn warning there
+    # instead of silently pretending to be on.
+    _app_ref = f"{__spec__.name}:app" if reload and __spec__ is not None else app
+
+    uvicorn.run(
+        _app_ref,
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8000")),
+        reload=reload,
+        # (12-factor IX) Disposability: this is the `--timeout-graceful-shutdown 20`
+        # that moved off the ENTRYPOINT line when the port became configurable. It
+        # bounds uvicorn's wait for in-flight requests; serve_lifecycle() adds its own
+        # drain on top, and docs/k8s_deployment.md in the hub carries the full grace
+        # budget the two have to fit inside. (issue #55)
+        timeout_graceful_shutdown=int(os.getenv("GRACEFUL_SHUTDOWN_S", "20")),
+    )

@@ -200,7 +200,10 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True, help="Directory for per-page TSV output.")
     parser.add_argument(
         "--url",
-        default=os.environ.get("NAMETAG_URL", NAMETAG_URL),
+        # See the matching note in call_udpipe.py: an empty NAMETAG_URL (which
+        # is what a compose container carries when the operator sets nothing)
+        # must mean "unset", not "post to the empty string".
+        default=os.environ.get("NAMETAG_URL") or NAMETAG_URL,
         help="NameTag API endpoint URL.",
     )
     parser.add_argument("--timeout", type=int, default=60)

@@ -8,6 +8,7 @@ import collections
 import csv
 import io
 import json
+import logging
 import os
 import re
 import shutil
@@ -32,6 +33,8 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from atrium_document import FILE_SUFFIX, load_document  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 _CONFIG_TEMPLATE = _REPO_ROOT / "config_api.txt"
 _RUN_PIPELINE = _REPO_ROOT / "run_pipeline.py"
@@ -219,6 +222,23 @@ _RELOCATED_KEYS = {
 
 _ASSIGN_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
 
+#: Right-hand sides written as ``${VAR:-default}`` so that `source config_api.txt`
+#: cannot clobber a deployment-set variable (atrium-project#63, see the comment
+#: above ``UDPIPE_URL`` in config_api.txt). The shell resolves this form; a plain
+#: text read of the file does not, so ``config_facts`` must unwrap it or the raw
+#: ``${…}`` string reaches ``_deep_health``'s urllib call and every deep probe
+#: reports "backend unreachable".
+_SHELL_DEFAULT_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*):-(.*)\}$", re.DOTALL)
+
+#: Config keys whose value the environment is allowed to override at run time —
+#: the attachable backing services. The stage scripts resolve these through the
+#: shell, so reporting the file's default here would name a host the pipeline
+#: does not call. Model/limit keys are deliberately absent: they are file-only.
+_ENV_OVERRIDABLE = {
+    "UDPIPE_URL": "udpipe_url",
+    "NAMETAG_URL": "nametag_url",
+}
+
 
 def _derive_config(workspace: Path) -> Path:
     out = workspace / "config_api.txt"
@@ -283,6 +303,50 @@ def _stage_env(job_id: str = "") -> Dict[str, str]:
     return env
 
 
+def _run_and_log(
+    cmd: List[str],
+    cwd: Path,
+    env: Dict[str, str],
+    timeout: Optional[float] = None,
+) -> Tuple[int, str]:
+    """Run *cmd* and relay its combined stdout+stderr to the service logger
+    (issue #61) instead of letting ``capture_output=True`` discard it once this
+    function returns.
+
+    ``run_pipeline.py`` (the child here) itself runs each stage script
+    (api_1_manifest.sh … api_4_stats.sh) with its OWN stdout/stderr inherited
+    rather than captured, and those scripts' own ``log()`` helper
+    (api_util/api_common.sh) already ``tee``s to both ``$LOG_FILE`` and its
+    stdout/stderr — so everything a partner needs was always reaching this
+    process's pipes. ``capture_output=True`` just stopped it from going
+    anywhere onward once collected. This relays it to the service's own event
+    stream instead, so it reaches ``docker logs`` before the request returns
+    (or the healthcheck answers) rather than never at all.
+
+    Still just ``subprocess.run(..., capture_output=True)`` underneath —
+    deliberately, so every existing ``patch("service.enrichment.subprocess.run")``
+    test fixture keeps working unchanged — and returns the exact (returncode,
+    tail) pair every caller already depends on: *tail* is still the last 4000
+    characters of combined output, used verbatim in ``PipelineError`` messages
+    and ``EnrichmentResult.stdout_tail``. A hung child still raises
+    ``subprocess.TimeoutExpired`` when *timeout* is given, unchanged from
+    today — the reason ``dry_run()``'s Docker-healthcheck caller can bound it
+    at all.
+    """
+    proc = subprocess.run(
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    combined = proc.stdout + proc.stderr
+    for line in combined.splitlines():
+        logger.info(line)
+    return proc.returncode, combined[-4000:]
+
+
 def _detect_kw_method_used(out_dir: Path) -> str:
     """Return which keyword backend produced output in *out_dir*.
 
@@ -320,9 +384,9 @@ class PipelineManager:
             from keywords import DEFAULT_KEYBERT_MODEL, _get_keybert_model
 
             _get_keybert_model(DEFAULT_KEYBERT_MODEL)
-            print("[warmup] KeyBERT model loaded.")
+            logger.info("KeyBERT model loaded.")
         except Exception as exc:
-            print(f"[warmup] KeyBERT warmup failed: {exc}. Will degrade gracefully.")
+            logger.warning("KeyBERT warmup failed: %s. Will degrade gracefully.", exc)
 
     def config_facts(self) -> Dict[str, Any]:
         facts = {
@@ -347,7 +411,23 @@ class PipelineManager:
             if key in key_map:
                 val = raw.split("=", 1)[1].strip().strip('"').strip("'")
                 val = val.split("#", 1)[0].strip()
+                expanded = _SHELL_DEFAULT_RE.match(val)
+                if expanded:
+                    # "${UDPIPE_URL:-https://…}" → the default the shell would use
+                    # when the variable is unset. The environment branch below
+                    # covers the case where it is set.
+                    val = expanded.group(2).strip()
                 facts[key_map[key]] = val
+
+        # Environment wins over the file, matching the precedence the stage
+        # scripts implement (atrium-project#63). Without this, /info and the
+        # ?deep=true probe in service/api.py would report and HEAD-request the
+        # file's default while the pipeline talked to the operator's endpoint.
+        for env_key, fact_key in _ENV_OVERRIDABLE.items():
+            env_val = os.environ.get(env_key, "").strip()
+            if env_val:
+                facts[fact_key] = env_val
+
         return facts
 
     def dry_run(self, kw_method: str = "keybert") -> Tuple[int, str]:
@@ -366,15 +446,7 @@ class PipelineManager:
         try:
             cfg = _derive_config(ws)
             cmd = [sys.executable, str(_RUN_PIPELINE), "--config", str(cfg), "--dry-run"]
-            proc = subprocess.run(
-                cmd,
-                cwd=str(_REPO_ROOT),
-                env=_stage_env(),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            return proc.returncode, (proc.stdout + proc.stderr)[-4000:]
+            return _run_and_log(cmd, cwd=_REPO_ROOT, env=_stage_env(), timeout=30)
         finally:
             if not _KEEP_WORKSPACES:
                 shutil.rmtree(ws, ignore_errors=True)
@@ -436,15 +508,7 @@ class PipelineManager:
                 if num_keywords is not None:
                     cmd.extend(["--num-keywords", str(num_keywords)])
 
-            proc = subprocess.run(
-                cmd,
-                cwd=str(_REPO_ROOT),
-                env=_stage_env(job_id),
-                capture_output=True,
-                text=True,
-            )
-            rc = proc.returncode
-            tail = (proc.stdout + proc.stderr)[-4000:]
+            rc, tail = _run_and_log(cmd, cwd=_REPO_ROOT, env=_stage_env(job_id))
 
             if rc == 1:
                 raise PipelineError(

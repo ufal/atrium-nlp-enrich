@@ -14,7 +14,40 @@ ENV ATRIUM_RUNNER_IMAGE=${ATRIUM_RUNNER_IMAGE} \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     HF_HOME=/cache/huggingface
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# ── Distro security patches, applied at build time ───────────────────────────
+# `python:3.11-slim` is a floating TAG, and nothing in this ecosystem bumps it:
+# no repo declares a `docker` dependabot ecosystem (docker_gha_roadmap.md, H6),
+# so the base layer is whatever Docker Hub last rebuilt. On 2026-09-15 that layer
+# carried perl-base 5.40.1-6 with three FIXABLE CRITICAL CVEs — CVE-2026-13221,
+# CVE-2026-42496 and CVE-2026-8376, all fixed in 5.40.1-6+deb13u1. The release
+# gate in atrium-project's docker-tool.reusable.yml ("Fail the release on fixable
+# CRITICAL vulnerabilities") therefore failed on ALL THREE matrix targets of
+# v0.20.2 (run 34970419474), and because the promotion step is `if: success()`,
+# v0.20.2 was published by DIGEST ONLY: the `:0.20.2` and `:latest` tags were
+# never applied. The same commit passed on `master` and on `test`, because the
+# gate is `if: startsWith(github.ref, 'refs/tags/')` — only a release is stopped.
+#
+# `upgrade` rather than `install --only-upgrade perl-base`, deliberately. The gate
+# blocks on *fixable* CRITICALs — precisely those the distro already ships a patch
+# for — so the fix that matches the gate's own definition is "apply the distro's
+# available patches", not a package name that has to be edited by hand the next
+# time a different one is announced.
+#
+# CACHE INTERACTION, which is what makes this hold rather than run once: the build
+# uses `cache-from: type=gha`, so an apt layer high in the file would be served
+# from cache forever and silently stop patching. It sits HERE, immediately after
+# the ENV block that embeds ATRIUM_RUNNER_REF, because CI passes that as
+# `github.ref_name` — a value unique to each release tag. The ENV layer therefore
+# changes on every release, busting this layer with it, so every released image is
+# scanned against a freshly patched base while day-to-day `test` pushes still hit
+# the cache. Do not move this above the ENV block.
+#
+# One apt layer, not two: the upgrade and the install share a single `apt-get
+# update`, so the package lists are fetched once and removed once.
+# Guarded by tests/test_dockerfile_security_layer.py (atrium-project#53).
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
         ca-certificates \
         bash \
     && rm -rf /var/lib/apt/lists/*
@@ -48,18 +81,39 @@ RUN pip install -r service_requirements.txt
 RUN chown -R atrium:atrium /app
 USER atrium
 
+# EXPOSE tracks the DEFAULT port: it is image metadata and cannot read $PORT at
+# runtime. Set PORT to move the listener, and publish with `-p <port>:<port>` to
+# match. (issue #58)
 EXPOSE 8000
-# Issue #55 container contract, restored 2026-09-09 to match the default branch.
-# STOPSIGNAL is already SIGTERM by default; declared so a later edit cannot change it
-# silently — service/api.py's lifespan chains to uvicorn's own handler for it via
-# serve_lifecycle (service/atrium_service.py). --timeout-graceful-shutdown bounds
-# uvicorn's wait for in-flight requests, and --start-period on HEALTHCHECK covers the
-# first-run model download.
-#
-# This branch had shipped service/healthcheck.py with nothing referencing it and no
-# HEALTHCHECK at all, while service/README.md documented the behaviour as live.
+
+# STOPSIGNAL is the default (SIGTERM) — declared explicitly so it is never silently
+# changed by a future edit; service/api.py's lifespan (via serve_lifecycle,
+# service/atrium_service.py) chains to uvicorn's own handler for it (issue #55).
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["uvicorn", "service.api:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "20"]
+
+# PORT and HOST are read by service/api.py's __main__ block; PORT is also the port
+# service/healthcheck.py probes, which is why setting it used to make the container
+# permanently unhealthy — the probe moved and the listener did not. Declared here so
+# `docker inspect` is self-documenting and so the probe still has a value if the code
+# default ever drifts. (issue #58)
+#
+# GRACEFUL_SHUTDOWN_S carries the `--timeout-graceful-shutdown 20` that used to sit on
+# the ENTRYPOINT line. It bounds uvicorn's own wait for in-flight HTTP
+# requests (20s here; nlp-enrich's background /jobs queue is a SEPARATE mechanism — see
+# service/api.py's ServiceState.track() — not covered by this budget at all, since a
+# job-submission request has already returned before the job finishes). --start-period
+# on HEALTHCHECK below covers first-run model downloads; see docs/docker_gha.md §3.4
+# and docs/k8s_deployment.md for the full grace-period budget this is sized against.
+ENV PORT=8000 GRACEFUL_SHUTDOWN_S=20
+
+# `python -m service.api`, NOT `python service/api.py`: a script launch puts
+# sys.path[0] at /app/service with no package context, so `from .atrium_service import ...`
+# raises "attempted relative import with no known parent package" before the app is
+# built. `-m` keeps sys.path[0] at /app — byte for byte the environment the old
+# `uvicorn service.api:app` entrypoint ran in, so every repo-root import still
+# resolves. (issue #58)
+ENTRYPOINT ["python", "-m", "service.api"]
+CMD []
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
     CMD ["python", "/app/service/healthcheck.py"]
 
@@ -71,7 +125,10 @@ FROM base AS llm
 
 USER root
 COPY requirements_llm.txt ./
-RUN pip install \
+
+# Dynamically remove the strict torch==2.7.0 pin so vllm can install its required version
+RUN sed -i '/^torch==/d' requirements_llm.txt \
+    && pip install \
         --extra-index-url https://download.pytorch.org/whl/cpu \
         -r requirements_llm.txt
 

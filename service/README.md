@@ -12,14 +12,18 @@ from every API entry point**.
 ./setup_api_service.sh                 # venv + deps + KeyBERT prefetch + serve
 # or, manually:
 pip install -r requirements.txt -r service/requirements.txt
+python -m service.api                  # honours PORT/HOST; default 0.0.0.0:8000
+# or, for development with auto-reload:
 uvicorn service.api:app --host 0.0.0.0 --port 8000
 ```
 
-Two-terminal smoke test:
+Two-terminal smoke test, using the zero-dependency client and the sample this branch
+carries. The default branch's development harness and its bulk sample corpus are
+trimmed from the skill branch by strategy §5, so this is the smoke path here:
 
 ```bash
 # terminal 2
-python service/test_api.py -f data_samples/DOC_LINE_CATEG/CTX000000001.csv
+python3 scripts/atrium_enrich.py small_data_samples/CTX000000001.csv
 ```
 
 ## Endpoints
@@ -36,13 +40,13 @@ python service/test_api.py -f data_samples/DOC_LINE_CATEG/CTX000000001.csv
 
 ### `POST /enrich` (multipart form)
 
-| Field          | Default    | Notes                                                   |
-|----------------|------------|---------------------------------------------------------|
-| `file`          | *required* | `.csv` (needs a `text` column), `.xlsx`, or `.txt`      |
-| `kw_method`     | `keybert`  | `keybert` \| `yake` \| `legacy` \| `none`               |
-| `num_keywords`  | `20`       | 1–100                                                   |
-| `lang`          | `cs`       | Czech-pinned in v1                                      |
-| `format`        | `json`     | `json` envelope, or `zip` of the workspace `OUTPUT_DIR` |
+| Field           | Default    | Notes                                                     |
+|-----------------|------------|-----------------------------------------------------------|
+| `file`          | *required* | `.csv` (needs a `text` column), `.xlsx`, or `.txt`        |
+| `kw_method`     | `keybert`  | `keybert` \| `yake` \| `legacy` \| `none`                 |
+| `num_keywords`  | `20`       | 1–100                                                     |
+| `lang`          | `cs`       | Czech-pinned in v1                                        |
+| `format`        | `json`     | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`   |
 | `document_json` | *optional* | baseline ATRIUM Document JSON to accrete onto — see below |
 
 `keybert` is the best/default backend. If its preflight fails at runtime the
@@ -174,23 +178,43 @@ error).
 
 ## Configuration (environment)
 
-| Variable                       | Default   | Meaning                                          |
-|--------------------------------|-----------|--------------------------------------------------|
-| `MAX_CONCURRENT_JOBS`          | `2`       | concurrent pipeline runs (also shields LINDAT)   |
-| `MAX_UPLOAD_MB`                | `5`       | upload size guard                                |
-| `MAX_WORDS`                    | `30000`   | sync request word cap                            |
-| `MAX_RESCALE_DIM`              | `100000`  | max target width/height for `/rescale`           |
-| `DEFAULT_KW_METHOD`            | `keybert` | default keyword backend                          |
-| `ALLOWED_ORIGINS`              | `*`       | CORS origins                                     |
-| `API_KEEP_WORKSPACES`          | unset     | keep per-request workspaces for debugging        |
-| `ATRIUM_RUNNER_IMAGE/REPO/REF` | —         | forwarded to the runner for provenance           |
-| `PORT`                         | `8000`    | port `service/healthcheck.py` probes (issue #55) |
+| Variable              | Default   | Meaning                                                                                   |
+|-----------------------|-----------|-------------------------------------------------------------------------------------------|
+| `PORT`                | `8000`    | port the service **binds**, and the one `service/healthcheck.py` probes (issues #55, #58) |
+| `HOST`                | `0.0.0.0` | bind address (issue #58). ⚠️ see the warning below                                        |
+| `GRACEFUL_SHUTDOWN_S` | `20`      | seconds uvicorn waits for in-flight requests (issue #55)                                  |
+| `RELOAD`              | `false`   | filesystem auto-reload — development only                                                 |
+| `LOG_LEVEL`           | `INFO`    | root logger level for the `python -m service.api` start path (issue #61)                  |
+| `ALLOWED_ORIGINS`     | `*`       | CORS origins                                                                              |
+| `MAX_UPLOAD_MB`       | `5`       | upload size guard — no shared default across the five services                            |
+| `UDPIPE_URL`          | LINDAT    | attachable UDPipe 2 endpoint (issue #63); same variable name as atrium-translator         |
+| `NAMETAG_URL`         | LINDAT    | attachable NameTag 3 endpoint (issue #63)                                                 |
+| `MAX_CONCURRENT_JOBS` | `2`       | concurrent pipeline runs (also shields LINDAT)                                            |
+| `DEFAULT_KW_METHOD`   | `keybert` | default keyword backend                                                                   |
+| `API_JOB_TIMEOUT`     | `600`     | seconds a single job may run before it is killed                                          |
+| `MAX_WORDS`           | `30000`   | sync request word cap                                                                     |
+| `MAX_RESCALE_DIM`     | `100000`  | max target width/height for `/rescale`                                                    |
+| `API_JOBS_ROOT`       | see below | where per-job workspaces are created; computed from the repo root, not a literal          |
+| `API_KEEP_WORKSPACES` | unset     | keep per-request workspaces for debugging -- survives only as long as the pod (#35)       |
+
+`PORT` and `HOST` are read by `service/api.py`'s `__main__` block, which is what the `api`
+image's `ENTRYPOINT` (`python -m service.api`) runs. Before issue #58 the entrypoint baked
+`--port 8000` into an exec-form array — which runs no shell, so `$PORT` could not expand —
+while `service/healthcheck.py` read it. Setting `PORT` therefore moved the health *probe*
+and not the listener, and the container reported unhealthy forever.
+
+> ⚠️ `HOST=127.0.0.1` yields a container that reports **healthy** and serves nobody:
+> `service/healthcheck.py` always probes loopback by design and never reads `HOST`, so a
+> loopback bind passes every probe while being unreachable from outside the container.
+
 
 ## Shutdown behavior (issue #55)
 
 The `api` image declares `HEALTHCHECK` (shallow `GET /health`, via the vendored
-`service/healthcheck.py`) and `STOPSIGNAL SIGTERM`, and its `ENTRYPOINT` passes
-`--timeout-graceful-shutdown 20`.
+`service/healthcheck.py`) and `STOPSIGNAL SIGTERM`, and sets `ENV GRACEFUL_SHUTDOWN_S=20`,
+which `service/api.py`'s `__main__` block passes to uvicorn as
+`timeout_graceful_shutdown`. (It was the `--timeout-graceful-shutdown 20` CLI flag until
+issue #58 moved the whole start command into that block so `$PORT` could be honoured.)
 
 On `SIGTERM` the service:
 
@@ -213,16 +237,3 @@ grace-period budget and the Kubernetes probe contract.
 The container exits **143** (128 + SIGTERM) after a clean shutdown, not 0 — uvicorn
 re-raises the captured signal on purpose so a supervisor sees the real cause. That is a
 normal stop, not a crash.
-
-## Tests
-
-`tests/test_api_service.py` is fully hermetic (no LINDAT, no models): it
-monkeypatches the pipeline subprocess to drop fixture outputs into the
-workspace, then exercises the full HTTP contract via FastAPI `TestClient`,
-plus input normalization, `doc_id` sanitization, and exit-code→HTTP mapping.
-`tests/test_rescale.py` covers the `/rescale` transform and endpoint (including
-the non-well-formed `<name>…</n>` TEITOK quirk).
-
-```bash
-pytest -m "not slow" tests/test_api_service.py tests/test_rescale.py
-```
