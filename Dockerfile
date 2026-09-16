@@ -14,7 +14,40 @@ ENV ATRIUM_RUNNER_IMAGE=${ATRIUM_RUNNER_IMAGE} \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     HF_HOME=/cache/huggingface
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# ── Distro security patches, applied at build time ───────────────────────────
+# `python:3.11-slim` is a floating TAG, and nothing in this ecosystem bumps it:
+# no repo declares a `docker` dependabot ecosystem (docker_gha_roadmap.md, H6),
+# so the base layer is whatever Docker Hub last rebuilt. On 2026-09-15 that layer
+# carried perl-base 5.40.1-6 with three FIXABLE CRITICAL CVEs — CVE-2026-13221,
+# CVE-2026-42496 and CVE-2026-8376, all fixed in 5.40.1-6+deb13u1. The release
+# gate in atrium-project's docker-tool.reusable.yml ("Fail the release on fixable
+# CRITICAL vulnerabilities") therefore failed on ALL THREE matrix targets of
+# v0.20.2 (run 34970419474), and because the promotion step is `if: success()`,
+# v0.20.2 was published by DIGEST ONLY: the `:0.20.2` and `:latest` tags were
+# never applied. The same commit passed on `master` and on `test`, because the
+# gate is `if: startsWith(github.ref, 'refs/tags/')` — only a release is stopped.
+#
+# `upgrade` rather than `install --only-upgrade perl-base`, deliberately. The gate
+# blocks on *fixable* CRITICALs — precisely those the distro already ships a patch
+# for — so the fix that matches the gate's own definition is "apply the distro's
+# available patches", not a package name that has to be edited by hand the next
+# time a different one is announced.
+#
+# CACHE INTERACTION, which is what makes this hold rather than run once: the build
+# uses `cache-from: type=gha`, so an apt layer high in the file would be served
+# from cache forever and silently stop patching. It sits HERE, immediately after
+# the ENV block that embeds ATRIUM_RUNNER_REF, because CI passes that as
+# `github.ref_name` — a value unique to each release tag. The ENV layer therefore
+# changes on every release, busting this layer with it, so every released image is
+# scanned against a freshly patched base while day-to-day `test` pushes still hit
+# the cache. Do not move this above the ENV block.
+#
+# One apt layer, not two: the upgrade and the install share a single `apt-get
+# update`, so the package lists are fetched once and removed once.
+# Guarded by tests/test_dockerfile_security_layer.py (atrium-project#53).
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
         ca-certificates \
         bash \
     && rm -rf /var/lib/apt/lists/*

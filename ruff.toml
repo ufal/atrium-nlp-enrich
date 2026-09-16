@@ -40,6 +40,7 @@ exclude = [
     "tests/test_atrium_vocab.py",
     "atrium_rocrate.py",
     "tests/test_atrium_rocrate.py",
+    "tests/test_dockerfile_security_layer.py",
     "tests/test_logging_contract.py",
     "tests/test_env_contract.py",
 ]
