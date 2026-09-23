@@ -43,18 +43,36 @@ SAVE_CONLLU_NE=true
 SAVE_TEITOK=true
 
 # ── Image Options ─────────────────────────────────────────────────────────────
-# OPTIONAL: Only required if your companion PNG/JPEG display images have been resized
-# to a different target resolution relative to ABBYY's baseline dimensions.
-# If left empty, the pipeline calibrates layout shifts natively using ALTO PrintSpace.
+# TEITOK bboxes are page-image pixels with the origin at the page's top-left corner —
+# the convention of the TEITOK tools themselves (flexiconv, teitok-tools).
+# INPUT_PAGES_DIR: per-page images named <doc_id>-<N>.<png|jpg|tif>; when present, bboxes
+#   are scaled to the image size (sx = image width / ALTO Page WIDTH).
+# IMAGE_DPI / ALTO_DPI: with no image, derive the scale from the ALTO MeasurementUnit
+#   (inch1200, mm10) or from ALTO_DPI for pixel units. Empty = no scaling.
+# BBOX_ORIGIN: "page" (default) keeps ALTO page coordinates; "printspace" subtracts the ALTO
+#   PrintSpace origin and declares a PrintSpace-sized <surface> — only for page images that
+#   were cropped to the print space.
 INPUT_PAGES_DIR=""
 IMAGE_DPI=""
 ALTO_DPI=""
+BBOX_ORIGIN="page"
+
+# REGENERATE_TEITOK: stage 4 skips documents whose .teitok.xml already exists (resume).
+# Set to true once after a TEITOK format change so old and new files never mix in one directory.
+REGENERATE_TEITOK=false
 
 # Source directory for non-tabular documents converted via Flexiconv (api_flexiconv.sh).
 INPUT_DOCS_DIR="$OUTPUT_DIR/DOCS"
+# flexiconv's TEITOK goes to its own subdirectory: it is a different TEITOK profile (no
+# UDPipe/NameTag annotation), gated with `validate_teitok_xml.py --profile core`, and
+# excluded from stage 4's writer-XSD gate. Point keywords.py -i / llm_config INPUT_DIR here.
+TEITOK_FLEXICONV_DIR="$TEITOK_OUTPUT_DIR/flexiconv"
+# Re-convert documents whose output already exists (default: keep them, resume-safe).
+FLEXICONV_FORCE=false
 
 # Extensions the Flexiconv step ingests (space/comma separated, no dot). Empty = disabled.
-FLEXICONV_FORMATS="pdf docx odt rtf html htm md txt epub tei conllu vert folia srt"
+# xml/hocr: flexiconv detects PAGE XML, ALTO, TEI and TEITOK by content, hOCR by extension.
+FLEXICONV_FORMATS="pdf docx odt rtf html htm md txt epub tei conllu vert folia srt xml hocr"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # run_pipeline.py (merged runner) knobs

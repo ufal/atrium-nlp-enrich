@@ -27,7 +27,10 @@ repository_fallback = https://github.com/ufal/atrium-nlp-enrich
 #   * YAKE is AGPL-3.0 (LIAAD/yake PyPI package); KeyBERT is MIT and pulls in
 #     sentence-transformers (Apache-2.0). These are conditional: they only
 #     constrain the optional keyword-extraction step that actually loads them.
-nametag3_models   = CC BY-NC-SA 4.0 ; always      ; NameTag 3 Czech CNEC 2.0 NER model (api_3_nt)
+#   * flexiconv (UFAL, optional; api_flexiconv.sh) declares GPL-3.0-or-later in its
+#     pyproject.toml (checked at the pinned v0.3.10; the repo has no LICENSE file).
+#     Conditional: it only constrains runs that actually convert documents with it.
+nametag3_models   = CC BY-NC-SA 4.0 ; always      ; NameTag 3 NER model — multilingual OntoNotes by default, Czech CNEC 2.0 optional (api_3_nt)
 udpipe2_models    = CC BY-NC-SA 4.0 ; always      ; UDPipe 2 czech-pdt UD model (api_2_udp)
 nametag3_engine   = MPL 2.0         ; conditional ; NameTag 3 engine (Lindat API, MPL 2.0)
 udpipe2_engine    = MPL 2.0         ; conditional ; UDPipe 2 engine (Lindat API, MPL 2.0)
@@ -35,6 +38,7 @@ ker               = MIT             ; conditional ; legacy KER lemma-frequency k
 yake              = AGPL-3.0        ; conditional ; YAKE statistical keyword extraction (LIAAD/yake)
 keybert           = MIT             ; conditional ; KeyBERT embedding-based keyword extraction
 sentence_transformers = Apache-2.0  ; conditional ; sentence-transformers backbone for KeyBERT
+flexiconv         = GPL-3.0         ; conditional ; flexiconv document → TEITOK converter (api_flexiconv.sh)
 #   * The AMCR heslar and the TEATER thesaurus are both CC BY-NC 4.0 (AMCR's OAI
 #     Identify response carries a rightsReference to by-nc/4.0; TEATER declares the
 #     same on its home page). Conditional, because a core run

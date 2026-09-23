@@ -38,7 +38,9 @@ PARA_STATE=$(python3 atrium_paradata.py start \
         "alto_dir=${INPUT_ALTO_DIR:-}" \
         "pages_dir=${INPUT_PAGES_DIR:-}" \
         "dpi=${IMAGE_DPI:-}" \
-        "alto_dpi=${ALTO_DPI:-}")
+        "alto_dpi=${ALTO_DPI:-}" \
+        "bbox_origin=${BBOX_ORIGIN:-page}" \
+        "regenerate_teitok=${REGENERATE_TEITOK:-false}")
 
 TOTAL=$(find "${CONLLU_INPUT_DIR}" -name '*.conllu' -type f | wc -l)
 rm -f "${OUTPUT_DIR}/summary_ne_counts.csv"
@@ -59,6 +61,13 @@ while IFS= read -r -d '' conllu; do
 
     mkdir -p "$doc_out_dir"
     mkdir -p "$tt_out_dir"
+
+    # REGENERATE_TEITOK=true: rewrite TEITOK that a previous run left behind (e.g. in an
+    # older writer format -- see <application ident="atrium-nlp-enrich" version=...>)
+    # instead of letting the resume check below keep it.
+    if [ "${REGENERATE_TEITOK:-false}" = "true" ] && [ "${SAVE_TEITOK:-true}" = "true" ]; then
+        rm -f "${tt_out_dir}/${doc_name}.teitok.xml"
+    fi
 
     csv_done=true;    conllu_done=true;    teitok_done=true
     [ "${SAVE_CSV:-true}"       = "true" ] && [ ! -f "${doc_out_dir}/${doc_name}.csv"         ] && csv_done=false
@@ -86,6 +95,9 @@ while IFS= read -r -d '' conllu; do
             --pages-dir      "${INPUT_PAGES_DIR:-}" \
             --dpi            "${IMAGE_DPI:-}" \
             --alto-dpi       "${ALTO_DPI:-}" \
+            --bbox-origin    "${BBOX_ORIGIN:-page}" \
+            --model-udpipe   "${MODEL_UDPIPE:-}" \
+            --model-nametag  "${MODEL_NAMETAG:-}" \
             --summary-csv    "${OUTPUT_DIR}/summary_ne_counts.csv" \
             --state-dir      "${PARADATA_DIR}" \
             $DOC_JSON_FLAGS; then
@@ -127,6 +139,10 @@ done < <(find "${CONLLU_INPUT_DIR}" -name '*.conllu' -type f -print0)
 # gate — without the flag an empty run died here on "target directory does
 # not exist", masking the real reason.
 #
+# --exclude: flexiconv's output (api_flexiconv.sh, TEITOK_FLEXICONV_DIR, by default a
+# subdirectory of TEITOK_OUTPUT_DIR) is another TEITOK profile. api_flexiconv.sh gates it
+# with --profile core; this writer's XSD would reject it.
+#
 # The failure path mirrors the summarize_nt_udp one above: record the reason
 # in paradata and mirror it into $LOG_FILE before halting, so a red run is
 # diagnosable from the log and the run record is not left dangling. We use an
@@ -135,7 +151,8 @@ done < <(find "${CONLLU_INPUT_DIR}" -name '*.conllu' -type f -print0)
 # OUTPUT_DIR, side effects this script deliberately avoids.
 if [ "${SAVE_TEITOK:-true}" = "true" ]; then
     echo "Validating TEITOK XML output contract..."
-    if ! python3 api_util/validate_teitok_xml.py "${TEITOK_OUTPUT_DIR}" --allow-empty; then
+    if ! python3 api_util/validate_teitok_xml.py "${TEITOK_OUTPUT_DIR}" --allow-empty \
+            --exclude "${TEITOK_FLEXICONV_DIR:-${TEITOK_OUTPUT_DIR}/flexiconv}"; then
         python3 atrium_paradata.py skip \
             --state "$PARA_STATE" \
             --file  "${TEITOK_OUTPUT_DIR}" \

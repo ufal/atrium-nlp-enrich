@@ -139,3 +139,136 @@ def test_keywords_extract_lemmas_nonempty_on_real_teitok_fixture():
 
     lemmas = keywords._extract_lemmas(str(fixture))
     assert lemmas, "lemma extraction returned nothing for a real TEITOK file"
+
+
+# --- Upstream TEITOK shapes --------------------------------------------------------------
+# The fixtures under tests/fixtures/teitok/flexiconv/ are real flexiconv v0.3.10 output
+# (dates normalised). flexiconv writes no <s>: plain formats become <p>/<head>/<item> text,
+# layout formats (PAGE XML, hOCR, ALTO) become <tok bbox> + <lb/> without sentences.
+
+FLEXICONV_FIXTURES = Path(__file__).parent / "fixtures" / "teitok" / "flexiconv"
+
+
+def _write(tmp_path, xml, name="doc.teitok.xml"):
+    p = tmp_path / name
+    p.write_text(xml, encoding="utf-8")
+    return p
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("txt", ["Výzkum proběhl v Praze. Nalezeno 12 střepů.", "Druhý odstavec textu."]),
+        ("md", ["Nadpis zprávy", "První odstavec důležitý.", "položka seznamu"]),
+        ("page", ["Výzkum proběhl v Praze.", "Nalezeno 12 střepů."]),
+        ("hocr", ["METHODIUS", "AN (ZU) SISTELIUS, UBER DEN AUSSATZ", "Methodius. 99"]),
+        ("alto", ["The cat sat here."]),
+    ],
+)
+def test_flexiconv_output_yields_rows(name, expected):
+    """Regression: every flexiconv-converted document used to read as zero rows (the
+    reader only looked at <s>), so keywords/LLM got nothing from them."""
+    rows = read_teitok_rows(FLEXICONV_FIXTURES / f"{name}.teitok.xml")
+    assert [r["text"] for r in rows] == expected
+    assert all(r["page_num"] == 1 for r in rows)
+
+
+def test_flexiconv_layout_rows_number_lines_per_page():
+    rows = read_teitok_rows(FLEXICONV_FIXTURES / "hocr.teitok.xml")
+    assert [r["line_num"] for r in rows] == [1, 2, 3]
+
+
+def test_flexiconv_block_rows_never_include_header_text():
+    text = read_teitok_text(FLEXICONV_FIXTURES / "txt.teitok.xml")
+    assert "Converted from" not in text
+
+
+def test_untokenized_document_tokens_are_whitespace_split():
+    tokens = read_teitok_tokens(FLEXICONV_FIXTURES / "txt.teitok.xml")
+    assert [t["form"] for t in tokens][:4] == ["Výzkum", "proběhl", "v", "Praze."]
+    assert {t["lemma"] for t in tokens} == {""}
+    assert {t["upos"] for t in tokens} == {""}
+
+
+def test_text_faithful_spacing_from_whitespace_between_tokens():
+    """Upstream TEITOK encodes SpaceAfter=No as *no whitespace* between </tok> and <tok>
+    (flexipipe, flexiconv, teitok2conllu all read it so) -- there is no join attribute."""
+    tokens = read_teitok_tokens(FLEXICONV_FIXTURES / "page.teitok.xml")
+    assert [(t["form"], t["space_after"]) for t in tokens][2:5] == [
+        ("v", True),
+        ("Praze", False),
+        (".", True),
+    ]
+
+
+def test_spacing_survives_name_and_lb_boundaries(tmp_path):
+    xml = (
+        "<TEI><text><p>"
+        '<name type="LOC"><tok id="w-1">Praze</tok></name><tok id="w-2">.</tok> '
+        '<lb/><tok id="w-3">Nový</tok><lb/><tok id="w-4">řádek</tok>'
+        "</p></text></TEI>"
+    )
+    tokens = read_teitok_tokens(_write(tmp_path, xml))
+    assert [t["space_after"] for t in tokens] == [False, True, False, True]
+
+
+def test_block_end_is_a_word_boundary(tmp_path):
+    xml = (
+        '<TEI><text><p><tok id="w-1">konec</tok></p><p><tok id="w-2">začátek</tok></p></text></TEI>'
+    )
+    tokens = read_teitok_tokens(_write(tmp_path, xml))
+    assert tokens[0]["space_after"] is True
+
+
+def test_multiword_token_form_excludes_dtok(tmp_path):
+    """MWT as upstream TEITOK writes it: surface text on <tok>, syntactic words in <dtok>."""
+    xml = (
+        '<TEI><text><s id="s-1"><tok id="w-1">Chtěl</tok> '
+        '<tok id="w-2">abych<dtok id="w-2.1" form="aby" lemma="aby"/>'
+        '<dtok id="w-2.2" form="bych" lemma="být"/></tok> '
+        '<tok id="w-3">přišel</tok></s></text></TEI>'
+    )
+    path = _write(tmp_path, xml)
+    assert [t["form"] for t in read_teitok_tokens(path)] == ["Chtěl", "abych", "přišel"]
+    assert read_teitok_rows(path)[0]["text"] == "Chtěl abych přišel"
+
+
+def test_sentence_without_text_attribute_uses_real_spacing(tmp_path):
+    xml = (
+        '<TEI><text><s id="s-1"><tok id="w-1">č</tok><tok id="w-2">.</tok> '
+        '<tok id="w-3">1</tok><tok id="w-4">/</tok><tok id="w-5">2024</tok></s></text></TEI>'
+    )
+    assert read_teitok_rows(_write(tmp_path, xml))[0]["text"] == "č. 1/2024"
+
+
+def test_upos_falls_back_to_pos_attribute(tmp_path):
+    """TEITOK projects often call the tag attribute `pos`; `type` is still never used."""
+    xml = (
+        '<TEI><text><s><tok id="w-1" pos="NOUN" type="w">kostel</tok> '
+        '<tok id="w-2" type="pc">.</tok></s></text></TEI>'
+    )
+    tokens = read_teitok_tokens(_write(tmp_path, xml))
+    assert [t["upos"] for t in tokens] == ["NOUN", ""]
+
+
+def test_name_close_quirk_is_repaired_before_parsing(tmp_path):
+    xml = (
+        '<TEI><text><s text="V Praze."><name type="LOC"><tok id="w-1">Praze</tok></n>'
+        "</s></text></TEI>"
+    )
+    assert read_teitok_rows(_write(tmp_path, xml))[0]["text"] == "V Praze."
+
+
+def test_non_numeric_page_labels_advance_the_counter(tmp_path):
+    xml = (
+        '<TEI><text><pb n="I"/><s text="Předmluva."/><pb n="II"/><s text="Úvod."/>'
+        '<pb n="3"/><s text="Text."/><pb/><s text="Příloha."/></text></TEI>'
+    )
+    rows = read_teitok_rows(_write(tmp_path, xml))
+    assert [r["page_num"] for r in rows] == [1, 2, 3, 4]
+
+
+def test_sentences_without_tokens_yield_their_text_as_tokens(tmp_path):
+    xml = '<TEI><text><s text="Vyzkum odhalil kostel."/><s text="Druha veta."/></text></TEI>'
+    tokens = read_teitok_tokens(_write(tmp_path, xml))
+    assert [t["form"] for t in tokens] == ["Vyzkum", "odhalil", "kostel.", "Druha", "veta."]

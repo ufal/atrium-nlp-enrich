@@ -10,7 +10,15 @@ LINDAT release or downstream visualizers/search indexes.
 Usage:
     python3 api_util/validate_teitok_xml.py <target_dir> [--schema PATH]
                                             [--quiet] [--allow-empty]
-                                            [--wellformed-only]
+                                            [--profile {xsd,core,wellformed}]
+                                            [--exclude PATH ...]
+
+Profiles:
+    xsd         (default) the pinned output contract of this repo's writer
+    core        TEITOK-core lint that holds for *any* TEITOK profile (e.g. flexiconv
+                output): <TEI> root, a <text>, unique token/sentence ids, resolvable
+                heads, no whitespace after a join="right" token, non-negative bboxes
+    wellformed  well-formedness + <TEI> root only (``--wellformed-only`` is an alias)
 
 Exit codes:
     0  every discovered *.teitok.xml document is schema-valid
@@ -41,6 +49,7 @@ Design notes:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -100,13 +109,119 @@ def _strip_tei_namespace(doc) -> None:
             el.tag = el.tag[len(prefix) :]
 
 
-def _validate_one(schema, xml_path: Path, wellformed_only: bool = False) -> list[str]:
+_BBOX_OK = re.compile(r"^\d+ \d+ \d+ \d+$")
+
+
+def _local(tag) -> str:
+    return tag.split("}")[-1] if isinstance(tag, str) else ""
+
+
+_BLOCK_BOUNDARY = frozenset({"s", "p", "div", "head", "item", "cell", "l", "u", "ab", "body"})
+
+
+def _token_gaps(root):
+    """Yield ``(tok, next_tok, gap_text)`` for consecutive tokens inside one block, where
+    ``gap_text`` is the character data between them in document order."""
+    state = {"prev": None, "gap": ""}
+    out = []
+
+    def walk(el):
+        tag = _local(el.tag)
+        if tag == "tok":
+            if state["prev"] is not None:
+                out.append((state["prev"], el, state["gap"]))
+            state["prev"], state["gap"] = el, ""
+            return
+        if tag in _BLOCK_BOUNDARY:
+            state["prev"] = None
+        if el.text and state["prev"] is not None:
+            state["gap"] += el.text
+        for child in el:
+            if isinstance(child.tag, str):
+                walk(child)
+            if child.tail and state["prev"] is not None:
+                state["gap"] += child.tail
+        if tag in _BLOCK_BOUNDARY:
+            state["prev"] = None
+
+    walk(root)
+    return out
+
+
+def lint_core(doc) -> list[str]:
+    """TEITOK-core conventions every TEITOK document should meet, whatever its profile.
+
+    Deliberately weaker than the XSD: flexiconv, teitok-tools and TEITOK itself write
+    documents our schema does not describe (and tokens without ``@id`` before TEITOK
+    renumbers them), so only rules those tools rely on are checked here.
+    """
+    root = doc.getroot()
+    errors = []
+    if _local(root.tag) != "TEI":
+        return [f"unexpected root element <{_local(root.tag)}>, expected <TEI>"]
+    if not any(_local(el.tag) == "text" for el in root.iter()):
+        errors.append("no <text> element")
+
+    ids = {}
+    for el in root.iter():
+        tag = _local(el.tag)
+        if tag not in ("tok", "dtok", "s"):
+            continue
+        el_id = el.get("id") or el.get("{http://www.w3.org/XML/1998/namespace}id")
+        if el_id is None:
+            continue
+        if not el_id.strip():
+            errors.append(f"line {el.sourceline}: <{tag}> has an empty @id")
+        elif el_id in ids:
+            errors.append(f"line {el.sourceline}: duplicate @id {el_id!r} (<{tag}>)")
+        else:
+            ids[el_id] = tag
+
+    for el in root.iter():
+        tag = _local(el.tag)
+        if tag in ("tok", "dtok"):
+            head = el.get("head")
+            if head and not head.isdigit() and head not in ids:
+                errors.append(f"line {el.sourceline}: head {head!r} does not resolve to a token id")
+        bbox = el.get("bbox")
+        if bbox is not None and not _BBOX_OK.match(bbox.strip()):
+            errors.append(f"line {el.sourceline}: bbox {bbox!r} is not four non-negative integers")
+
+    # join="right" says "no space follows"; whitespace before the next token contradicts it.
+    for tok, _next_tok, gap in _token_gaps(root):
+        if tok.get("join") == "right" and gap and any(c.isspace() for c in gap):
+            label = tok.get("id") or (tok.text or "").strip()
+            errors.append(
+                f'line {tok.sourceline}: join="right" token {label!r} is followed by whitespace'
+            )
+    return errors
+
+
+def _check(schema, doc, profile: str) -> list[str]:
+    """Run ``profile`` on an already-parsed, namespace-normalised document."""
+    root = doc.getroot()
+    if root.tag != "TEI":
+        return [f"unexpected root element <{root.tag}>, expected <TEI>"]
+    if profile == "wellformed":
+        return []
+    if profile == "core":
+        return lint_core(doc)
+    if schema.validate(doc):
+        return []
+    return [str(err) for err in schema.error_log]
+
+
+def _validate_one(
+    schema, xml_path: Path, wellformed_only: bool = False, profile: str = "xsd"
+) -> list[str]:
     """Validate a single document. Returns a list of diagnostic strings
     (empty list means the document is valid). Well-formedness errors
     (e.g. truncated files, mismatched tags) are caught separately from
     schema-conformance errors so the reported message always identifies
     which kind of failure occurred.
     """
+    if wellformed_only:
+        profile = "wellformed"
     etree = _etree()
     try:
         doc = etree.parse(str(xml_path))
@@ -117,32 +232,28 @@ def _validate_one(schema, xml_path: Path, wellformed_only: bool = False) -> list
         return errors
 
     _strip_tei_namespace(doc)
-
-    root = doc.getroot()
-    if root.tag != "TEI":
-        return [f"unexpected root element <{root.tag}>, expected <TEI>"]
-
-    if wellformed_only:
-        return []
-
-    if schema.validate(doc):
-        return []
-
-    return [str(err) for err in schema.error_log]
+    return _check(schema, doc, profile)
 
 
 def validate_document(
-    xml_path: Path, schema_path: Path = DEFAULT_SCHEMA, wellformed_only: bool = False
+    xml_path: Path,
+    schema_path: Path = DEFAULT_SCHEMA,
+    wellformed_only: bool = False,
+    profile: str = "xsd",
 ) -> list[str]:
     """Validate one document on disk and return its diagnostics (empty == valid).
 
     Public single-document entry point.
     """
-    schema = None if wellformed_only else _load_schema(schema_path)
-    return _validate_one(schema, Path(xml_path), wellformed_only=wellformed_only)
+    if wellformed_only:
+        profile = "wellformed"
+    schema = _load_schema(schema_path) if profile == "xsd" else None
+    return _validate_one(schema, Path(xml_path), profile=profile)
 
 
-def validate_xml_text(xml_text: str, schema_path: Path = DEFAULT_SCHEMA) -> list[str]:
+def validate_xml_text(
+    xml_text: str, schema_path: Path = DEFAULT_SCHEMA, profile: str = "xsd"
+) -> list[str]:
     """Validate an in-memory TEITOK document and return its diagnostics
     (empty == valid).
 
@@ -160,13 +271,20 @@ def validate_xml_text(xml_text: str, schema_path: Path = DEFAULT_SCHEMA) -> list
 
     tree = doc.getroottree()
     _strip_tei_namespace(tree)
-    if tree.getroot().tag != "TEI":
-        return [f"unexpected root element <{tree.getroot().tag}>, expected <TEI>"]
+    schema = _load_schema(schema_path) if profile == "xsd" else None
+    return _check(schema, tree, profile)
 
-    schema = _load_schema(schema_path)
-    if schema.validate(tree):
-        return []
-    return [str(err) for err in schema.error_log]
+
+def _is_excluded(path: Path, exclude) -> bool:
+    resolved = path.resolve()
+    for ex in exclude or ():
+        ex = Path(ex).resolve()
+        if resolved == ex or ex in resolved.parents:
+            return True
+    return False
+
+
+_MODE_LABEL = {"xsd": "XSD", "core": "core", "wellformed": "well-formedness"}
 
 
 def validate_directory(
@@ -175,6 +293,8 @@ def validate_directory(
     quiet: bool = False,
     allow_empty: bool = False,
     wellformed_only: bool = False,
+    profile: str = "xsd",
+    exclude=(),
 ) -> bool:
     """Validate every *.teitok.xml under target_dir. Returns True iff all
     discovered documents passed validation.
@@ -184,7 +304,12 @@ def validate_directory(
     created inside api_4_stats.sh's per-document loop, so a run with zero
     input documents legitimately leaves nothing to validate and should be
     judged by the runner's FAIL_ON_EMPTY, not by this gate.
+
+    ``exclude`` lists directories (or files) to leave out -- api_4_stats.sh excludes
+    flexiconv's output subdirectory, which api_flexiconv.sh gates with ``core`` instead.
     """
+    if wellformed_only:
+        profile = "wellformed"
     if not target_dir.is_dir():
         if allow_empty:
             print(f"[SKIP] nothing to validate: {target_dir} does not exist")
@@ -193,7 +318,7 @@ def validate_directory(
         return False
 
     try:
-        schema = None if wellformed_only else _load_schema(schema_path)
+        schema = _load_schema(schema_path) if profile == "xsd" else None
     except LxmlMissing as exc:
         print(f"[FATAL] {exc}", file=sys.stderr)
         return False
@@ -201,7 +326,7 @@ def validate_directory(
         print(f"[FATAL] could not load schema {schema_path}: {exc}", file=sys.stderr)
         return False
 
-    xml_files = sorted(target_dir.rglob("*.teitok.xml"))
+    xml_files = sorted(p for p in target_dir.rglob("*.teitok.xml") if not _is_excluded(p, exclude))
     if not xml_files:
         if allow_empty:
             print(f"[SKIP] no *.teitok.xml files under {target_dir}")
@@ -211,11 +336,11 @@ def validate_directory(
 
     total = len(xml_files)
     failed: list[Path] = []
-    mode = "well-formedness" if wellformed_only else "XSD"
+    mode = _MODE_LABEL[profile]
 
     for xml_path in xml_files:
         try:
-            errors = _validate_one(schema, xml_path, wellformed_only=wellformed_only)
+            errors = _validate_one(schema, xml_path, profile=profile)
         except LxmlMissing as exc:  # pragma: no cover - guarded above
             print(f"[FATAL] {exc}", file=sys.stderr)
             return False
@@ -267,11 +392,23 @@ def main(argv: list[str] | None = None) -> int:
         "(an empty run has nothing to validate).",
     )
     parser.add_argument(
+        "--profile",
+        choices=sorted(_MODE_LABEL),
+        default="xsd",
+        help="xsd (default): this repo's writer contract; core: TEITOK-core lint for any "
+        "TEITOK profile (flexiconv output); wellformed: well-formedness + <TEI> root only.",
+    )
+    parser.add_argument(
         "--wellformed-only",
         action="store_true",
-        help="Check XML well-formedness and the <TEI> root only, skipping XSD "
-        "conformance. For third-party TEITOK profiles (flexiconv) this schema "
-        "does not describe.",
+        help="Alias for --profile wellformed.",
+    )
+    parser.add_argument(
+        "--exclude",
+        type=Path,
+        action="append",
+        default=[],
+        help="Directory or file to leave out (repeatable).",
     )
     args = parser.parse_args(argv)
 
@@ -280,7 +417,8 @@ def main(argv: list[str] | None = None) -> int:
         args.schema,
         quiet=args.quiet,
         allow_empty=args.allow_empty,
-        wellformed_only=args.wellformed_only,
+        profile="wellformed" if args.wellformed_only else args.profile,
+        exclude=args.exclude,
     )
     return 0 if ok else 1
 

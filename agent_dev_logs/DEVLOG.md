@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines. 7 open issues (#6, #7, #9, #10, #18, #19, #28); #8/#11/#35 closed. `test` HEAD `ed18f40` (2026-09-23) · **v0.20.3**. TEITOK/flexi* work (#9/#10/#28) is coordinated in [`teitok_conformance_plan.md`](teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines. 7 open issues (#6, #7, #9, #10, #18, #19, #28); #8/#11/#35 closed. `test` HEAD `f82f922` (2026-09-23) · **v0.20.3**. TEITOK/flexi* work (#9/#10/#28) is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). #6's saga (April→September) is condensed below; `digests/6.digest.md` is the authoritative 13-phase record. Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -233,8 +233,55 @@ derived from the writer), so it passes the defects above.
 output now, xmltokenizer annotation later; TEITOK-native ids (`w-N`, `s-N`, `n-N`, `facs-N`, …) with the
 `teitok_ref`/`teitok_surface` contract migrated; dev logs first.
 * **Dev logs refreshed:** `digests/`+`plans/` for #9, #10 (an unrelated llm-enrich plan appended to `plans/10.plan.md`
-removed), #28; new [`teitok_conformance_plan.md`](teitok_conformance_plan.md) (Stages 1–6, file lists, verification).
+removed), #28; new [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md) (Stages 1–6, file lists, verification).
 Status notes added to `atrium-llm-enrich` #10/#13 and `atrium-project` #13 logs.
+
+## 2026-09-23: TEITOK format 2 + flexiconv path implemented (#9, #10, #28; branch `claude/inspiring-cerf-2gdtd1`, local)
+
+* **Stage 1 on `test`**: the maintainer took the refreshed dev logs (`bd62317`, `f82f922`; the umbrella plan moved to
+`plans/`). Stages 2–5 were then implemented on the branch. It is local and not pushed; every file is delivered in
+full for review.
+* **Writer = TEITOK format 2** (`api_util/teitok_alto.py`, stamped `version="teitok-2"`):
+  * text-faithful inline spacing (entity trailing space inside `</name>`), with `join="right"` kept;
+  * MWT as `<tok>abych<dtok/>…</tok>`, aligned to ALTO on surface forms;
+  * ids assigned once in `parse_and_align_conllu()`: `w-N`/`w-N.K`/`s-N`/`n-N`/`facs-P`/`pb-P`/`lb-P.L`/`b-P.K`/`fig-P.K`,
+    plus `ord` and `head` → id;
+  * `<name type sameAs onto|cnec|archaeo>` via the new `api_util/ner_types.py`;
+  * page-origin bboxes by default, with `BBOX_ORIGIN=printspace` giving a self-consistent PrintSpace surface and
+    clamping;
+  * `lang` from ALTO → UDPipe model → omitted;
+  * `<div type="TextBlock" subtype>`, `notesStmt` orgfile, `change@type` phases.
+  * The XSD moved with it and still accepts format 1. Samples and fixtures are regenerated, and a test fails when
+    they drift from the writer. The new `tests/test_teitok_conformance.py` lane runs, with a flexiconv round-trip, in
+    `teitok-schema.yml`.
+* **Hook**: `teitok_ref` = `n-N`, `teitok_surface` = `facs-P` (only for ALTO pages); entity surface with real spacing;
+  character offsets over surface tokens; types from `ner_types`.
+* **Stats stage**:
+  * `summarize_nt_udp.py` forwards `--dpi/--alto-dpi` in per-document mode (they were dropped);
+  * new `--bbox-origin`/`--model-udpipe`/`--model-nametag` flags, because `MODEL_NAMETAG` never reached the
+    header — the config is sourced, not exported;
+  * the dead pre-merge writer call is removed;
+  * `REGENERATE_TEITOK`, and the XSD gate excludes `TEITOK_FLEXICONV_DIR`.
+* **flexiconv path (#10)**:
+  * `flexiconv_convert.py` on the real `flexiconv.api.run_convert` API, CLI with `--no-auto-install`, same-stem
+    naming, resume/force;
+  * extras pinned; `xml hocr` routed; own output directory; paradata; `--profile core` gate;
+  * `teitok_read.py` (the canonical copy) reads `<lb/>` lines / text blocks when there is no `<s>`;
+  * reference run: every flexiconv example gives rows and YAKE keywords (before: 0 rows).
+* **Tools**: `fix_teitok_bboxes.py` works again and has tests; `test_cli_orchestration.py` is now collected.
+* **Docs**: README TEITOK / coordinate / flexiconv sections, config block, `service/README.md`, `CONTRIBUTING.md`,
+`schemas/teitok/README.md`, dev logs #9/#10/#28 and the umbrella plan's progress table.
+* **Suite**: `pytest -m "not slow"` 1007 passed, 7 environment-only skips; ruff clean. No version bump (maintainer's call;
+suggested: minor, "TEITOK format 2" + `REGENERATE_TEITOK` note).
+* **End-to-end**: `api_4_stats.sh` on a scratch copy of `data_samples/` (UDP + NE + ALTO, one flexiconv file under
+`TEITOK/flexiconv/`) exits 0. The XSD gate validates exactly the three writer files. OntoNotes entities come out as
+`type="LOC" onto="GPE"` and `type="PER" onto="PERSON"`.
+* **Follow-up found (not fixed here)**: the committed samples disagree on the NER model. `data_samples/NE/*.tsv` carry
+**OntoNotes** tags (GPE/PERSON/DATE, the #11 default), but `data_samples/UDP_NE/*.conllu` and `*.csv` still carry
+**CNEC** tags (gu/P/ty, the model `data_samples/paradata` records). So re-running stage 4 on the samples yields
+different entities than the committed `UDP_NE`. The TEITOK samples follow `UDP_NE`, i.e. CNEC (consistent with
+their paradata). Refreshing `UDP_NE/` + `summary_ne_counts.csv` + the TEITOK samples from `NE/` is a separate
+sample refresh.
 
 ---
 _Timeline index refreshed 2026-09-23 against `test` HEAD `ed18f40`, the `CONTRIBUTING.md` changelog, commit subjects,

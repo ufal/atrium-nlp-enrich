@@ -15,9 +15,12 @@ When ``alto_path=None`` the function is a pure CoNLL-U -> XML transform: no
 ALTO, no images, no bboxes, no network, no models. All tests run in the
 default (``not slow``) lane.
 
-CoNLL-U eligibility rule (mirrors the production parser): a token row counts
-only when it has >= 10 tab-separated columns AND column 0 contains neither
-'-' (multi-word-token range) nor '.' (empty/ellipsis node).
+CoNLL-U eligibility rule: a token row counts only when it has >= 10
+tab-separated columns AND column 0 contains neither '-' (multi-word-token range)
+nor '.' (empty/ellipsis node). The CoNLL-U fixtures used here have no multi-word
+tokens, so every word is one <tok>; with them, the <tok> text is the surface form
+of the range line and the words become <dtok> children
+(tests/test_teitok_conformance.py covers that case).
 """
 
 import xml.etree.ElementTree as ET
@@ -103,7 +106,10 @@ _ALTO_CONLLU = "# sent_id = 1\n# text = Test\n1\tTest\tTest\tNOUN\t_\t_\t0\troot
 # Spatial Bounding Box Math (Issues #4 & #9)
 # ═════════════════════════════════════════════════════════════════════════════
 class TestSpatialAlignment:
-    def test_printspace_margins_are_subtracted(self, tmp_path):
+    def test_page_origin_is_the_default(self, tmp_path):
+        """TEITOK bboxes are page-image pixels from the page's top-left corner (the
+        convention of flexiconv/teitok-tools, and of the ALTO coordinates themselves), and
+        <surface> declares the page extent they live in."""
         conllu_file = _write_conllu(tmp_path, _ALTO_CONLLU, "test.conllu")
         alto_file = Path(tmp_path) / "test.alto.xml"
         alto_file.write_text(_ALTO_MARGIN_XML, encoding="utf-8")
@@ -111,11 +117,51 @@ class TestSpatialAlignment:
 
         write_teitok_merged(str(conllu_file), str(out), alto_path=str(alto_file))
         root = ET.parse(str(out)).getroot()
-        tok = next(root.iter("tok"))
+        assert next(root.iter("tok")).get("bbox") == "250 150 750 200"
+        surf = next(root.iter("surface"))
+        assert (surf.get("lrx"), surf.get("lry")) == ("2400", "3500")
 
-        bbox_str = tok.get("bbox")
-        assert bbox_str is not None, "Bounding box was not assigned to token"
-        assert bbox_str == "50 50 550 100", f"BBox displacement failed. Got: {bbox_str}"
+    def test_printspace_origin_is_opt_in_and_self_consistent(self, tmp_path):
+        """BBOX_ORIGIN=printspace: shift by the PrintSpace origin AND declare a
+        PrintSpace-sized surface. The old writer shifted the boxes but kept the full page
+        size on <surface>, so the document contradicted itself."""
+        conllu_file = _write_conllu(tmp_path, _ALTO_CONLLU, "test.conllu")
+        alto_file = Path(tmp_path) / "test.alto.xml"
+        alto_file.write_text(_ALTO_MARGIN_XML, encoding="utf-8")
+        out = Path(tmp_path) / "test.teitok.xml"
+
+        write_teitok_merged(
+            str(conllu_file), str(out), alto_path=str(alto_file), bbox_origin="printspace"
+        )
+        root = ET.parse(str(out)).getroot()
+        assert next(root.iter("tok")).get("bbox") == "50 50 550 100"
+        surf = next(root.iter("surface"))
+        assert (surf.get("lrx"), surf.get("lry")) == ("2000", "3000")
+        assert "bbox origin: printspace" in next(root.iter("desc")).text
+
+    def test_printspace_clamps_margin_content_to_zero(self, tmp_path, capsys):
+        """Content left of / above the PrintSpace would get negative coordinates, which
+        no image has; they are clamped (and counted) instead."""
+        conllu_file = _write_conllu(tmp_path, _ALTO_CONLLU, "test.conllu")
+        alto_file = Path(tmp_path) / "test.alto.xml"
+        alto_file.write_text(
+            _ALTO_MARGIN_XML.replace(
+                'HPOS="250" VPOS="150" WIDTH="500"', 'HPOS="150" VPOS="150" WIDTH="500"'
+            ),
+            encoding="utf-8",
+        )
+        out = Path(tmp_path) / "test.teitok.xml"
+        write_teitok_merged(
+            str(conllu_file), str(out), alto_path=str(alto_file), bbox_origin="printspace"
+        )
+        bbox = next(ET.parse(str(out)).getroot().iter("tok")).get("bbox")
+        assert bbox == "0 50 450 100"
+        assert "clamped to 0" in capsys.readouterr().err
+
+    def test_unknown_bbox_origin_is_an_error(self, tmp_path):
+        conllu_file = _write_conllu(tmp_path, _ALTO_CONLLU, "test.conllu")
+        with pytest.raises(ValueError, match="bbox_origin"):
+            write_teitok_merged(str(conllu_file), str(tmp_path / "x.xml"), bbox_origin="margin")
 
     def test_tier2_mm10(self, tmp_path):
         conllu_file = _write_conllu(tmp_path, _ALTO_CONLLU, "test.conllu")
@@ -358,47 +404,44 @@ class TestPageBoundaries:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Non-ALTO Formats Spatial Alignment (Issue #10)
+# Non-ALTO layout formats (Issue #10)
 # ═════════════════════════════════════════════════════════════════════════════
-class TestNonAltoSpatialAlignment:
-    def test_page_xml_spatial_alignment(self, tmp_path):
-        """Ensures coordinate scaling processes PAGE XML without regression."""
+# PAGE XML and hOCR never reach this writer: they enter through flexiconv
+# (api_flexiconv.sh), which writes its own TEITOK. What must hold is (a) that the writer
+# does not pretend to read them, and (b) that flexiconv's TEITOK uses the same coordinate
+# convention as this writer's default, so both kinds of file overlay the same page image.
+_FLEXICONV_FIXTURES = Path(__file__).parent / "fixtures" / "teitok" / "flexiconv"
+
+
+class TestNonAltoLayoutFormats:
+    def test_page_xml_is_not_read_as_alto(self, tmp_path):
         conllu_file = _write_conllu(tmp_path, _ALTO_CONLLU, "test.conllu")
-        alto_file = Path(tmp_path) / "test.page.xml"
-        alto_file.write_text(_PAGE_XML, encoding="utf-8")
+        page_file = Path(tmp_path) / "test.page.xml"
+        page_file.write_text(_PAGE_XML, encoding="utf-8")
         out = Path(tmp_path) / "test.teitok.xml"
 
-        try:
-            write_teitok_merged(str(conllu_file), str(out), alto_path=str(alto_file))
-            root = ET.parse(str(out)).getroot()
-            tok = next(root.iter("tok"))
-            bbox_str = tok.get("bbox")
-            if bbox_str is not None:
-                assert bbox_str == "100 100 600 150", (
-                    f"BBox displacement failed for PAGE XML. Got: {bbox_str}"
-                )
-        except Exception as e:
-            pytest.skip(
-                f"PAGE XML spatial extraction may not be fully wired in write_teitok_merged yet: {e}"
-            )
+        assert write_teitok_merged(str(conllu_file), str(out), alto_path=str(page_file))
+        root = ET.parse(str(out)).getroot()
+        assert _tok_texts(root) == ["Test"]
+        assert next(root.iter("tok")).get("bbox") is None
+        assert root.find("facsimile") is None
 
-    def test_hocr_spatial_alignment(self, tmp_path):
-        """Ensures coordinate scaling processes hOCR without regression."""
+    def test_hocr_is_not_read_as_alto(self, tmp_path):
         conllu_file = _write_conllu(tmp_path, _ALTO_CONLLU, "test.conllu")
-        alto_file = Path(tmp_path) / "test.hocr.html"
-        alto_file.write_text(_HOCR_HTML, encoding="utf-8")
+        hocr_file = Path(tmp_path) / "test.hocr"
+        hocr_file.write_text(_HOCR_HTML, encoding="utf-8")
         out = Path(tmp_path) / "test.teitok.xml"
 
-        try:
-            write_teitok_merged(str(conllu_file), str(out), alto_path=str(alto_file))
-            root = ET.parse(str(out)).getroot()
-            tok = next(root.iter("tok"))
-            bbox_str = tok.get("bbox")
-            if bbox_str is not None:
-                assert bbox_str == "100 100 600 150", (
-                    f"BBox displacement failed for hOCR. Got: {bbox_str}"
-                )
-        except Exception as e:
-            pytest.skip(
-                f"hOCR spatial extraction may not be fully wired in write_teitok_merged yet: {e}"
-            )
+        assert write_teitok_merged(str(conllu_file), str(out), alto_path=str(hocr_file))
+        assert next(ET.parse(str(out)).getroot().iter("tok")).get("bbox") is None
+
+    def test_flexiconv_page_xml_bboxes_are_page_origin_pixels(self):
+        """flexiconv's PAGE XML import keeps the PAGE Coords as they are: word 1 of the
+        fixture is Coords "100,100 300,100 300,150 100,150"."""
+        root = ET.parse(str(_FLEXICONV_FIXTURES / "page.teitok.xml")).getroot()
+        assert next(root.iter("tok")).get("bbox") == "100 100 300 150"
+
+    def test_flexiconv_hocr_bboxes_are_page_origin_pixels(self):
+        root = ET.parse(str(_FLEXICONV_FIXTURES / "hocr.teitok.xml")).getroot()
+        assert next(root.iter("pb")).get("bbox") == "0 0 2162 3340"
+        assert next(root.iter("tok")).get("bbox") == "802 1263 1327 1337"

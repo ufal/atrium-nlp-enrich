@@ -67,9 +67,11 @@ optional `document_json` part**. `/enrich` and `/jobs` take it as an upload part
 `/enrich_text` takes it as an embedded object.
 
 When supplied, the response's `document_json` carries the record back with only
-nlp-enrich's contribution merged in — its `entities[]` rows and `pages[].teitok_surface` —
-while every other tool's block (`page_categories`, `lines`, `translations`, `enrichment`, …)
-passes through **untouched**. This is the same accretion the CLI performs via
+nlp-enrich's contribution merged in — its `entities[]` rows, whose `teitok_ref` is the
+entity's `<name id>` (`n-1`, …) in the returned TEITOK — while every other tool's block
+(`page_categories`, `lines`, `translations`, `enrichment`, …) passes through **untouched**.
+(`pages[].teitok_surface`, the `<surface id>` `facs-P` of a page, is written only by ALTO
+runs of the CLI: the service takes no ALTO, so its TEITOK has no `<facsimile>`.) This is the same accretion the CLI performs via
 `run_pipeline.py --document-json/--document-json-out`; the service simply threads the flags
 through to it, so there is one implementation, not two.
 
@@ -107,10 +109,12 @@ through to it, so there is one implementation, not two.
 
 A standalone coordinate transform — **not** part of the NLP pipeline (no
 subprocess, no models, no workspace). Given a single-page TEITOK document and a
-target page-image size, it rescales every facsimile coordinate (the hOCR-style
-`bbox` boxes and the `<surface>` `lrx`/`lry` extents) from the document's own
-coordinate space to the requested size, so annotations line up exactly on top of
-an image of that size.
+target page-image size, it rescales every facsimile coordinate (the
+`bbox="x1 y1 x2 y2"` pixel boxes and the `<surface>` `lrx`/`lry` extents) from the
+document's own coordinate space to the requested size, so annotations line up exactly on
+top of an image of that size. This works for both coordinate origins the writer offers
+(`BBOX_ORIGIN=page`, the default, and `printspace`): in both, `<surface>` declares the
+extent the boxes are measured in.
 
 | Field       | Default    | Notes                                                            |
 |-------------|------------|------------------------------------------------------------------|
@@ -125,8 +129,8 @@ The **source** coordinate space is read from the document itself: the first
 is present it falls back to the maximum extent of all `bbox` boxes
 (`source_kind: "bbox-extent"`, approximate). The transform is a surgical,
 text-level rewrite that only touches the numeric values, so it is robust to the
-non-well-formed TEITOK quirk (named entities open `<name>` but close `</n>`) that
-makes a strict XML parse fail.
+non-well-formed quirk of older TEITOK exports (named entities open `<name>` but close
+`</n>`; the current writer closes `</name>`) that makes a strict XML parse fail.
 
 Because that `</n>` quirk produces invalid XML, the endpoint also **repairs it by
 default** — rewriting stray `</n>` closings to `</name>` so the returned document

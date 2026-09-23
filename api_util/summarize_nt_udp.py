@@ -512,6 +512,7 @@ def process_single_document(
     document_paradata_ref="",
     document_license_detail=None,
     include_lines=False,
+    bbox_origin="page",
 ):
     conllu_path = Path(conllu_file)
     # canonical_doc_id(), not Path.stem (issue atrium-project#10, D3): `.conllu` is this
@@ -528,19 +529,8 @@ def process_single_document(
     if save_teitok and teitok_out_path:
         teitok_out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if save_teitok and teitok_out_path and not teitok_out_path.exists():
-        doc_in_alto = Path(alto_dir) / f"{doc_name}.alto.xml" if alto_dir else None
-        write_teitok_merged(
-            doc_out_conllu,
-            teitok_out_path,
-            doc_in_alto,
-            doc_id=doc_name,
-            model_udpipe=model_udpipe,
-            model_nametag=model_nametag,
-            image_dir=pages_dir or None,
-            dpi=dpi,
-            alto_dpi=alto_dpi,
-        )
+    # TEITOK is written below, from the NER-merged CoNLL-U -- never before the merge, when
+    # the file it reads may not exist yet (or, on a resumed run, be stale).
 
     # Merge NER tags into CoNLL-U if not already done
     merged_conllu_ready = doc_out_conllu.exists()
@@ -582,6 +572,7 @@ def process_single_document(
             image_dir=pages_dir or None,
             dpi=dpi,
             alto_dpi=alto_dpi,
+            bbox_origin=bbox_origin,
         )
 
     if document_json_dir:
@@ -642,6 +633,7 @@ def process_pipeline(
     alto_dpi=None,
     document_json_dir=None,
     include_lines=False,
+    bbox_origin="page",
 ):
     conllu_path_obj = Path(conllu_dir)
     if not conllu_path_obj.exists():
@@ -688,6 +680,7 @@ def process_pipeline(
             alto_dpi=alto_dpi,
             document_json_dir=document_json_dir,
             include_lines=include_lines,
+            bbox_origin=bbox_origin,
         )
 
     print("\nPipeline Complete.")
@@ -726,6 +719,25 @@ def build_parser():
         type=_float_or_none,
         default=os.environ.get("ALTO_DPI"),
         help="Source ALTO DPI",
+    )
+    parser.add_argument(
+        "--bbox-origin",
+        choices=("page", "printspace"),
+        default=os.environ.get("BBOX_ORIGIN") or "page",
+        help="TEITOK bbox origin: page (default, the TEITOK norm: ALTO page coordinates) or "
+        "printspace (coordinates relative to the ALTO PrintSpace, for cropped page images).",
+    )
+    # api_4_stats.sh sources config_api.txt without exporting it, so the model names are
+    # passed explicitly; the environment is only the fallback for standalone runs.
+    parser.add_argument(
+        "--model-udpipe",
+        default=os.environ.get("MODEL_UDPIPE"),
+        help="UDPipe model name, recorded in the TEITOK header.",
+    )
+    parser.add_argument(
+        "--model-nametag",
+        default=os.environ.get("MODEL_NAMETAG"),
+        help="NameTag model name, recorded in the TEITOK header.",
     )
 
     # --- Document Hook specific args ---
@@ -815,13 +827,18 @@ def main(argv=None):
             teitok_out=args.tt_dir,
             pages_dir=args.pages_dir,
             summary_csv=args.summary_csv,
-            model_udpipe=os.getenv("MODEL_UDPIPE"),
-            model_nametag=os.getenv("MODEL_NAMETAG"),
+            model_udpipe=args.model_udpipe or None,
+            model_nametag=args.model_nametag or None,
+            # --dpi/--alto-dpi were parsed but never passed on in this mode, so tier-2
+            # (IMAGE_DPI) scaling silently never applied to api_4_stats.sh runs.
+            dpi=args.dpi,
+            alto_dpi=args.alto_dpi,
             document_json_dir=args.document_json_dir,
             document_run_id=document_run_id,
             document_paradata_ref=document_paradata_ref,
             document_license_detail=document_license_detail,
             include_lines=args.include_lines,
+            bbox_origin=args.bbox_origin,
         )
         sys.exit(0 if ok else 1)
 
@@ -856,13 +873,14 @@ def main(argv=None):
         save_csv=save_csv,
         save_teitok=save_teitok,
         pages_dir=args.pages_dir,
-        model_udpipe=os.getenv("MODEL_UDPIPE"),
-        model_nametag=os.getenv("MODEL_NAMETAG"),
+        model_udpipe=args.model_udpipe or None,
+        model_nametag=args.model_nametag or None,
         summary_csv=args.summary_csv,
         dpi=args.dpi,
         alto_dpi=args.alto_dpi,
         document_json_dir=args.document_json_dir,
         include_lines=args.include_lines,
+        bbox_origin=args.bbox_origin,
     )
 
 

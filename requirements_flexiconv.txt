@@ -18,6 +18,12 @@
 # tests/test_flexiconv_convert.py — they SKIP when flexiconv is absent, so a bad pin is
 # only ever caught by a run that actually installed it. The contract this package has to
 # satisfy is small and stated in api_util/flexiconv_convert.py: either a `flexiconv`
-# module exposing `convert(in, out, target_format="teitok")`, or a `flexiconv` CLI on
-# PATH. No Dockerfile installs this file — it is an opt-in extra.
-flexiconv @ git+https://github.com/ufal/flexiconv.git@v0.3.10
+# package exposing `flexiconv.api.run_convert(in, out, to_format="teitok", options=...)`,
+# or a `flexiconv` CLI on PATH (called with --no-auto-install). No Dockerfile installs this
+# file — it is an opt-in extra.
+#
+# EXTRAS PINNED TOO (2026-09-23): docx/odt/md/pdf/rtf input needs flexiconv's optional
+# extras. Without them the flexiconv CLI used to `pip install flexiconv[<fmt>]` at run
+# time — an unpinned install in the middle of a pipeline run. The adapter now passes
+# --no-auto-install, so the extras have to be declared here.
+flexiconv[docx,odt,md,pdf,rtf] @ git+https://github.com/ufal/flexiconv.git@v0.3.10

@@ -267,7 +267,12 @@ Rules:
 1. Do not manually edit auto-generated output files.
 2. After changing chunking logic, re-run `api_2_udp.sh` to verify CoNLL-U validity.
 3. After changing NER merging logic or TEITOK XML composition, re-run `api_4_stats.sh`
-and inspect `summary_ne_counts.csv`.
+and inspect `summary_ne_counts.csv`. A TEITOK writer change also moves, in the same commit:
+`schemas/teitok/teitok.xsd`, the regenerated `data_samples/TEITOK/*` and
+`tests/fixtures/teitok/CTX_*` (procedure in `schemas/teitok/README.md`;
+`tests/test_validate_teitok.py` fails on stale samples), and `WRITER_FORMAT` in
+`api_util/teitok_alto.py` when readers can notice the change. `tests/test_teitok_conformance.py`
+must stay green: it reads the output the way the TEITOK tools do.
 4. **Config and generated artefact move in the same commit.** Editing
 `data_samples/taxonomy_*.json`, `llm_config.txt` or `prompts/system_prompt.txt` without
 regenerating is the failure this repo has already shipped twice (`a5e3c8a`, `d4c46b2`):
@@ -296,7 +301,9 @@ follow this pattern:
 |------------------|----------------------------------------------------------|---------|
 | `SAVE_CONLLU_NE` | Enriched CoNLL-U with NER in the `MISC` field            | `true`  |
 | `SAVE_CSV`       | Token-level summary CSV per document                     | `true`  |
-| `SAVE_TEITOK`    | TEITOK-style TEI XML with bounding boxes (requires ALTO) | `true`  |
+| `SAVE_TEITOK`    | TEITOK XML (bounding boxes when ALTO is given)           | `true`  |
+| `BBOX_ORIGIN`    | TEITOK bbox origin: `page` or `printspace`               | `page`  |
+| `REGENERATE_TEITOK` | Rewrite existing `.teitok.xml` instead of resuming    | `false` |
 
 New flags must be documented here and in `config_api.txt`.
 

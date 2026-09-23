@@ -13,7 +13,8 @@ from atrium_document import DocumentRecord, load_document
 # which gate is being invoked here.
 from atrium_document import validate_document as validate_document_record
 
-from .teitok_alto import CNEC_TO_CONLL, group_ner_spans, parse_and_align_conllu
+from .ner_types import coarse_type, tagset
+from .teitok_alto import group_ner_spans, parse_and_align_conllu
 
 logger = logging.getLogger(__name__)
 
@@ -132,13 +133,25 @@ def _augment_tokens_with_position(tokens: List[dict]) -> None:
     Tokens with no matched ALTO bbox (alignment miss, or no ALTO supplied at all) are
     grouped onto one synthetic per-page line rather than dropped, so entities from an
     unaligned document still get a valid (page, line) pair instead of crashing later.
+
+    Offsets count the *surface* text, the text the page shows: the syntactic words of a
+    multi-word token (``tok["_surface"]``, e.g. "abych" = aby + bych) all get the span of
+    that one surface token, and the cursor advances once for it.
     """
     page_line_seq: Dict[str, Dict[Any, int]] = {}
     page_next_line: Dict[str, int] = {}
     last_key = None
+    last_unit = None
+    prev: Dict[str, Any] = {}
     cursor = 0
 
     for tok in tokens:
+        unit = tok.get("_surface")
+        if unit is not None and unit is last_unit and unit.get("mwt"):
+            for key in ("_page", "_line", "_char_start", "_char_end"):
+                tok[key] = prev[key]
+            continue
+        last_unit = unit
         bbox = tok.get("_bbox") or {}
         page_idx = bbox.get("page_idx")
         line_id = bbox.get("line_id")
@@ -156,14 +169,39 @@ def _augment_tokens_with_position(tokens: List[dict]) -> None:
         if key != last_key:
             cursor = 0
 
-        form = tok.get("form", "")
+        surface = unit if unit is not None and unit.get("mwt") else tok
+        form = surface.get("form", "")
         tok["_page"] = page
         tok["_line"] = line_num
         tok["_char_start"] = cursor
         tok["_char_end"] = cursor + len(form)
 
-        cursor = tok["_char_end"] + (1 if tok.get("space_after", True) else 0)
+        cursor = tok["_char_end"] + (1 if surface.get("space_after", True) else 0)
         last_key = key
+        prev = tok
+
+
+def _surface_text(span_tokens: List[dict]) -> str:
+    """The entity's text as the document shows it: real spacing (``SpaceAfter=No`` kept,
+    e.g. "č.") and multi-word tokens as their one surface form."""
+    parts = []
+    last_unit = None
+    for tok in span_tokens:
+        unit = tok.get("_surface")
+        if unit is not None and unit.get("mwt"):
+            if unit is last_unit:
+                continue
+            last_unit = unit
+            parts.append((unit.get("form", ""), unit.get("space_after", True)))
+        else:
+            last_unit = None
+            parts.append((tok.get("form", ""), tok.get("space_after", True)))
+    text = ""
+    for i, (form, space_after) in enumerate(parts):
+        text += form
+        if space_after and i < len(parts) - 1:
+            text += " "
+    return text
 
 
 def run_document_hook(
@@ -205,7 +243,7 @@ def run_document_hook(
             continue  # non-entity tokens are grouped too; only "name" spans are entities
 
         span_tokens = span["tokens"]
-        surface = " ".join(t["form"] for t in span_tokens)
+        surface = _surface_text(span_tokens)
         lemma = " ".join(t["lemma"] for t in span_tokens)
 
         x_mins = [float(t["_bbox"]["left"]) for t in span_tokens if t.get("_bbox")]
@@ -222,33 +260,27 @@ def run_document_hook(
         line = first.get("_line", 0)
         char_span = [first.get("_char_start", 0), last.get("_char_end", 0)]
 
-        # span["code"] is the BIO-stripped NE code (_bio_to_code), valid for either
-        # tagset. Membership in CNEC_TO_CONLL is the precise tagset test — CNEC codes
-        # (p, pf, gc, i, ia, ...) never collide with OntoNotes labels (PERSON, ORG, ...).
+        # span["code"] is the BIO-stripped NE code (_bio_to_code). ner_types is the one
+        # label map the TEITOK writer uses too, so `type_teitok` here and `<name type>`
+        # in the XML always agree. Every CNEC 2.0 code (p, pf, gc, ty, n_, ...) is
+        # recognised as CNEC; any other label (OntoNotes PERSON/GPE/..., the
+        # archaeological model's LOCATION/ARTEFACT/...) goes to `type_onto`, the schema's
+        # field for non-CNEC labels.
         raw_type = span.get("code", "")
-        is_cnec = raw_type in CNEC_TO_CONLL
+        is_cnec = tagset(raw_type) == "cnec"
         type_onto = raw_type if not is_cnec else None
         type_cnec = raw_type if is_cnec else None
-
-        type_teitok = "MISC"
-        if is_cnec and raw_type in CNEC_TO_CONLL:
-            type_teitok = CNEC_TO_CONLL[raw_type]
-        elif not is_cnec:
-            if raw_type == "PERSON":
-                type_teitok = "PER"
-            elif raw_type in ["ORG", "LOC"]:
-                type_teitok = raw_type
-            elif raw_type in ["GPE", "FAC"]:
-                type_teitok = "LOC"
 
         entity_record = {
             "surface": surface,
             "lemma": lemma,
-            "type_teitok": type_teitok,
+            "type_teitok": coarse_type(raw_type),
             "page": str(page),
             "line": int(line),
             "char_span": char_span,
-            "teitok_ref": f"{doc_id}.name{name_counter}",
+            # The <name id> the writer gives this span (assigned once, in
+            # parse_and_align_conllu); a TEITOK-local id, like teitok_surface below.
+            "teitok_ref": first.get("_name_id") or f"n-{name_counter}",
         }
         # Only the tagset that actually applies is written — never the other one as an
         # explicit null (atrium-project#10, caught by D4's gate the moment it was wired).
@@ -312,8 +344,12 @@ def run_document_hook(
         doc.assert_fields_survived("entities", entities)
 
         pages_present = sorted({t.get("_page", "1") for t in tokens})
+        # The <surface id> the writer gives each page (TEITOK-local, "facs-P"). The writer
+        # only has surfaces for ALTO pages -- a text-only document (no ALTO, e.g. /enrich)
+        # has no <facsimile>, and a teitok_surface there would point at nothing.
+        surfaces = {str(pg["idx"]) for pg in (parsed or {}).get("alto_pages", [])}
         page_updates = [
-            {"page": p, "teitok_surface": f"{doc_id}.surface{p}"} for p in pages_present
+            {"page": p, "teitok_surface": f"facs-{p}"} for p in pages_present if p in surfaces
         ]
         doc.merge_block("pages", page_updates)
         # nlp-enrich owns exactly one field in pages[] — teitok_surface — so this is

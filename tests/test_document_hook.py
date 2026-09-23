@@ -128,7 +128,8 @@ def test_document_hook_onto_extraction(mock_parse, mock_group, mock_document_rec
     # merge_block() at all. It was silently filtered out before, and now trips
     # assert_fields_survived() instead, so its absence here is load-bearing.
     assert "pid" not in entities[0]
-    assert entities[0]["teitok_ref"] == "CTX000000001.name1"
+    # TEITOK-local <name id>; tokens from a real parse carry it as "_name_id".
+    assert entities[0]["teitok_ref"] == "n-1"
     assert entities[0]["bbox"] == [10.0, 10.0, 50.0, 20.0]
     assert entities[0]["page"] == "1"
     assert entities[0]["line"] == 1
@@ -343,7 +344,7 @@ def _run_real_hook(tmp_path, span_token, baseline=None, doc_id="CTX000000001"):
     with (
         patch(
             "api_util.document_hook.parse_and_align_conllu",
-            return_value={"sentences": [{"tokens": [aligned]}]},
+            return_value={"sentences": [{"tokens": [aligned]}], "alto_pages": [{"idx": 1}]},
         ),
         patch(
             "api_util.document_hook.group_ner_spans",
@@ -378,7 +379,7 @@ def test_valid_contribution_is_written_and_validates(tmp_path):
     # Rule 2/6: an upstream block nlp-enrich does not own passes through untouched.
     assert record["page_categories"] == _VALID_BASELINE["page_categories"]
     assert record["entities"][0]["surface"] == "Praha"
-    assert record["pages"][0]["teitok_surface"] == "CTX000000001.surface1"
+    assert record["pages"][0]["teitok_surface"] == "facs-1"
     assert record["pages"][0]["quality_score"] == 0.9  # alto-postprocess's field survives
 
 
@@ -544,3 +545,112 @@ class TestFixtureContract:
         assert [path for path, _ in _schema_errors(_INVALID_BASELINE)] == [
             "$.pages[0].quality_score"
         ]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# The record and the TEITOK XML come from ONE parse (teitok_alto.parse_and_align_conllu)
+# ═════════════════════════════════════════════════════════════════════════════
+_MWT_CONLLU = (
+    "# sent_id = 1\n"
+    "# text = Viděl jsem č. 5, abych šel do Prahy.\n"
+    "1\tViděl\tvidět\tVERB\t_\t_\t0\troot\t_\tNER=O\n"
+    "2\tjsem\tbýt\tAUX\t_\t_\t1\taux\t_\tNER=O\n"
+    "3\tč\tčíslo\tNOUN\t_\t_\t1\tobj\t_\tSpaceAfter=No|NER=B-nc\n"
+    "4\t.\t.\tPUNCT\t_\t_\t3\tpunct\t_\tNER=I-nc\n"
+    "5\t5\t5\tNUM\t_\t_\t3\tnummod\t_\tSpaceAfter=No|NER=I-nc\n"
+    "6\t,\t,\tPUNCT\t_\t_\t9\tpunct\t_\tNER=O\n"
+    "7-8\tabych\t_\t_\t_\t_\t_\t_\t_\t_\n"
+    "7\taby\taby\tSCONJ\t_\t_\t9\tmark\t_\tNER=O\n"
+    "8\tbych\tbýt\tAUX\t_\t_\t9\taux\t_\tNER=O\n"
+    "9\tšel\tjít\tVERB\t_\t_\t1\tadvcl\t_\tNER=O\n"
+    "10\tdo\tdo\tADP\t_\t_\t11\tcase\t_\tNER=O\n"
+    "11\tPrahy\tPraha\tPROPN\t_\t_\t9\tobl\t_\tSpaceAfter=No|NER=B-gu\n"
+    "12\t.\t.\tPUNCT\t_\t_\t1\tpunct\t_\tNER=O\n"
+    "\n"
+)
+
+
+def _real_parse(tmp_path):
+    from api_util.teitok_alto import parse_and_align_conllu
+
+    conllu = tmp_path / "CTX.conllu"
+    conllu.write_text(_MWT_CONLLU, encoding="utf-8")
+    parsed = parse_and_align_conllu(str(conllu), doc_id="CTX")
+    return conllu, [tok for sent in parsed["sentences"] for tok in sent["tokens"]]
+
+
+def test_char_offsets_follow_the_surface_text(tmp_path):
+    """The two words of "abych" share the surface token's span, and the cursor moves once;
+    SpaceAfter=No inside "č. 5," adds no space."""
+    _, tokens = _real_parse(tmp_path)
+    hook_module._augment_tokens_with_position(tokens)
+    spans = {t["form"]: (t["_char_start"], t["_char_end"]) for t in tokens}
+    line = "Viděl jsem č. 5, abych šel do Prahy."
+    assert spans["aby"] == spans["bych"] == (line.index("abych"), line.index("abych") + 5)
+    assert spans["šel"] == (line.index("šel"), line.index("šel") + 3)
+    assert spans["Prahy"] == (line.index("Prahy"), line.index("Prahy") + 5)
+
+
+def test_entity_surface_keeps_the_real_spacing(tmp_path):
+    from api_util.teitok_alto import group_ner_spans
+
+    _, tokens = _real_parse(tmp_path)
+    spans = [s for s in group_ner_spans(tokens) if s["kind"] == "name"]
+    assert [hook_module._surface_text(s["tokens"]) for s in spans] == ["č. 5", "Prahy"]
+
+
+def test_record_and_teitok_share_entity_and_page_ids(tmp_path, mock_document_record):
+    """teitok_ref is the <name id> the writer emits for the same span, teitok_surface the
+    <surface id> -- from the same parse, so they cannot drift apart."""
+    import xml.etree.ElementTree as ET
+
+    from api_util.teitok_alto import write_teitok_merged
+
+    conllu, _ = _real_parse(tmp_path)
+    out = tmp_path / "CTX.teitok.xml"
+    assert write_teitok_merged(str(conllu), str(out), doc_id="CTX")
+    names = [(n.get("id"), n.get("type")) for n in ET.parse(str(out)).getroot().iter("name")]
+
+    _, mock_doc_instance = mock_document_record
+    run_document_hook(
+        doc_id="CTX",
+        teitok_path=str(out),
+        conllu_path=str(conllu),
+        baseline_json=None,
+        out_json=str(tmp_path / "CTX.document.json"),
+        run_id="run",
+        paradata_ref="ref",
+        license_detail={},
+    )
+    entities = _merged_entities(mock_doc_instance)
+    assert [(e["teitok_ref"], e["type_teitok"]) for e in entities] == names
+    assert [e["type_cnec"] for e in entities] == ["nc", "gu"]
+    assert [e["surface"] for e in entities] == ["č. 5", "Prahy"]
+    pages = next(
+        call[0][1] for call in mock_doc_instance.merge_block.call_args_list if call[0][0] == "pages"
+    )
+    # No ALTO -> no <facsimile> in the XML -> no teitok_surface to point at.
+    assert pages == []
+
+
+def test_teitok_surface_is_written_for_alto_pages(mock_document_record):
+    _, mock_doc_instance = mock_document_record
+    tok = _tok("Praha", "Praha", "B-LOC", 2, "line_1", 10, 10, 50, 20)
+    with patch(
+        "api_util.document_hook.parse_and_align_conllu",
+        return_value={"sentences": [{"tokens": [tok]}], "alto_pages": [{"idx": 1}, {"idx": 2}]},
+    ):
+        run_document_hook(
+            doc_id="CTX",
+            teitok_path="CTX.teitok.xml",
+            conllu_path="CTX.conllu",
+            baseline_json=None,
+            out_json="out.json",
+            run_id="run",
+            paradata_ref="ref",
+            license_detail={},
+        )
+    pages = next(
+        call[0][1] for call in mock_doc_instance.merge_block.call_args_list if call[0][0] == "pages"
+    )
+    assert pages == [{"page": "2", "teitok_surface": "facs-2"}]

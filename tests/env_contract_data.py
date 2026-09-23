@@ -16,6 +16,7 @@ from __future__ import annotations
 NOT_PUBLISHED: dict[str, str] = {
     "ALTO_DIR": "batch-pipeline knob read by api_util/summarize_nt_udp.py; belongs to config_api.txt, not a deployment",
     "ALTO_DPI": "batch-pipeline knob read by api_util/summarize_nt_udp.py; belongs to config_api.txt, not a deployment",
+    "BBOX_ORIGIN": "batch-pipeline knob read by api_util/summarize_nt_udp.py; belongs to config_api.txt, not a deployment",
     "CONLLU_INPUT_DIR": "batch-pipeline knob read by api_util/summarize_nt_udp.py; belongs to config_api.txt, not a deployment",
     "IMAGE_DPI": "batch-pipeline knob read by api_util/summarize_nt_udp.py; belongs to config_api.txt, not a deployment",
     "INPUT_PAGES_DIR": "batch-pipeline knob read by api_util/summarize_nt_udp.py; belongs to config_api.txt, not a deployment",

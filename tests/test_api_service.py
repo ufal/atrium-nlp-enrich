@@ -388,7 +388,8 @@ def _fake_pipeline_run(tmp_root):
                     "type_onto": "LOC",
                 }
             ]
-            record["pages"][0]["teitok_surface"] = "CTX000000001.surface1"
+            # No teitok_surface: /enrich runs without ALTO, so its TEITOK has no
+            # <facsimile> to point into (document_hook only links existing surfaces).
             out = Path(cmd[cmd.index("--document-json-out") + 1])
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(json.dumps(record), encoding="utf-8")
@@ -483,7 +484,7 @@ def test_enrich_endpoint_returns_accreted_record_with_upstream_blocks_intact(
     assert record["page_categories"] == _UPSTREAM_BASELINE["page_categories"]
     assert record["lines"] == _UPSTREAM_BASELINE["lines"]
     assert record["pages"][0]["quality_score"] == 0.87  # alto-postprocess's field
-    assert record["pages"][0]["teitok_surface"] == "CTX000000001.surface1"
+    assert "teitok_surface" not in record["pages"][0]
     assert record["entities"][0]["surface"] == "Praha"
 
 

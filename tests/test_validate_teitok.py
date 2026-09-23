@@ -115,32 +115,40 @@ class TestAllowEmpty:
 # Namespace normalization — both TEITOK conventions must validate
 # ═════════════════════════════════════════════════════════════════════════════
 class TestNamespaceConventions:
-    """``teitok_alto.py`` writes ``xmlnsoff=``/``lang=`` (no namespace);
-    older exports and ``service/rescale.py`` output carry the real TEI
-    namespace with ``xml:lang``. One schema, both accepted."""
+    """``teitok_alto.py`` writes ``xmlnsoff=``/``lang=`` (no namespace) -- the curated
+    fixtures are real writer output, so they have that shape; older exports and
+    ``service/rescale.py`` output carry the real TEI namespace with ``xml:lang``.
+    One schema, both accepted."""
 
     WRITER_ROOT = '<TEI xmlnsoff="http://www.tei-c.org/ns/1.0" lang="cs">'
     TEI_NS_ROOT = '<TEI xmlns="http://www.tei-c.org/ns/1.0" xml:lang="cs">'
 
-    def _as_writer_shaped(self, src: Path, dest_dir: Path) -> Path:
-        text = src.read_text(encoding="utf-8").replace(self.TEI_NS_ROOT, self.WRITER_ROOT)
-        assert self.WRITER_ROOT in text, "fixture root did not match the TEI-namespace form"
+    def _as_tei_namespaced(self, src: Path, dest_dir: Path) -> Path:
+        text = src.read_text(encoding="utf-8")
+        assert self.WRITER_ROOT in text, "fixture root is not the writer's xmlnsoff form"
         out = dest_dir / src.name
-        out.write_text(text, encoding="utf-8")
+        out.write_text(text.replace(self.WRITER_ROOT, self.TEI_NS_ROOT), encoding="utf-8")
         return out
 
     def test_namespaced_document_passes(self, tmp_path):
-        shutil.copy(FIXTURES / "CTX_valid.teitok.xml", tmp_path)
+        self._as_tei_namespaced(FIXTURES / "CTX_valid.teitok.xml", tmp_path)
         assert validate_directory(tmp_path) is True
 
     def test_writer_shaped_no_namespace_document_passes(self, tmp_path):
-        self._as_writer_shaped(FIXTURES / "CTX_valid.teitok.xml", tmp_path)
+        shutil.copy(FIXTURES / "CTX_valid.teitok.xml", tmp_path)
         assert validate_directory(tmp_path) is True
 
-    def test_writer_shaped_invalid_document_still_fails(self, tmp_path):
+    def test_namespaced_invalid_document_still_fails(self, tmp_path):
         """Namespace tolerance must not become blanket tolerance."""
-        self._as_writer_shaped(FIXTURES / "CTX_invalid.teitok.xml", tmp_path)
+        self._as_tei_namespaced(FIXTURES / "CTX_invalid.teitok.xml", tmp_path)
         assert validate_directory(tmp_path) is False
+
+    def test_format1_document_still_validates(self, tmp_path):
+        """Backward compatibility: a TEITOK file the pre-2026-09 writer produced (TEI
+        namespace, ``CTX.s1.w1`` ids, ``MarginTextZone-P``, one ``<tok>`` per line) must
+        not fail a resumed run's gate -- REGENERATE_TEITOK is the migration, not the gate."""
+        shutil.copy(FIXTURES / "legacy" / "CTX_format1.teitok.xml", tmp_path)
+        assert validate_directory(tmp_path) is True
 
     def test_foreign_root_element_is_rejected(self, tmp_path):
         (tmp_path / "bogus.teitok.xml").write_text(
@@ -197,12 +205,78 @@ class TestValidateDocument:
 # ═════════════════════════════════════════════════════════════════════════════
 # The published example outputs must satisfy the contract they illustrate
 # ═════════════════════════════════════════════════════════════════════════════
+#: The samples git tracks, whose inputs are committed too (data_samples/ALTO, UDP_NE).
+#: data_samples/ is also the default OUTPUT_DIR of config_api.txt, so a local pipeline run
+#: puts its own documents -- possibly written by an older writer -- next to these. Only
+#: these three are held to "exactly what today's writer produces".
+COMMITTED_SAMPLES = ("CTX000000001", "CTX000000002", "CTX000000003")
+
+
+def _committed_sample(doc):
+    path = REAL_SAMPLES / f"{doc}.teitok.xml"
+    assert path.is_file(), f"committed sample data_samples/TEITOK/{path.name} is missing"
+    return path
+
+
 def test_committed_data_samples_are_conformant():
     """README.md advertises data_samples/TEITOK/ as the example output
     directory. Three of those files were once not even well-formed XML
-    (`<name>` closed with `</n>`); this keeps them honest."""
+    (`<name>` closed with `</n>`); this keeps them honest.
+
+    The XSD covers the whole directory (format-1 documents from local runs pass it, which
+    is the backward compatibility a resumed run relies on); the TEITOK-core rules, which
+    format 1 breaks (whitespace after join="right"), apply to the committed samples."""
     assert list(REAL_SAMPLES.glob("*.teitok.xml")), "no committed TEITOK samples found"
     assert validate_directory(REAL_SAMPLES) is True
+    for doc in COMMITTED_SAMPLES:
+        assert validate_document(_committed_sample(doc), profile="core") == [], doc
+
+
+def _sample_nametag_model():
+    """The NameTag model the committed samples were produced with, as their paradata
+    records it (CNEC 2.0 -- the samples predate the OntoNotes default of #11). The UDPipe
+    model needs no lookup: the CoNLL-U carries it (``# udpipe_model``)."""
+    import json
+
+    for path in sorted((REPO_ROOT / "data_samples" / "paradata").glob("*.json")):
+        model = json.loads(path.read_text(encoding="utf-8")).get("config", {}).get("model_nametag")
+        if model:
+            return model
+    return None
+
+
+@pytest.mark.parametrize("doc", COMMITTED_SAMPLES)
+def test_committed_samples_are_what_the_writer_produces_today(doc, tmp_path):
+    """The samples used to be artefacts of an older writer (TEI namespace, other bboxes),
+    so "the samples validate" said nothing about the code. They must be byte-identical to
+    a fresh run of the writer on the committed inputs (ALTO + NER-merged CoNLL-U + the
+    models their paradata records), apart from the run dates."""
+    import re
+
+    from teitok_alto import write_teitok_merged
+
+    sample = _committed_sample(doc).name
+    out = tmp_path / sample
+    assert write_teitok_merged(
+        str(REPO_ROOT / "data_samples" / "UDP_NE" / doc / f"{doc}.conllu"),
+        str(out),
+        str(REPO_ROOT / "data_samples" / "ALTO" / f"{doc}.alto.xml"),
+        doc_id=doc,
+        model_nametag=_sample_nametag_model(),
+    )
+
+    def undated(text):
+        return re.sub(
+            r'(<change when=")\d{4}-\d{2}-\d{2}(" who="(?:altoconvert|udpipe|nametag)")',
+            r"\1DATE\2",
+            text,
+        )
+
+    committed = (REAL_SAMPLES / sample).read_text(encoding="utf-8")
+    assert undated(out.read_text(encoding="utf-8")) == undated(committed), (
+        f"data_samples/TEITOK/{sample} is stale -- regenerate it (see data_samples/TEITOK "
+        "in README.md)"
+    )
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -292,7 +366,36 @@ class TestRealWriterRoundTrip:
         out = self._generate(tmp_path, with_alto=True)
         head = out.read_text(encoding="utf-8").splitlines()[1]
         assert 'xmlnsoff="http://www.tei-c.org/ns/1.0"' in head
-        assert 'lang="cs"' in head
+        assert "xmlns=" not in head
+
+    def test_lang_is_not_invented(self, tmp_path):
+        """No ALTO LANG, no UDPipe model: no @lang (it used to be a hard-coded "cs")."""
+        out = self._generate(tmp_path, with_alto=True)
+        head = out.read_text(encoding="utf-8").splitlines()[1]
+        assert "lang=" not in head
+        assert validate_document(out) == []
+
+    def test_lang_comes_from_alto_then_from_the_udpipe_model(self, tmp_path):
+        import xml.etree.ElementTree as ET
+
+        from teitok_alto import write_teitok_merged
+
+        conllu = tmp_path / "doc.conllu"
+        conllu.write_text(_CONLLU, encoding="utf-8")
+        alto = tmp_path / "doc.alto.xml"
+        alto.write_text(_ALTO.replace('ID="block_1"', 'ID="block_1" LANG="sk"'), encoding="utf-8")
+        out = tmp_path / "a.teitok.xml"
+        assert write_teitok_merged(
+            str(conllu), str(out), alto_path=str(alto), model_udpipe="czech-pdt"
+        )
+        root = ET.parse(str(out)).getroot()
+        assert root.get("lang") == "sk"
+        assert next(root.iter("language")).get("ident") == "sk"
+
+        out2 = tmp_path / "b.teitok.xml"
+        assert write_teitok_merged(str(conllu), str(out2), model_udpipe="czech-pdt-ud-2.15-241121")
+        assert ET.parse(str(out2)).getroot().get("lang") == "cs"
+        assert validate_document(out) == [] and validate_document(out2) == []
 
     def test_named_entities_survive_into_conformant_name_elements(self, tmp_path):
         """The NER spans in _CONLLU must become schema-valid <name> wrappers
@@ -304,6 +407,108 @@ class TestRealWriterRoundTrip:
         names = list(ET.parse(str(out)).getroot().iter("name"))
         assert [n.get("type") for n in names] == ["PER", "LOC"]
         assert [len(list(n.iter("tok"))) for n in names] == [2, 1]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TEITOK-core profile (the flexiconv gate) and --exclude
+# ═════════════════════════════════════════════════════════════════════════════
+FLEXICONV_FIXTURES = FIXTURES / "flexiconv"
+
+
+class TestCoreProfile:
+    """``--profile core`` checks what every TEITOK tool relies on, for documents our XSD
+    does not describe (flexiconv output) -- and still catches real defects."""
+
+    def _doc(self, tmp_path, body, name="doc.teitok.xml"):
+        (tmp_path / name).write_text(
+            f'<?xml version="1.0" encoding="utf-8"?>\n<TEI><text>{body}</text></TEI>\n',
+            encoding="utf-8",
+        )
+        return tmp_path / name
+
+    def test_real_flexiconv_output_passes_core(self):
+        for path in sorted(FLEXICONV_FIXTURES.glob("*.teitok.xml")):
+            assert validate_document(path, profile="core") == [], path.name
+
+    def test_real_flexiconv_output_is_not_our_xsd_profile(self):
+        """Why flexiconv output needs its own gate: it is valid TEITOK, not our writer's."""
+        assert validate_document(FLEXICONV_FIXTURES / "txt.teitok.xml") != []
+
+    def test_duplicate_token_id_fails(self, tmp_path):
+        path = self._doc(tmp_path, '<s id="s-1"><tok id="w-1">a</tok> <tok id="w-1">b</tok></s>')
+        errors = validate_document(path, profile="core")
+        assert any("duplicate @id 'w-1'" in e for e in errors)
+
+    def test_tokens_without_ids_are_allowed(self, tmp_path):
+        """flexiconv leaves split-off punctuation without @id; TEITOK numbers it later."""
+        path = self._doc(tmp_path, '<p><tok id="w-1">konec</tok><tok>.</tok></p>')
+        assert validate_document(path, profile="core") == []
+
+    def test_unresolved_head_fails(self, tmp_path):
+        path = self._doc(tmp_path, '<s id="s-1"><tok id="w-1" head="w-9">a</tok></s>')
+        assert any("does not resolve" in e for e in validate_document(path, profile="core"))
+
+    def test_resolvable_and_numeric_heads_pass(self, tmp_path):
+        path = self._doc(
+            tmp_path,
+            '<s id="s-1"><tok id="w-1" head="w-2">a</tok> <tok id="w-2" head="0">b</tok></s>',
+        )
+        assert validate_document(path, profile="core") == []
+
+    def test_join_right_followed_by_whitespace_fails(self, tmp_path):
+        """The contradiction the old writer produced on every SpaceAfter=No token: upstream
+        TEITOK readers see the whitespace and re-insert the space."""
+        path = self._doc(
+            tmp_path,
+            '<s id="s-1"><tok id="w-1" join="right">Praze</tok>\n<tok id="w-2">.</tok></s>',
+        )
+        errors = validate_document(path, profile="core")
+        assert any("followed by whitespace" in e for e in errors)
+
+    def test_join_right_with_no_gap_passes(self, tmp_path):
+        path = self._doc(
+            tmp_path, '<s id="s-1"><tok id="w-1" join="right">Praze</tok><tok id="w-2">.</tok></s>'
+        )
+        assert validate_document(path, profile="core") == []
+
+    def test_negative_bbox_fails(self, tmp_path):
+        path = self._doc(tmp_path, '<p><tok id="w-1" bbox="-20 10 30 40">a</tok></p>')
+        assert any("non-negative" in e for e in validate_document(path, profile="core"))
+
+    def test_missing_text_element_fails(self, tmp_path):
+        (tmp_path / "x.teitok.xml").write_text("<TEI><teiHeader/></TEI>", encoding="utf-8")
+        assert "no <text> element" in validate_document(tmp_path / "x.teitok.xml", profile="core")
+
+    def test_core_directory_gate_cli(self, tmp_path):
+        from api_util.validate_teitok_xml import main
+
+        for path in FLEXICONV_FIXTURES.glob("*.teitok.xml"):
+            shutil.copy(path, tmp_path)
+        assert main([str(tmp_path), "--profile", "core", "--quiet"]) == 0
+        assert main([str(tmp_path), "--quiet"]) == 1
+
+
+class TestExclude:
+    def test_excluded_subdirectory_is_not_validated(self, tmp_path):
+        """api_4_stats.sh validates TEITOK_OUTPUT_DIR with the writer XSD but must leave
+        flexiconv's subdirectory (another TEITOK profile, gated by api_flexiconv.sh) out."""
+        shutil.copy(FIXTURES / "CTX_valid.teitok.xml", tmp_path)
+        flex = tmp_path / "flexiconv"
+        flex.mkdir()
+        shutil.copy(FLEXICONV_FIXTURES / "txt.teitok.xml", flex)
+        assert validate_directory(tmp_path) is False
+        assert validate_directory(tmp_path, exclude=[flex]) is True
+
+    def test_exclude_on_cli_is_repeatable(self, tmp_path):
+        from api_util.validate_teitok_xml import main
+
+        shutil.copy(FIXTURES / "CTX_valid.teitok.xml", tmp_path)
+        for sub in ("a", "b"):
+            (tmp_path / sub).mkdir()
+            shutil.copy(FIXTURES / "CTX_invalid.teitok.xml", tmp_path / sub)
+        argv = [str(tmp_path), "--quiet", "--exclude", str(tmp_path / "a")]
+        assert main(argv) == 1
+        assert main(argv + ["--exclude", str(tmp_path / "b")]) == 0
 
 
 if __name__ == "__main__":

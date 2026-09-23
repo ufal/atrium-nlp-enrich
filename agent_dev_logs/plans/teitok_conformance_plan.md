@@ -2,10 +2,29 @@
 
 > _Written 2026-09-23 from an audit of `atrium-nlp-enrich` (`test` `ed18f40`, v0.20.3), `atrium-llm-enrich`,
 > `atrium-alto-postprocess` and `atrium-project`, checked against the TEITOK author's own tooling. Per-issue detail:
-> [`digests/9.digest.md`](digests/9.digest.md) · [`plans/9.plan.md`](plans/9.plan.md) ·
-> [`digests/10.digest.md`](digests/10.digest.md) · [`plans/10.plan.md`](plans/10.plan.md) ·
-> [`digests/28.digest.md`](digests/28.digest.md) · [`plans/28.plan.md`](plans/28.plan.md). Findings marked ▶ were
+> [`digests/9.digest.md`](../digests/9.digest.md) · [`plans/9.plan.md`](9.plan.md) ·
+> [`digests/10.digest.md`](../digests/10.digest.md) · [`plans/10.plan.md`](10.plan.md) ·
+> [`digests/28.digest.md`](../digests/28.digest.md) · [`plans/28.plan.md`](28.plan.md). Findings marked ▶ were
 > reproduced by running the code (scratch environment, repos untouched)._
+
+## 0. Progress (updated 2026-09-23)
+
+Stages 1–5 are implemented. Stage 1 is on `test` (maintainer commits `bd62317` / `f82f922`). Stages 2–5 are on the
+local branch `claude/inspiring-cerf-2gdtd1` in nlp-enrich, llm-enrich and the hub, which is not pushed and awaits review.
+
+| Stage | State | Deviations from §5 |
+|-------|-------|--------------------|
+| 1 — dev logs | ✅ on `test` | the umbrella plan moved into `plans/`; its links were fixed in Stage 2 |
+| 2 — P0 fixes | ✅ branch | hub `atrium_vocab.py` **not** touched: the file is byte-identical in five tool repos, so `teitok_alto._CNEC_TO_CONLL` keeps its name as the declared authority (now an alias of `ner_types.CNEC_TO_CONLL`); a drift test pins it equal to `atrium_vocab.CNEC_TO_ENTITY_TYPE`. `summarize_nt_udp.py` keeps its own CNEC→OntoNotes *explanation* map (a different purpose). `ner_types.CNEC_CODES` recognises every CNEC 2.0 code (`ty`, `n_`, `T`, …), not only the coarse-mapped ones |
+| 3 — writer conformance | ✅ branch | `entities[].bbox` stays in ALTO page units (it matches `lines[].bbox`); `pages[].teitok_surface` is only written for pages that have a `<surface>` (ALTO input), so `/enrich` records have none. Also fixed on the way: non-ALTO roots (PAGE XML, hOCR) passed as `alto_path` no longer produce an empty facsimile; unnamed ALTO blocks/lines no longer collapse into one; `summarize_nt_udp.py` per-document mode forwards `--dpi/--alto-dpi`; the dead pre-merge writer call is removed; `MODEL_NAMETAG` reaches the header (`--model-nametag`) |
+| 4 — flexiconv path | ✅ branch (`run_pipeline.py --with-flexiconv` deferred) | reference experiment on flexiconv's own examples recorded in the README; real ATRIUM documents still to run |
+| 5 — cross-repo | ✅ branch | hub: E2E asserts TEITOK and turns `SAVE_TEITOK` on; fixture + `document_schema.md` ids. `docs_site/external-tools.md` / `pipelines.md` W11 and the `atrium_vocab.py` authority string left to their own rounds (#57 policy, 5-repo vendoring) |
+| 6 — annotation of flexiconv output | ⏸ later, new issue | — |
+
+Evidence: flexiconv v0.3.10 round-trip of the regenerated samples keeps every `SpaceAfter=No` (7/7, 16/16, 2/2;
+before: 0/7). "abych" is one `<tok>` with two `<dtok>`. OntoNotes `PERSON` → `type="PER" onto="PERSON"`. Sample block
+bbox is `220 160 1420 280` on `1654×2339` (page) or `20 10 1220 130` on `1254×2039` (printspace). nlp-enrich
+`pytest -m "not slow"` passes 1007 tests with 7 environment-only skips.
 
 ## 1. Why this plan exists
 

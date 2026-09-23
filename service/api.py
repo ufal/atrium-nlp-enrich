@@ -367,8 +367,9 @@ attach_health(app, deep_check=_deep_health, state=_state)
 _DOCUMENT_JSON_HELP = (
     "Optional baseline ATRIUM Document JSON (accretion model, docs/document_schema.md / "
     "issue #13). When given, the response's `document_json` carries the record back with "
-    "only nlp-enrich's contribution merged in — its `entities[]` rows and `pages[]."
-    "teitok_surface` — while every other tool's block (page_categories, lines, "
+    "only nlp-enrich's contribution merged in — its `entities[]` rows (`teitok_ref` = the "
+    "entity's TEITOK `<name id>`; `pages[].teitok_surface` is only set for ALTO input, "
+    "which this endpoint does not take) — while every other tool's block (page_categories, lines, "
     "translations, enrichment, ...) passes through untouched. A baseline that does not "
     "validate against atrium_document.schema.json is still accepted (rule 6); the "
     "pipeline warns and accretes onto it anyway."

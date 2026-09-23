@@ -17,6 +17,12 @@
 # lxml is the only *runtime* dependency (already in requirements.txt); no apt
 # packages, no xmllint, no models, no network. pytest is needed too — see the
 # install step below.
+#
+# The XSD is derived from the writer, so it can only say the output kept its shape. The
+# conformance lane (tests/test_teitok_conformance.py) reads the output the way the TEITOK
+# tools do (spacing from whitespace, <dtok> words, @head through @id) and, in its last
+# step, through the pinned flexiconv itself (core dependency: lxml only). flexiconv's own
+# output gets the TEITOK-core profile (api_flexiconv.sh's gate) on the committed fixtures.
 
 name: TEITOK Schema Contract
 
@@ -26,9 +32,14 @@ on:
       - "schemas/teitok/**"
       - "api_util/validate_teitok_xml.py"
       - "api_util/teitok_alto.py"
+      - "api_util/teitok_read.py"
+      - "api_util/ner_types.py"
+      - "api_util/flexiconv_convert.py"
+      - "requirements_flexiconv.txt"
       - "data_samples/TEITOK/**"
       - "tests/fixtures/teitok/**"
       - "tests/test_validate_teitok.py"
+      - "tests/test_teitok_conformance.py"
       - "api_4_stats.sh"
       - "api_flexiconv.sh"
       - ".github/workflows/teitok-schema.yml"
@@ -38,9 +49,14 @@ on:
       - "schemas/teitok/**"
       - "api_util/validate_teitok_xml.py"
       - "api_util/teitok_alto.py"
+      - "api_util/teitok_read.py"
+      - "api_util/ner_types.py"
+      - "api_util/flexiconv_convert.py"
+      - "requirements_flexiconv.txt"
       - "data_samples/TEITOK/**"
       - "tests/fixtures/teitok/**"
       - "tests/test_validate_teitok.py"
+      - "tests/test_teitok_conformance.py"
       - "api_4_stats.sh"
       - "api_flexiconv.sh"
       - ".github/workflows/teitok-schema.yml"
@@ -118,3 +134,18 @@ jobs:
         # api_util/teitok_alto.py and validates the result — the check that
         # catches generator drift the curated fixtures cannot see.
         run: python3 -m pytest tests/test_validate_teitok.py -v --tb=short
+
+      - name: flexiconv output passes the TEITOK-core profile
+        # The gate api_flexiconv.sh applies, on real flexiconv v0.3.10 output.
+        run: python3 api_util/validate_teitok_xml.py tests/fixtures/teitok/flexiconv --profile core
+
+      - name: Upstream conformance (stdlib reader) and TEITOK readers
+        run: python3 -m pytest tests/test_teitok_conformance.py tests/test_teitok_read.py -v --tb=short
+
+      - name: Install the pinned flexiconv (core only)
+        # The same pin as requirements_flexiconv.txt, without the format extras: the
+        # round-trip only needs flexiconv's TEITOK reader.
+        run: pip install "flexiconv @ git+https://github.com/ufal/flexiconv.git@v0.3.10"
+
+      - name: Upstream conformance (flexiconv round-trip)
+        run: python3 -m pytest tests/test_teitok_conformance.py tests/test_flexiconv_convert.py -v --tb=short
