@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines. 7 open issues (#6, #7, #9, #10, #18, #19, #28); #8/#11/#35 closed. `test` HEAD `f82f922` (2026-09-23) · **v0.20.3**. TEITOK/flexi* work (#9/#10/#28) is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines. 7 open issues (#6, #7, #9, #10, #18, #19, #28); #8/#11/#35 closed. `test` HEAD `5fa5d95` (2026-09-23) · **v0.20.3** (v0.21.0 prepared on the branch). TEITOK/flexi* work (#9/#10/#28) is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). #6's saga (April→September) is condensed below; `digests/6.digest.md` is the authoritative 13-phase record. Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -283,7 +283,77 @@ different entities than the committed `UDP_NE`. The TEITOK samples follow `UDP_N
 their paradata). Refreshing `UDP_NE/` + `summary_ne_counts.csv` + the TEITOK samples from `NE/` is a separate
 sample refresh.
 
+## 2026-09-24: Round 3 — #9/#10 close-out and the annotated flexiconv path (branch `claude/inspiring-cerf-2gdtd1`, local)
+
+* **On `test` since 2026-09-23**: Stages 2–5 (nlp `67751ef`/`701b02c`, llm `f62921c`, hub `4d6ea10`), plus the six issue
+comments. CI is green. `teitok-schema.yml` ran the conformance lane and the pinned-flexiconv round trip (run
+35896731559), which meets #28's close criterion. The hub E2E (`SAVE_TEITOK=true`, `--teitok-dir`) is green. It runs the *published* image
+`ghcr.io/ufal/atrium-nlp-enrich:${image-tag || latest}`, and `:latest` moves only on a version tag, so push and
+schedule runs still test v0.20.3 (format 1). The first format-2 E2E run is a `workflow_dispatch` with
+`image-tag=test` (user), or any run after v0.21.0 is tagged.
+* **Found on alto-postprocess `test` (`103e30a`, #31)**: `--method text-lines` reads any text-bearing input (PDF, DOCX,
+TXT, PAGE XML, hOCR, TEI/TEITOK, …) into `DOC_LINE_CATEG/<doc>.csv`, which is this repo's stage-1 input. So
+converted documents can reach UDPipe/NameTag through alto-postprocess, but without layout. That shaped Stage 6 below:
+the flexiconv file becomes the *layout source*, matched by `canonical_doc_id`, and a table with the same `doc_id` wins
+at stage 1.
+* **#9, tier-1 evidence**: `data_samples/pages/CTX000000001-1.png` is 827×1170 (half the ALTO page), 671 bytes, and
+draws the ALTO boxes at half scale. `tests/test_teitok_integraion.py` is renamed `tests/test_teitok_integration.py`,
+and its vacuous 1×1-PNG test is replaced by one that pins the surface `827×1170`, the block `110 80 710 140` and page 2
+at tier 3. README has a worked example. #9 is ready to close.
+* **#10, close-out tool**: `api_util/flexiconv_report.py DIR [--inputs DOCS]` prints the "Checking a real collection"
+table: input/format, pages, rows, tokens, elements with bbox, and the `--profile core` verdict. It also lists
+unconverted inputs, exits 0/1, and has tests.
+* **Stage 6 — `FLEXICONV_ANNOTATE`** (opt-in; its own issue still to be opened). The design is this repo's stages, not
+xmltokenizer/flexipipe: one writer, one id scheme, no new dependency, offline CI.
+  * New `api_util/teitok_layout.py` reads a flexiconv TEITOK into `_parse_alto()`'s five structures:
+    * pages from `<pb facs>`, sized by hOCR `pb@bbox` or `<surface lrx lry>`;
+    * lines from `<lb bbox>`;
+    * strings from `<tok bbox>`, or from block words without coordinates;
+    * blocks with the element name as `subtype`;
+    * converter/orgfile meta.
+    * Its character stream equals `teitok_read`'s rows, and a test pins that invariant.
+  * `teitok_alto.py`:
+    * `_parse_alto` hands TEI roots to it;
+    * alignment tolerates strings without coordinates (`has_coords`);
+    * `<graphic url>`/`<pb facs>` keep the source's image names;
+    * a page image is also found by that name, and an image without a page size sets the surface at scale 1;
+    * the header names flexiconv (`<change who="flexiconv" type="converted">`, `<application ident="flexiconv">`)
+      and the original document.
+  * `build_manifest_row.py` reads `*.teitok.xml` (`--doc-id-only`). `api_1_manifest.sh` adds
+    `TEITOK_FLEXICONV_DIR` when `FLEXICONV_ANNOTATE=true`; tables win, empty conversions are skipped, and it avoids
+    bash-4 associative arrays.
+  * `summarize_nt_udp.layout_source()` (ALTO, else the converted file) serves both the writer and the hook, via
+    `--flexiconv-dir`, which `api_4_stats.sh` passes. `run_pipeline.py --with-flexiconv` runs `api_flexiconv.sh`
+    first and exports `FLEXICONV_ANNOTATE=true` (`config_api.txt`: `${FLEXICONV_ANNOTATE:-false}`).
+  * Evidence:
+    * tests in `tests/test_teitok_layout.py` (18) and `tests/test_flexiconv_annotate.py` (24), with hand-written
+      NER-merged CoNLL-U for the committed conversions in `tests/fixtures/teitok/flexiconv/annotated/`;
+    * an offline `api_1_manifest.sh` → `api_4_stats.sh` run on PAGE XML / hOCR / txt: 3/3 pass the stage-4 XSD gate
+      and the core profile;
+    * the document records validate against the schema, with entity bboxes from flexiconv (`Praze` `620 100 820 150`),
+      `teitok_ref`s that resolve, and `teitok_surface` `facs-1`;
+    * flexiconv v0.3.10 reads every output back.
+    * The live UDPipe/NameTag run needs LINDAT (user).
+* **Docs/CI**: README (annotated path, tier-1 example, report tool), `config_api.txt`, `CONTRIBUTING.md` (flag + the
+two layout sources), `schemas/teitok/README.md` (emitter table), `api_flexiconv.sh` header, and a new
+`teitok-schema.yml` step plus path filters. Dev logs: #9 and #28 ready to close, #10 with close-out tool and D done,
+umbrella plan §0 and §7 (roadmap).
+* **Release prep** (separate commit): v0.21.0 in `CITATION.cff`, `para_config.txt`, and the `CONTRIBUTING.md` row
+with the migration note (`REGENERATE_TEITOK=true`; TEITOK-local record ids). Tagging is the maintainer's call.
+* **Fixed on the way — `REGENERATE_TEITOK` could not be switched on for one run.** `config_api.txt` assigned it bare,
+so `REGENERATE_TEITOK=true bash api_4_stats.sh` was overwritten by `source` and silently kept the old files; only a
+config edit worked. It is now `"${REGENERATE_TEITOK:-false}"`, like `FLEXICONV_ANNOTATE`, and a test sources the
+config with and without each knob set.
+* **Sample refresh, verified, not committed.** In a scratch worktree, a stand-in api_3_nt paradata record naming the
+OntoNotes model (`data_samples/NE` already carries its tags) was used. Then
+`rm -rf data_samples/UDP_NE/CTX00000000{1,2,3}` and `REGENERATE_TEITOK=true bash api_4_stats.sh` gave OntoNotes
+entities in `UDP_NE`/`TEITOK`, and the full suite stayed green (1053 passed). The committed-sample test now reads the
+model from the *newest* paradata record. The real refresh needs a genuine NameTag run (LINDAT), so it is a user
+action: provenance is not fabricated here.
+* **Roadmap found on the way**: `# page_break = true` has three consumers and no producer. So table inputs without
+layout lose their pages before UDPipe, and their TEITOK has one `<pb>`. That is an R4 item (umbrella plan §7).
+
 ---
-_Timeline index refreshed 2026-09-23 against `test` HEAD `ed18f40`, the `CONTRIBUTING.md` changelog, commit subjects,
+_Timeline index refreshed 2026-09-24 against `test` HEAD `5fa5d95`, the `CONTRIBUTING.md` changelog, commit subjects,
 the issue exports in `issues/`, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);
 this file is a derived reading aid in `agent_dev_logs/`._

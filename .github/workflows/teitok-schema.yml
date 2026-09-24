@@ -22,7 +22,8 @@
 # conformance lane (tests/test_teitok_conformance.py) reads the output the way the TEITOK
 # tools do (spacing from whitespace, <dtok> words, @head through @id) and, in its last
 # step, through the pinned flexiconv itself (core dependency: lxml only). flexiconv's own
-# output gets the TEITOK-core profile (api_flexiconv.sh's gate) on the committed fixtures.
+# output gets the TEITOK-core profile (api_flexiconv.sh's gate) on the committed fixtures,
+# and, annotated (FLEXICONV_ANNOTATE), must come out as this writer's TEITOK format 2.
 
 name: TEITOK Schema Contract
 
@@ -35,11 +36,18 @@ on:
       - "api_util/teitok_read.py"
       - "api_util/ner_types.py"
       - "api_util/flexiconv_convert.py"
+      - "api_util/teitok_layout.py"
+      - "api_util/flexiconv_report.py"
+      - "api_util/build_manifest_row.py"
       - "requirements_flexiconv.txt"
       - "data_samples/TEITOK/**"
       - "tests/fixtures/teitok/**"
       - "tests/test_validate_teitok.py"
       - "tests/test_teitok_conformance.py"
+      - "tests/test_teitok_layout.py"
+      - "tests/test_flexiconv_annotate.py"
+      - "tests/test_flexiconv_report.py"
+      - "api_1_manifest.sh"
       - "api_4_stats.sh"
       - "api_flexiconv.sh"
       - ".github/workflows/teitok-schema.yml"
@@ -52,11 +60,18 @@ on:
       - "api_util/teitok_read.py"
       - "api_util/ner_types.py"
       - "api_util/flexiconv_convert.py"
+      - "api_util/teitok_layout.py"
+      - "api_util/flexiconv_report.py"
+      - "api_util/build_manifest_row.py"
       - "requirements_flexiconv.txt"
       - "data_samples/TEITOK/**"
       - "tests/fixtures/teitok/**"
       - "tests/test_validate_teitok.py"
       - "tests/test_teitok_conformance.py"
+      - "tests/test_teitok_layout.py"
+      - "tests/test_flexiconv_annotate.py"
+      - "tests/test_flexiconv_report.py"
+      - "api_1_manifest.sh"
       - "api_4_stats.sh"
       - "api_flexiconv.sh"
       - ".github/workflows/teitok-schema.yml"
@@ -142,10 +157,19 @@ jobs:
       - name: Upstream conformance (stdlib reader) and TEITOK readers
         run: python3 -m pytest tests/test_teitok_conformance.py tests/test_teitok_read.py -v --tb=short
 
+      - name: Converted documents annotated into TEITOK format 2 (FLEXICONV_ANNOTATE)
+        # flexiconv output as the layout source of the writer (api_util/teitok_layout.py),
+        # the manifest/stage-4 wiring and the close-out report, on the committed fixtures.
+        run: >-
+          python3 -m pytest tests/test_teitok_layout.py tests/test_flexiconv_annotate.py
+          tests/test_flexiconv_report.py -v --tb=short
+
       - name: Install the pinned flexiconv (core only)
         # The same pin as requirements_flexiconv.txt, without the format extras: the
         # round-trip only needs flexiconv's TEITOK reader.
         run: pip install "flexiconv @ git+https://github.com/ufal/flexiconv.git@v0.3.10"
 
       - name: Upstream conformance (flexiconv round-trip)
-        run: python3 -m pytest tests/test_teitok_conformance.py tests/test_flexiconv_convert.py -v --tb=short
+        run: >-
+          python3 -m pytest tests/test_teitok_conformance.py tests/test_flexiconv_convert.py
+          tests/test_flexiconv_annotate.py -v --tb=short

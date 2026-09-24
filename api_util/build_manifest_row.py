@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 """
-build_manifest_row.py  –  Extract ordered text from one CSV/XLSX file,
-write it to a temp text file, and print one TSV row to stdout:
+build_manifest_row.py  –  Extract ordered text from one CSV/XLSX file, or from a TEITOK
+file flexiconv converted (``api_flexiconv.sh``, ``FLEXICONV_ANNOTATE=true``), write it to a
+temp text file, and print one TSV row to stdout:
 
     doc_id <TAB> page_count <TAB> /path/to/text_file
+
+A ``.teitok.xml`` input contributes the rows ``teitok_read.read_teitok_rows()`` gives
+keywords.py and llm-enrich (one per ``<lb/>`` line or text block), in document order. Stage
+4 later takes the document's layout from the same file, so the text UDPipe sees and the
+text the layout was built from are the same.
+
+``--doc-id-only`` prints the doc_id the row would get and writes nothing
+(``api_1_manifest.sh`` uses it to let a table input win a doc_id collision).
 """
 
 import argparse
@@ -86,8 +95,25 @@ def _read_xlsx(file_path):
     return entries
 
 
+def _read_teitok(file_path):
+    from api_util.teitok_read import read_teitok_rows
+
+    try:
+        rows = read_teitok_rows(file_path)
+    except Exception as exc:
+        print(f"[Error] reading TEITOK {file_path}: {exc}", file=sys.stderr)
+        return []
+    return [{"p": r["page_num"], "l": r["line_num"], "text": r["text"]} for r in rows if r["text"]]
+
+
 def get_sorted_text_and_page_count(file_path):
     ext = os.path.splitext(file_path)[1].lower()
+    if str(file_path).lower().endswith(".teitok.xml"):
+        # document order, not (page, line): block rows restart their line count per page
+        entries = _read_teitok(file_path)
+        if not entries:
+            return None, 0
+        return "\n".join(e["text"] for e in entries), max(e["p"] for e in entries)
     if ext == ".csv":
         entries = _read_csv(file_path)
     elif ext == ".xlsx":
@@ -108,6 +134,9 @@ def main():
     parser.add_argument("input_file")
     parser.add_argument("--text-dir", default=default_text_dir)
     parser.add_argument("--doc-id", default=None, help="Logical document ID to use in manifest")
+    parser.add_argument(
+        "--doc-id-only", action="store_true", help="print the doc_id and exit (writes nothing)"
+    )
     args = parser.parse_args()
 
     if not os.path.isfile(args.input_file):
@@ -119,6 +148,9 @@ def main():
     # strips only the last extension forks the whole run's identity on any multi-dot input
     # (issue atrium-project#10, D3).
     doc_id = args.doc_id or canonical_doc_id(args.input_file)
+    if args.doc_id_only:
+        print(doc_id)
+        return
     full_text, page_count = get_sorted_text_and_page_count(args.input_file)
 
     if full_text is None:

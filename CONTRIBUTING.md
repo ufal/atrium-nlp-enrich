@@ -272,7 +272,10 @@ and inspect `summary_ne_counts.csv`. A TEITOK writer change also moves, in the s
 `tests/fixtures/teitok/CTX_*` (procedure in `schemas/teitok/README.md`;
 `tests/test_validate_teitok.py` fails on stale samples), and `WRITER_FORMAT` in
 `api_util/teitok_alto.py` when readers can notice the change. `tests/test_teitok_conformance.py`
-must stay green: it reads the output the way the TEITOK tools do.
+must stay green: it reads the output the way the TEITOK tools do. The writer has two layout
+sources, ALTO (`_parse_alto`) and a flexiconv TEITOK file (`api_util/teitok_layout.py`), which
+return the same structures. A change to what one of them returns needs the other too, and
+`tests/test_teitok_layout.py` / `tests/test_flexiconv_annotate.py` stay green.
 4. **Config and generated artefact move in the same commit.** Editing
 `data_samples/taxonomy_*.json`, `llm_config.txt` or `prompts/system_prompt.txt` without
 regenerating is the failure this repo has already shipped twice (`a5e3c8a`, `d4c46b2`):
@@ -297,13 +300,14 @@ nothing failing. Three gates now catch it, and all three run on every PR
 Pipeline output is controlled by boolean flags in `config_api.txt`. When adding a new output format,
 follow this pattern:
 
-| Variable         | Description                                              | Default |
-|------------------|----------------------------------------------------------|---------|
-| `SAVE_CONLLU_NE` | Enriched CoNLL-U with NER in the `MISC` field            | `true`  |
-| `SAVE_CSV`       | Token-level summary CSV per document                     | `true`  |
-| `SAVE_TEITOK`    | TEITOK XML (bounding boxes when ALTO is given)           | `true`  |
-| `BBOX_ORIGIN`    | TEITOK bbox origin: `page` or `printspace`               | `page`  |
-| `REGENERATE_TEITOK` | Rewrite existing `.teitok.xml` instead of resuming    | `false` |
+| Variable             | Description                                                                                           | Default |
+|----------------------|-------------------------------------------------------------------------------------------------------|---------|
+| `SAVE_CONLLU_NE`     | Enriched CoNLL-U with NER in the `MISC` field                                                         | `true`  |
+| `SAVE_CSV`           | Token-level summary CSV per document                                                                  | `true`  |
+| `SAVE_TEITOK`        | TEITOK XML (bounding boxes when ALTO is given)                                                        | `true`  |
+| `BBOX_ORIGIN`        | TEITOK bbox origin: `page` or `printspace`                                                            | `page`  |
+| `REGENERATE_TEITOK`  | Rewrite existing `.teitok.xml` instead of resuming                                                    | `false` |
+| `FLEXICONV_ANNOTATE` | Annotate flexiconv-converted documents too (stage 1 text, stage 4 layout from `TEITOK_FLEXICONV_DIR`) | `false` |
 
 New flags must be documented here and in `config_api.txt`.
 

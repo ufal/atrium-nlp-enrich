@@ -233,12 +233,13 @@ def test_committed_data_samples_are_conformant():
 
 
 def _sample_nametag_model():
-    """The NameTag model the committed samples were produced with, as their paradata
-    records it (CNEC 2.0 -- the samples predate the OntoNotes default of #11). The UDPipe
-    model needs no lookup: the CoNLL-U carries it (``# udpipe_model``)."""
+    """The NameTag model the committed samples were produced with, as their newest paradata
+    record states it (CNEC 2.0 today -- the samples predate the OntoNotes default of #11; a
+    sample refresh adds a newer api_3_nt record, which then wins). The UDPipe model needs no
+    lookup: the CoNLL-U carries it (``# udpipe_model``)."""
     import json
 
-    for path in sorted((REPO_ROOT / "data_samples" / "paradata").glob("*.json")):
+    for path in sorted((REPO_ROOT / "data_samples" / "paradata").glob("*.json"), reverse=True):
         model = json.loads(path.read_text(encoding="utf-8")).get("config", {}).get("model_nametag")
         if model:
             return model

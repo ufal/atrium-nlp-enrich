@@ -489,6 +489,35 @@ def append_summary_row(doc_name, merged_conllu_path, summary_csv_path):
     _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv_path)
 
 
+# ── layout source: ALTO, or a flexiconv TEITOK file (FLEXICONV_ANNOTATE) ──────
+
+
+def layout_source(doc_name, alto_dir=None, flexiconv_dir=None):
+    """The file stage 4 takes a document's page layout from, or None.
+
+    ``{alto_dir}/{doc}.alto.xml`` first. Otherwise, when ``flexiconv_dir`` is given
+    (``FLEXICONV_ANNOTATE=true``), the document's flexiconv TEITOK: ``{doc}.teitok.xml``,
+    else the file whose name maps to ``doc_name`` under ``canonical_doc_id()``. That is
+    needed because flexiconv names its output after the file stem (``report.v2.teitok.xml``),
+    while the manifest and alto-postprocess's text-lines route (``DOC_LINE_CATEG/``) use
+    ``canonical_doc_id`` (``report``). The same file then serves the writer
+    (``teitok_layout.py``) and the document hook.
+    """
+    if alto_dir:
+        alto = Path(alto_dir) / f"{doc_name}.alto.xml"
+        if alto.exists():
+            return alto
+    if flexiconv_dir and Path(flexiconv_dir).is_dir():
+        exact = Path(flexiconv_dir) / f"{doc_name}.teitok.xml"
+        if exact.exists():
+            return exact
+        suffix = ".teitok.xml"
+        for candidate in sorted(Path(flexiconv_dir).glob(f"*{suffix}")):
+            if canonical_doc_id(candidate.name[: -len(suffix)]) == doc_name:
+                return candidate
+    return None
+
+
 # ── per-document entry point (called from api_4_stats.sh) ────────────────────
 
 
@@ -513,6 +542,7 @@ def process_single_document(
     document_license_detail=None,
     include_lines=False,
     bbox_origin="page",
+    flexiconv_dir=None,
 ):
     conllu_path = Path(conllu_file)
     # canonical_doc_id(), not Path.stem (issue atrium-project#10, D3): `.conllu` is this
@@ -560,12 +590,12 @@ def process_single_document(
     elif save_csv and not doc_out_csv.exists():
         process_merged_file(doc_out_conllu, doc_out_csv)
 
+    layout = layout_source(doc_name, alto_dir, flexiconv_dir)
     if save_teitok and teitok_out_path and not teitok_out_path.exists():
-        doc_in_alto = Path(alto_dir) / f"{doc_name}.alto.xml" if alto_dir else None
         write_teitok_merged(
             doc_out_conllu,
             teitok_out_path,
-            doc_in_alto,
+            layout,
             doc_id=doc_name,
             model_udpipe=model_udpipe,
             model_nametag=model_nametag,
@@ -583,8 +613,6 @@ def process_single_document(
         if not os.path.exists(baseline_json):
             baseline_json = None  # Graceful fallback to rule 3 (own part only)
 
-        doc_in_alto = Path(alto_dir) / f"{doc_name}.alto.xml" if alto_dir else None
-
         try:
             run_document_hook(
                 doc_id=doc_name,
@@ -596,7 +624,7 @@ def process_single_document(
                 paradata_ref=document_paradata_ref,
                 license_detail=document_license_detail,
                 include_lines=include_lines,
-                alto_path=str(doc_in_alto) if doc_in_alto and doc_in_alto.exists() else None,
+                alto_path=str(layout) if layout else None,
             )
         except Exception as exc:
             print(f"  [Warn] document-json hook failed for {doc_name}: {exc}", file=sys.stderr)
@@ -634,6 +662,7 @@ def process_pipeline(
     document_json_dir=None,
     include_lines=False,
     bbox_origin="page",
+    flexiconv_dir=None,
 ):
     conllu_path_obj = Path(conllu_dir)
     if not conllu_path_obj.exists():
@@ -681,6 +710,7 @@ def process_pipeline(
             document_json_dir=document_json_dir,
             include_lines=include_lines,
             bbox_origin=bbox_origin,
+            flexiconv_dir=flexiconv_dir,
         )
 
     print("\nPipeline Complete.")
@@ -761,6 +791,12 @@ def build_parser():
     parser.add_argument("--tt-dir", default=os.getenv("TEITOK_OUTPUT_DIR"))
     parser.add_argument("--alto-dir", default=os.getenv("ALTO_DIR"))
     parser.add_argument(
+        "--flexiconv-dir",
+        default=None,
+        help="FLEXICONV_ANNOTATE: flexiconv TEITOK output (TEITOK_FLEXICONV_DIR). A document "
+        "without ALTO takes its page layout from its converted file there.",
+    )
+    parser.add_argument(
         "--pages-dir",
         default=os.getenv("INPUT_PAGES_DIR"),
         help="Directory containing per-page images.",
@@ -839,6 +875,7 @@ def main(argv=None):
             document_license_detail=document_license_detail,
             include_lines=args.include_lines,
             bbox_origin=args.bbox_origin,
+            flexiconv_dir=args.flexiconv_dir or None,
         )
         sys.exit(0 if ok else 1)
 
@@ -851,14 +888,18 @@ def main(argv=None):
         sys.exit(1)
 
     if save_teitok:
-        if not args.alto_dir:
-            print("[Warn] --alto-dir not set; TEITOK output will have no bboxes.", file=sys.stderr)
-        elif not Path(args.alto_dir).exists():
+        if args.alto_dir and not Path(args.alto_dir).exists():
             print(
                 f"[Error] A valid --alto-dir is required when save-teitok=true ('{args.alto_dir}' not found).",
                 file=sys.stderr,
             )
             sys.exit(1)
+        if not args.alto_dir and not args.flexiconv_dir:
+            print(
+                "[Warn] neither --alto-dir nor --flexiconv-dir set; TEITOK output will have "
+                "no bboxes.",
+                file=sys.stderr,
+            )
 
         if args.tt_dir:
             Path(args.tt_dir).mkdir(parents=True, exist_ok=True)
@@ -881,6 +922,7 @@ def main(argv=None):
         document_json_dir=args.document_json_dir,
         include_lines=args.include_lines,
         bbox_origin=args.bbox_origin,
+        flexiconv_dir=args.flexiconv_dir or None,
     )
 
 

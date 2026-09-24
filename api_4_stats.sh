@@ -40,7 +40,15 @@ PARA_STATE=$(python3 atrium_paradata.py start \
         "dpi=${IMAGE_DPI:-}" \
         "alto_dpi=${ALTO_DPI:-}" \
         "bbox_origin=${BBOX_ORIGIN:-page}" \
-        "regenerate_teitok=${REGENERATE_TEITOK:-false}")
+        "regenerate_teitok=${REGENERATE_TEITOK:-false}" \
+        "flexiconv_annotate=${FLEXICONV_ANNOTATE:-false}")
+
+# FLEXICONV_ANNOTATE=true: a document without ALTO takes its page layout (bboxes, page
+# images, text blocks) from its flexiconv TEITOK file (api_flexiconv.sh).
+FLEXICONV_LAYOUT_DIR=""
+if [ "${FLEXICONV_ANNOTATE:-false}" = "true" ]; then
+    FLEXICONV_LAYOUT_DIR="${TEITOK_FLEXICONV_DIR:-${TEITOK_OUTPUT_DIR}/flexiconv}"
+fi
 
 TOTAL=$(find "${CONLLU_INPUT_DIR}" -name '*.conllu' -type f | wc -l)
 rm -f "${OUTPUT_DIR}/summary_ne_counts.csv"
@@ -92,6 +100,7 @@ while IFS= read -r -d '' conllu; do
             --save-teitok    "${SAVE_TEITOK:-true}" \
             --tt-dir         "$tt_out_dir" \
             --alto-dir       "${INPUT_ALTO_DIR:-}" \
+            --flexiconv-dir  "$FLEXICONV_LAYOUT_DIR" \
             --pages-dir      "${INPUT_PAGES_DIR:-}" \
             --dpi            "${IMAGE_DPI:-}" \
             --alto-dpi       "${ALTO_DPI:-}" \

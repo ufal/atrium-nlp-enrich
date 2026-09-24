@@ -25,6 +25,11 @@ flexiconv, teitok-tools, xmltokenizer). ``appInfo`` stamps it as ``teitok-2``, a
   ``<surface lrx lry>`` always describes the coordinate space the bboxes use.
 * **Language**: ``@lang`` on ``<TEI>`` and ``profileDesc/langUsage`` come from the ALTO
   ``LANG`` attributes (majority), else from the UDPipe model name, else they are omitted.
+* **Layout source**: ``alto_path`` is an ALTO file, or a TEITOK file converted by flexiconv
+  (``api_flexiconv.sh``, ``FLEXICONV_ANNOTATE=true``). The latter is read by
+  ``api_util/teitok_layout.py`` into the same structures: its ``<pb facs>``, ``<lb bbox>``,
+  ``<tok bbox>`` and text blocks take the place of ALTO pages, lines, strings and blocks, and
+  the header names flexiconv and the original document.
 """
 
 import collections
@@ -137,7 +142,7 @@ def _build_page_scale_map(
         img_dims = None
         img_ext = ".png"  # Default fallback
 
-        img_path = _find_page_image(image_dir, doc_id, idx)
+        img_path = _find_page_image(image_dir, doc_id, idx, pg.get("facs"))
         if img_path:
             img_dims = _read_image_dimensions(img_path)
             img_ext = img_path.suffix  # Dynamically capture extension
@@ -147,6 +152,11 @@ def _build_page_scale_map(
             sx = img_dims[0] / ref_w
             sy = img_dims[1] / ref_h
             scale_map[idx] = (sx, sy, img_dims[0], img_dims[1], dx, dy, img_ext)
+
+        # Tier 1b: an image but no page size (a converted TEITOK layout source whose
+        # coordinates are already image pixels): scale 1, surface = the image
+        elif img_dims:
+            scale_map[idx] = (1.0, 1.0, img_dims[0], img_dims[1], dx, dy, img_ext)
 
         # Tier 2: User-set DPI -> math delegated to bbox_scale
         elif dpi and ref_w > 0 and ref_h > 0:
@@ -241,10 +251,16 @@ def _read_image_dimensions(path):
         return None
 
 
-def _find_page_image(image_dir, doc_id, page_idx):
+def _find_page_image(image_dir, doc_id, page_idx, facs=None):
+    """``{doc_id}-{N}.<ext>`` in ``image_dir``; for a layout source that names its page image
+    (``<pb facs>``), that file (as given, or its base name) first."""
     if not image_dir:
         return None
     base = Path(image_dir)
+    if facs:
+        for candidate in (base / facs, base / Path(facs).name):
+            if candidate.is_file():
+                return candidate
     for ext in _IMAGE_EXTS:
         candidate = base / f"{doc_id}-{page_idx}{ext}"
         if candidate.exists():
@@ -308,6 +324,12 @@ def _parse_alto(alto_path):
         ns_uri = ""
         if root.tag.startswith("{"):
             ns_uri = root.tag[1 : root.tag.index("}")]
+        if root.tag.split("}")[-1] == "TEI":
+            # A flexiconv TEITOK file (api_flexiconv.sh) stands in for ALTO: same result
+            # shape, its own <pb>/<lb>/<tok bbox> geometry (FLEXICONV_ANNOTATE).
+            from api_util.teitok_layout import parse_teitok_layout
+
+            return parse_teitok_layout(alto_path)
         if root.tag.split("}")[-1].lower() != "alto":
             # PAGE XML / hOCR share element names (Page, TextLine) but not ALTO's
             # attributes; they enter the pipeline through flexiconv (api_flexiconv.sh).
@@ -493,11 +515,15 @@ def _align_tokens_to_alto(tokens, alto_strings):
                 "using first matched page for bbox assignment.",
                 file=sys.stderr,
             )
+        # A layout source may carry strings without coordinates (untokenized text, or
+        # punctuation flexiconv did not box): they still place the token on its page,
+        # block and line; the box comes from the matched strings that have one.
+        boxed = [alto_strings[a] for a in a_indices if alto_strings[a].get("left") is not None]
         bboxes[t_idx] = {
-            "left": min(alto_strings[a]["left"] for a in a_indices),
-            "top": min(alto_strings[a]["top"] for a in a_indices),
-            "right": max(alto_strings[a]["right"] for a in a_indices),
-            "bottom": max(alto_strings[a]["bottom"] for a in a_indices),
+            "left": min(s["left"] for s in boxed) if boxed else None,
+            "top": min(s["top"] for s in boxed) if boxed else None,
+            "right": max(s["right"] for s in boxed) if boxed else None,
+            "bottom": max(s["bottom"] for s in boxed) if boxed else None,
             "page_idx": first_a["page_idx"],
             "block_id": first_a["block_id"],
             "line_id": first_a["line_id"],
@@ -785,8 +811,13 @@ def parse_and_align_conllu(
 
     _assign_ids(sentences)
 
-    matched = sum(1 for b in all_bboxes if b is not None)
-    print(f"  [ALTO] matched {matched}/{len(all_units)} tokens to ALTO bboxes")
+    if alto_meta.get("layout_source") == "teitok":
+        placed = sum(1 for b in all_bboxes if b is not None)
+        boxed = sum(1 for b in all_bboxes if has_coords(b))
+        print(f"  [layout] placed {placed}/{len(all_units)} tokens, {boxed} with a bbox")
+    else:
+        matched = sum(1 for b in all_bboxes if b is not None)
+        print(f"  [ALTO] matched {matched}/{len(all_units)} tokens to ALTO bboxes")
 
     return {
         "doc_id": _doc_id,
@@ -857,6 +888,12 @@ def _word_attrs(word, head_ids, with_form=False):
     return attrs
 
 
+def has_coords(bbox) -> bool:
+    """True for an aligned token box that has coordinates (layout sources may give a token
+    its page/block/line without a box)."""
+    return bool(bbox) and bbox.get("left") is not None
+
+
 def _tok_xml(unit, head_ids, coords):
     """One surface ``<tok>`` (with ``<dtok>`` children for a multi-word token)."""
     words = unit["words"]
@@ -867,7 +904,7 @@ def _tok_xml(unit, head_ids, coords):
     if not unit["space_after"]:
         attrs.append('join="right"')
     bbox = unit.get("_bbox")
-    if bbox:
+    if has_coords(bbox):
         attrs.append(
             f'bbox="{coords.fmt(bbox["left"], bbox["top"], bbox["right"], bbox["bottom"])}"'
         )
@@ -894,8 +931,13 @@ def _header_xml(parsed, alto_path, conllu_path, model_udpipe, model_nametag, lan
     conllu_meta = parsed["conllu_meta"]
     alto_meta = parsed["alto_meta"]
     today = datetime.date.today().isoformat()
-    has_alto = bool(parsed["alto_pages"])
-    orgfile = Path(alto_path).name if has_alto else Path(conllu_path).name
+    converted = alto_meta.get("layout_source") == "teitok"
+    has_alto = bool(parsed["alto_pages"]) and not converted
+    if converted:
+        # the original document flexiconv converted; the TEITOK file only relayed it
+        orgfile = alto_meta.get("orgfile") or Path(alto_path).name
+    else:
+        orgfile = Path(alto_path).name if has_alto else Path(conllu_path).name
 
     h = ["  <teiHeader>", "    <fileDesc>"]
     h.append(f"      <titleStmt><title>{doc_id}</title></titleStmt>")
@@ -929,6 +971,14 @@ def _header_xml(parsed, alto_path, conllu_path, model_udpipe, model_nametag, lan
             f'        <application ident="nametag"><label>NameTag NER</label>'
             f"<desc>Model: {escape(model_nametag)}</desc></application>"
         )
+    if converted and alto_meta.get("converter"):
+        version = alto_meta.get("converter_version")
+        version_attr = f' version="{escape(version)}"' if version else ""
+        h.append(
+            f'        <application ident="{escape(alto_meta["converter"])}"{version_attr}>'
+            f"<label>{escape(alto_meta['converter'])}</label>"
+            f"<desc>text and layout from {escape(Path(alto_path).name)}</desc></application>"
+        )
     if alto_meta.get("ocr_software"):
         h.append(
             f'        <application ident="ocr">'
@@ -946,7 +996,13 @@ def _header_xml(parsed, alto_path, conllu_path, model_udpipe, model_nametag, lan
     # revisionDesc: @type/@subtype name the workflow phase the way TEITOK/flexicorp detect
     # it (converted, tagged/parsed, ner); the text wording matches their fallback patterns.
     h.append("    <revisionDesc>")
-    if has_alto:
+    if converted:
+        who = escape(alto_meta.get("converter") or "flexiconv")
+        h.append(
+            f'      <change when="{today}" who="{who}" type="converted">'
+            f"Converted from {escape(orgfile)} by {who}</change>"
+        )
+    elif has_alto:
         h.append(
             f'      <change when="{today}" who="altoconvert" type="converted">'
             f"Converted from ALTO file {escape(orgfile)}</change>"
@@ -1065,6 +1121,15 @@ def write_teitok_merged(
         parsed, alto_path, conllu_path, model_udpipe, model_nametag, lang, has_names
     )
 
+    # Page image names: {doc_id}-{N}.<ext> for ALTO; a converted layout source keeps the
+    # name it gives (<pb facs>).
+    page_facs = {
+        pg["idx"]: escape(pg["facs"], {'"': "&quot;"}) for pg in alto_pages if pg.get("facs")
+    }
+
+    def facs_url(page, ext):
+        return page_facs.get(page) or f"{doc_id_safe}-{page}{ext}"
+
     if alto_pages:
         lines.append("  <facsimile>")
         for pg in alto_pages:
@@ -1073,7 +1138,7 @@ def write_teitok_merged(
             lrx = f' lrx="{img_w}"' if img_w is not None else ""
             lry = f' lry="{img_h}"' if img_h is not None else ""
             lines.append(f'    <surface id="facs-{idx}"{lrx}{lry}>')
-            lines.append(f'      <graphic url="{doc_id_safe}-{idx}{img_ext}"/>')
+            lines.append(f'      <graphic url="{facs_url(idx, img_ext)}"/>')
             lines.append("    </surface>")
         lines.append("  </facsimile>")
 
@@ -1121,7 +1186,7 @@ def write_teitok_merged(
             coords.set_page(scale)
             corresp = f' corresp="#facs-{page}"' if page in scale_map else ""
             body.append(
-                f'      <pb n="{page}" id="pb-{page}" facs="{doc_id_safe}-{page}{scale[6]}"'
+                f'      <pb n="{page}" id="pb-{page}" facs="{facs_url(page, scale[6])}"'
                 f"{corresp}/>\n"
             )
             figures = [g for g in alto_graphics if g["page_idx"] == page]

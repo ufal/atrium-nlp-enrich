@@ -17,17 +17,17 @@ before the pipeline packages them for the LINDAT dataset release.
 conventions of the TEITOK tools themselves (flexiconv, flexipipe, teitok-tools,
 xmltokenizer), not just a shape of its own:
 
-| Aspect      | Format 2                                                                                                                                                                                                                                  |
-|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Root        | `<TEI xmlnsoff="http://www.tei-c.org/ns/1.0" lang="cs">`. `lang` comes from ALTO `LANG` (majority), else the UDPipe model name, else it is omitted. It is mirrored in `profileDesc/langUsage/language@ident`.                              |
+| Aspect      | Format 2                                                                                                                                                                                                                                                                          |
+|-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Root        | `<TEI xmlnsoff="http://www.tei-c.org/ns/1.0" lang="cs">`. `lang` comes from ALTO `LANG` (majority), else the UDPipe model name, else it is omitted. It is mirrored in `profileDesc/langUsage/language@ident`.                                                                     |
 | Spacing     | Text-faithful. Tokens are inline in `<s>`, whitespace between `</tok>` and the next `<tok>` is a space and none is `SpaceAfter=No`. This also holds across `<lb/>` and `</name>` (an entity's trailing space sits inside `</name>`). `join="right"` is kept as the TEI-P5 marker. |
-| Tokens      | `<tok id type ord lemma upos xpos feats head deprel join bbox>`. `@head` is the head word's `@id`; `@ord` is the CoNLL-U ID.                                                                                                              |
-| MWT         | `<tok id bbox>abych<dtok id form ord lemma …/><dtok …/></tok>`. The surface token carries the text and bbox; `<dtok>` carries the words.                                                                                                   |
-| Ids         | `w-N` (document-global), `w-N.K` (dtok), `s-N`, `n-N` (name), `facs-P` (surface), `pb-P`, `lb-P.L`, `b-P.K` (div), `fig-P.K`. The atrium_document record's `entities[].teitok_ref` and `pages[].teitok_surface` are these local ids.           |
-| Entities    | `<name id type sameAs>`. `@type` is PER/ORG/LOC/MISC (`api_util/ner_types.py`), and the raw label goes in `@cnec`, `@onto`, `@archaeo` or `@label`.                                                                                       |
-| Layout      | `<div type="TextBlock" [subtype=<ALTO TAGREFS label>] [lang]>`, or `type="text"` without ALTO. `<pb corresp="#facs-P">`, `<figure>`.                                                                                                      |
-| Coordinates | `bbox="x1 y1 x2 y2"`: non-negative page-image pixels, origin at the page's top-left corner (`BBOX_ORIGIN=page`, the TEITOK norm). `BBOX_ORIGIN=printspace` measures from the ALTO PrintSpace instead. `<surface lrx lry>` is always the extent the boxes are measured in. |
-| Header      | `notesStmt/note[@n="orgfile"]`; `revisionDesc/change@type` = `converted`, `tagged` + `subtype="parsed"`, `ner` (the phases TEITOK/flexicorp detect).                                                                                       |
+| Tokens      | `<tok id type ord lemma upos xpos feats head deprel join bbox>`. `@head` is the head word's `@id`; `@ord` is the CoNLL-U ID.                                                                                                                                                      |
+| MWT         | `<tok id bbox>abych<dtok id form ord lemma …/><dtok …/></tok>`. The surface token carries the text and bbox; `<dtok>` carries the words.                                                                                                                                          |
+| Ids         | `w-N` (document-global), `w-N.K` (dtok), `s-N`, `n-N` (name), `facs-P` (surface), `pb-P`, `lb-P.L`, `b-P.K` (div), `fig-P.K`. The atrium_document record's `entities[].teitok_ref` and `pages[].teitok_surface` are these local ids.                                              |
+| Entities    | `<name id type sameAs>`. `@type` is PER/ORG/LOC/MISC (`api_util/ner_types.py`), and the raw label goes in `@cnec`, `@onto`, `@archaeo` or `@label`.                                                                                                                               |
+| Layout      | `<div type="TextBlock" [subtype=<ALTO TAGREFS label>] [lang]>`, or `type="text"` without ALTO. `<pb corresp="#facs-P">`, `<figure>`.                                                                                                                                              |
+| Coordinates | `bbox="x1 y1 x2 y2"`: non-negative page-image pixels, origin at the page's top-left corner (`BBOX_ORIGIN=page`, the TEITOK norm). `BBOX_ORIGIN=printspace` measures from the ALTO PrintSpace instead. `<surface lrx lry>` is always the extent the boxes are measured in.         |
+| Header      | `notesStmt/note[@n="orgfile"]`; `revisionDesc/change@type` = `converted`, `tagged` + `subtype="parsed"`, `ner` (the phases TEITOK/flexicorp detect).                                                                                                                              |
 
 Format-1 documents (before 2026-09: TEI namespace, `CTX.s1.w1` ids, `MarginTextZone-P`,
 one `<tok>` per line) still validate — `tests/fixtures/teitok/legacy/CTX_format1.teitok.xml`
@@ -118,11 +118,11 @@ authority.
 Three code paths in this repo write `*.teitok.xml`. They are covered to
 different depths, on purpose:
 
-| Emitter         | Entry point                                                                               | Gate                                                                                      |
-|-----------------|-------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
-| `stats` stage   | `api_4_stats.sh` → `api_util/summarize_nt_udp.py` → `teitok_alto.py::write_teitok_merged` | **Full XSD** over `$TEITOK_OUTPUT_DIR` minus `$TEITOK_FLEXICONV_DIR`, hard fail before `atrium_paradata.py finish` |
-| flexiconv       | `api_flexiconv.sh` → `api_util/flexiconv_convert.py`                                      | **TEITOK-core** (`--profile core`) over `$TEITOK_FLEXICONV_DIR`, hard fail               |
-| `POST /rescale` | `service/api.py` → `service/rescale.py`                                                   | **Advisory**: `schema_valid` / `schema_errors` in the response                            |
+| Emitter         | Entry point                                                                                                                                                                                      | Gate                                                                                                               |
+|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
+| `stats` stage   | `api_4_stats.sh` → `api_util/summarize_nt_udp.py` → `teitok_alto.py::write_teitok_merged` (layout from ALTO, or with `FLEXICONV_ANNOTATE` from a converted file via `api_util/teitok_layout.py`) | **Full XSD** over `$TEITOK_OUTPUT_DIR` minus `$TEITOK_FLEXICONV_DIR`, hard fail before `atrium_paradata.py finish` |
+| flexiconv       | `api_flexiconv.sh` → `api_util/flexiconv_convert.py`                                                                                                                                             | **TEITOK-core** (`--profile core`) over `$TEITOK_FLEXICONV_DIR`, hard fail                                         |
+| `POST /rescale` | `service/api.py` → `service/rescale.py`                                                                                                                                                          | **Advisory**: `schema_valid` / `schema_errors` in the response                                                     |
 
 flexiconv output comes from a third-party converter across the `FLEXICONV_FORMATS`
 of `config_api.txt`. It is a *different* TEITOK profile: no `<s>`; `<p>` text for
@@ -132,6 +132,15 @@ than for being broken. So it goes to its own `$TEITOK_FLEXICONV_DIR` (default
 `$TEITOK_OUTPUT_DIR/flexiconv`), which `api_4_stats.sh` excludes (`--exclude`), and it is
 checked with the core profile. Real flexiconv v0.3.10 output is committed as fixtures in
 `tests/fixtures/teitok/flexiconv/`.
+
+With `FLEXICONV_ANNOTATE=true` that output is an intermediate. Its text is annotated by stages
+2–3, and stage 4 writes **this** format (full XSD) with the converted file as the layout source.
+Only the header differs: `orgfile` names the original document, a
+`<change who="flexiconv" type="converted">` replaces `altoconvert`, and flexiconv's own
+`<application>` is listed. The page images keep flexiconv's names (`<graphic url>`, `<pb facs>`), and
+blocks carry the source element as `subtype` (`p`, `head`, `item`, …). Fixtures:
+`tests/fixtures/teitok/flexiconv/annotated/*.conllu`, which is hand-written NER-merged CoNLL-U for
+the committed conversions (`tests/test_flexiconv_annotate.py`).
 
 `/rescale` reports rather than enforces because the endpoint faithfully
 transforms whatever it is handed, including legacy documents that predate this

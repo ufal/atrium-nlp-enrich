@@ -63,6 +63,15 @@ _CORE_STAGES: Dict[str, Tuple[str, str]] = {
 _CORE_ORDER = ["manifest", "udp", "nt", "stats"]
 _FULL_STAGE_ORDER = _CORE_ORDER + ["keywords", "llm"]
 
+# --with-flexiconv: api_flexiconv.sh runs first, and FLEXICONV_ANNOTATE=true makes the manifest
+# take the converted documents in and stage 4 take their layout from them (issue #10, stage 6).
+_FLEXICONV_STAGE = {
+    "name": "flexiconv",
+    "script": "api_flexiconv.sh",
+    "label": "flexiconv conversion to TEITOK",
+    "skip": False,
+}
+
 # ───────────────────────────────────────────────────────────────────────────────
 # config_api.txt parsing
 # ───────────────────────────────────────────────────────────────────────────────
@@ -451,6 +460,9 @@ def _build_plan(args: argparse.Namespace, values: Dict[str, str]) -> Dict[str, A
     )
 
     plan_stages: List[Dict[str, str]] = []
+    with_flexiconv = bool(getattr(args, "with_flexiconv", False))
+    if with_flexiconv:
+        plan_stages.append(dict(_FLEXICONV_STAGE))
 
     # Iterate over 'core' instead of '_CORE_ORDER'
     for name in core:
@@ -493,6 +505,7 @@ def _build_plan(args: argparse.Namespace, values: Dict[str, str]) -> Dict[str, A
         "llm_config": getattr(args, "llm_config", "llm_config.txt"),
         "stage_plan": plan_stages,
         "skips": skips,
+        "with_flexiconv": with_flexiconv,
         "runner_provenance": {v: os.environ.get(v, "") for v in _RUNNER_ENV_VARS},
     }
 
@@ -651,6 +664,12 @@ def main(argv=None):
     parser.add_argument("--skip-stats", action="store_true", help="Skip Statistics + TEITOK")
     parser.add_argument("--skip-keywords", action="store_true", help="Skip keyword extraction")
     parser.add_argument("--skip-llm", action="store_true", help="Skip LLM semantic enrichment")
+    parser.add_argument(
+        "--with-flexiconv",
+        action="store_true",
+        help="Convert INPUT_DOCS_DIR with flexiconv first (api_flexiconv.sh) and annotate the "
+        "converted documents too (FLEXICONV_ANNOTATE=true for every stage).",
+    )
 
     # 3. Rest of the existing arguments...
     parser.add_argument("--kw", action="store_true")
@@ -741,6 +760,9 @@ def main(argv=None):
     env = _build_stage_env(config_path=args.config)
     if args.force:
         env["ATRIUM_FORCE_RUN"] = "1"
+    if plan["with_flexiconv"]:
+        # config_api.txt writes it as ${FLEXICONV_ANNOTATE:-false}, so this survives `source`
+        env["FLEXICONV_ANNOTATE"] = "true"
 
     doc_json_scratch_dir: Optional[Path] = None
     doc_json_doc_id: Optional[str] = None
@@ -754,7 +776,9 @@ def main(argv=None):
     empty_failures: List[str] = []
     skipped_names: List[str] = []
 
-    for s_info in [s for s in plan["stage_plan"] if s["name"] in _CORE_ORDER]:
+    for s_info in [
+        s for s in plan["stage_plan"] if s["name"] in _CORE_ORDER or s["name"] == "flexiconv"
+    ]:
         name = s_info["name"]
         label = s_info["label"]
         if s_info["skip"]:

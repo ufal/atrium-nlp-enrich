@@ -3,8 +3,10 @@
 #
 # Reads INPUT_DOCS_DIR, converts every file whose extension is in FLEXICONV_FORMATS and
 # writes <stem>.teitok.xml into TEITOK_FLEXICONV_DIR (see api_util/flexiconv_convert.py for
-# the naming rule). flexiconv output is NOT run through UDPipe/NameTag: keywords.py and
-# llm_run.py read it directly through api_util/teitok_read.py.
+# the naming rule). By default that output is final: keywords.py and llm_run.py read it
+# directly through api_util/teitok_read.py. With FLEXICONV_ANNOTATE=true (run_pipeline.py
+# --with-flexiconv) it is an intermediate: stages 1-4 annotate it with UDPipe and NameTag
+# and write TEITOK format 2 into TEITOK_OUTPUT_DIR, keeping its layout.
 set -uo pipefail
 
 # shellcheck disable=SC1090  # config path is dynamic (ATRIUM_CONFIG); not followed at lint time

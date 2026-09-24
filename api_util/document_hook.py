@@ -14,7 +14,7 @@ from atrium_document import DocumentRecord, load_document
 from atrium_document import validate_document as validate_document_record
 
 from .ner_types import coarse_type, tagset
-from .teitok_alto import group_ner_spans, parse_and_align_conllu
+from .teitok_alto import group_ner_spans, has_coords, parse_and_align_conllu
 
 logger = logging.getLogger(__name__)
 
@@ -246,10 +246,12 @@ def run_document_hook(
         surface = _surface_text(span_tokens)
         lemma = " ".join(t["lemma"] for t in span_tokens)
 
-        x_mins = [float(t["_bbox"]["left"]) for t in span_tokens if t.get("_bbox")]
-        y_mins = [float(t["_bbox"]["top"]) for t in span_tokens if t.get("_bbox")]
-        x_maxs = [float(t["_bbox"]["right"]) for t in span_tokens if t.get("_bbox")]
-        y_maxs = [float(t["_bbox"]["bottom"]) for t in span_tokens if t.get("_bbox")]
+        # a converted layout source can place a token without boxing it (has_coords)
+        boxed = [t["_bbox"] for t in span_tokens if has_coords(t.get("_bbox"))]
+        x_mins = [float(b["left"]) for b in boxed]
+        y_mins = [float(b["top"]) for b in boxed]
+        x_maxs = [float(b["right"]) for b in boxed]
+        y_maxs = [float(b["bottom"]) for b in boxed]
 
         bbox = None
         if x_mins and y_mins and x_maxs and y_maxs:

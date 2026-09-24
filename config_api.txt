@@ -58,8 +58,9 @@ ALTO_DPI=""
 BBOX_ORIGIN="page"
 
 # REGENERATE_TEITOK: stage 4 skips documents whose .teitok.xml already exists (resume).
-# Set to true once after a TEITOK format change so old and new files never mix in one directory.
-REGENERATE_TEITOK=false
+# Set to true once after a TEITOK format change so old and new files never mix in one directory,
+# here or for one run: `REGENERATE_TEITOK=true bash api_4_stats.sh` (the ${...:-} form keeps it).
+REGENERATE_TEITOK="${REGENERATE_TEITOK:-false}"
 
 # Source directory for non-tabular documents converted via Flexiconv (api_flexiconv.sh).
 INPUT_DOCS_DIR="$OUTPUT_DIR/DOCS"
@@ -69,6 +70,13 @@ INPUT_DOCS_DIR="$OUTPUT_DIR/DOCS"
 TEITOK_FLEXICONV_DIR="$TEITOK_OUTPUT_DIR/flexiconv"
 # Re-convert documents whose output already exists (default: keep them, resume-safe).
 FLEXICONV_FORCE=false
+# FLEXICONV_ANNOTATE=true: the converted documents also go through UDPipe and NameTag. Stage 1
+# reads their text from TEITOK_FLEXICONV_DIR (a table with the same doc_id wins, e.g.
+# alto-postprocess's DOC_LINE_CATEG/ for the same inputs), and stage 4 takes a document's
+# layout (bboxes, page images, blocks) from its converted file when it has no ALTO. The result
+# is TEITOK format 2 in TEITOK_OUTPUT_DIR, like any other document. `run_pipeline.py
+# --with-flexiconv` sets it. Keep the ${...:-} form so that setting survives `source`.
+FLEXICONV_ANNOTATE="${FLEXICONV_ANNOTATE:-false}"
 
 # Extensions the Flexiconv step ingests (space/comma separated, no dot). Empty = disabled.
 # xml/hocr: flexiconv detects PAGE XML, ALTO, TEI and TEITOK by content, hOCR by extension.
