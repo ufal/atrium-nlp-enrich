@@ -40,6 +40,13 @@ fi
 TOTAL=0
 TABLE_DOC_IDS=""  # newline-separated (no associative arrays: bash 3.2 on macOS)
 
+# Drop the manifest row of doc_id $1 (exact match on the first column: a grep pattern would
+# treat the dots of "report.v2" as wildcards and drop "reportXv2" too).
+drop_manifest_row() {
+    awk -F'\t' -v id="$1" '$1 != id' "${OUTPUT_DIR}/manifest.tsv" > "${OUTPUT_DIR}/manifest.tmp"
+    mv "${OUTPUT_DIR}/manifest.tmp" "${OUTPUT_DIR}/manifest.tsv"
+}
+
 for csv_file in "${INPUT_TABLES_DIR}"/*.csv "${INPUT_TABLES_DIR}"/*.xlsx; do
     [ -f "$csv_file" ] || continue
     TOTAL=$((TOTAL + 1))
@@ -51,11 +58,7 @@ for csv_file in "${INPUT_TABLES_DIR}"/*.csv "${INPUT_TABLES_DIR}"/*.xlsx; do
         DOC_ID=$(echo "$NEW_ROW" | cut -f1)
         TABLE_DOC_IDS+="${DOC_ID}"$'\n'
 
-        if grep -q "^${DOC_ID}[[:space:]]" "${OUTPUT_DIR}/manifest.tsv"; then
-            grep -v "^${DOC_ID}[[:space:]]" "${OUTPUT_DIR}/manifest.tsv" > "${OUTPUT_DIR}/manifest.tmp"
-            mv "${OUTPUT_DIR}/manifest.tmp" "${OUTPUT_DIR}/manifest.tsv"
-        fi
-
+        drop_manifest_row "$DOC_ID"
         echo "$NEW_ROW" >> "${OUTPUT_DIR}/manifest.tsv"
         python3 atrium_paradata.py success --state "$PARA_STATE" --type tsv
     else
@@ -70,26 +73,36 @@ for csv_file in "${INPUT_TABLES_DIR}"/*.csv "${INPUT_TABLES_DIR}"/*.xlsx; do
     fi
 done
 
-# Converted documents. A table with the same doc_id (alto-postprocess's text-lines route
-# writes DOC_LINE_CATEG/<doc>.csv for the same inputs) wins: its lines are categorised, and
-# stage 4 still takes this document's layout from the converted file.
+# Converted documents. A table can claim a converted file as its layout
+# (api_util/doc_identity.py: the file with its doc_id, else the single file whose name maps
+# to it -- alto-postprocess's text-lines route writes DOC_LINE_CATEG/<doc>.csv for the same
+# inputs). The table then wins: its lines are categorised, stage 4 takes the layout from the
+# converted file, and the converted file is not annotated a second time (issue #38, B).
 if [[ -n "$FLEXICONV_INPUT_DIR" ]]; then
+    TABLE_IDS_FILE=$(mktemp)
+    trap 'rm -f "$TABLE_IDS_FILE"' EXIT
+    printf '%s' "$TABLE_DOC_IDS" > "$TABLE_IDS_FILE"
     for teitok_file in "${FLEXICONV_INPUT_DIR}"/*.teitok.xml; do
         [ -f "$teitok_file" ] || continue
         TOTAL=$((TOTAL + 1))
-        DOC_ID=$(python3 api_util/build_manifest_row.py "$teitok_file" --doc-id-only)
-        if printf '%s' "$TABLE_DOC_IDS" | grep -Fxq -- "$DOC_ID"; then
-            python3 atrium_paradata.py skip \
-                --state "$PARA_STATE" \
-                --file  "$teitok_file" \
-                --reason "doc_id ${DOC_ID} already comes from a table input"
+        DOC_ID="" CLAIMANT=""
+        IFS=$'\t' read -r DOC_ID CLAIMANT < <(python3 api_util/build_manifest_row.py \
+            "$teitok_file" --doc-id-only --table-ids "$TABLE_IDS_FILE") || true
+        if [[ -z "$DOC_ID" ]]; then
+            echo "[CRITICAL ERROR] no doc_id for ${teitok_file}. Halting pipeline." >&2
+            exit 1
+        fi
+        if [[ -n "$CLAIMANT" ]]; then
+            if [[ "$CLAIMANT" == "$DOC_ID" ]]; then
+                reason="doc_id ${DOC_ID} already comes from a table input"
+            else
+                reason="layout of table document ${CLAIMANT}, whose text comes from the table"
+            fi
+            python3 atrium_paradata.py skip --state "$PARA_STATE" --file "$teitok_file" --reason "$reason"
             continue
         fi
         if NEW_ROW=$(python3 api_util/build_manifest_row.py "$teitok_file" --text-dir "${TEMP_TXT_DIR:-./TEMP/TXT_EXTRACT}"); then
-            if grep -q "^${DOC_ID}[[:space:]]" "${OUTPUT_DIR}/manifest.tsv"; then
-                grep -v "^${DOC_ID}[[:space:]]" "${OUTPUT_DIR}/manifest.tsv" > "${OUTPUT_DIR}/manifest.tmp"
-                mv "${OUTPUT_DIR}/manifest.tmp" "${OUTPUT_DIR}/manifest.tsv"
-            fi
+            drop_manifest_row "$DOC_ID"
             echo "$NEW_ROW" >> "${OUTPUT_DIR}/manifest.tsv"
             python3 atrium_paradata.py success --state "$PARA_STATE" --type tsv
         else

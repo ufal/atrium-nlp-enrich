@@ -122,6 +122,43 @@ def test_pages_are_numbered_like_teitok_read_rows(tmp_path):
     assert [p["idx"] for p in pages] == [2]  # only the page that names an image
 
 
+def test_surfaces_images_sizes_and_labels(tmp_path):
+    """P5 (issue #38, C): a <pb> without @corresp takes the k-th <surface>; the image may
+    only be in its <graphic url>, the size in @lrx/@lry or graphic@width/@height; pb@n is
+    kept as the page's label."""
+    doc = tmp_path / "d.teitok.xml"
+    doc.write_text(
+        "<TEI><facsimile>"
+        "<surface id='s1' lrx='800' lry='1200'><graphic url='one.jpg'/></surface>"
+        "<surface id='s2'><graphic url='two.jpg' width='640px' height='960'/></surface>"
+        "</facsimile><text><body>"
+        "<pb n='I'/><p>a</p><pb n='2'/><p>b</p><pb n='7a' corresp='#s1'/><p>c</p>"
+        "</body></text></TEI>",
+        encoding="utf-8",
+    )
+    _, pages, _, _, meta = parse_teitok_layout(doc)
+    assert [(p["idx"], p["facs"], p["width"], p["height"]) for p in pages] == [
+        (1, "one.jpg", "800", "1200"),
+        (2, "two.jpg", "640", "960"),
+        (3, "one.jpg", "800", "1200"),
+    ]
+    assert meta["page_labels"] == {1: "I", 3: "7a"}
+    assert meta["page_count"] == 3
+
+
+def test_text_before_the_first_page_break_is_page_one(tmp_path):
+    """Same page ordinals as teitok_read's ``page_idx`` (the pages stage 1 records)."""
+    doc = tmp_path / "d.teitok.xml"
+    doc.write_text(
+        "<TEI><text><body><p>title</p><pb n='1'/><p>body</p></body></text></TEI>",
+        encoding="utf-8",
+    )
+    strings, _, _, _, meta = parse_teitok_layout(doc)
+    assert [(s["content"], s["page_idx"]) for s in strings] == [("title", 1), ("body", 2)]
+    assert [r["page_idx"] for r in read_teitok_rows(doc)] == [1, 2]
+    assert meta["page_labels"] == {2: "1"}
+
+
 def test_writer_dispatches_tei_roots_to_the_layout_reader():
     path = FIXTURES / "page.teitok.xml"
     assert teitok_alto._parse_alto(str(path)) == parse_teitok_layout(path)

@@ -396,11 +396,13 @@ class TestPageBoundaries:
         assert _tok_texts(root) == [t["form"] for t in _eligible_tokens(two_page_conllu)]
         assert len(list(root.iter("pb"))) == 2
 
-    def test_all_tokens_present_across_page_break_marker(self, page_break_conllu, tmp_path):
+    def test_a_chunk_marker_is_not_a_page_break(self, page_break_conllu, tmp_path):
+        """``# page_break = true`` marked a UDPipe chunk start, not a page (issue #38, A)."""
         out = _convert(page_break_conllu, tmp_path, "pb.teitok.xml")
         root = ET.parse(str(out)).getroot()
         assert _tok_texts(root) == [t["form"] for t in _eligible_tokens(page_break_conllu)]
-        assert len(list(root.iter("pb"))) == 2
+        assert len(list(root.iter("pb"))) == 1
+        assert next(root.iter("pb")).get("facs") is None  # no page image: no invented facs
 
 
 # ═════════════════════════════════════════════════════════════════════════════

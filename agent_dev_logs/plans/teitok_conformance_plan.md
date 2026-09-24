@@ -1,33 +1,43 @@
-# TEITOK conformance & flexi* integration — ecosystem plan (umbrella for #9 · #10 · #28)
+# TEITOK conformance & flexi* integration — ecosystem plan (umbrella for #9 · #10 · #28 · #38)
 
 > _Written 2026-09-23 from an audit of `atrium-nlp-enrich` (`test` `ed18f40`, v0.20.3), `atrium-llm-enrich`,
-> `atrium-alto-postprocess` and `atrium-project`, checked against the TEITOK author's own tooling. Per-issue detail:
-> [`digests/9.digest.md`](../digests/9.digest.md) · [`plans/9.plan.md`](9.plan.md) ·
+> `atrium-alto-postprocess` and `atrium-project`, checked against the TEITOK author's own tooling; round 4
+> (2026-09-24) re-audited `test` `3654e73` (v0.21.0) and the same upstream heads. Per-issue detail:
 > [`digests/10.digest.md`](../digests/10.digest.md) · [`plans/10.plan.md`](10.plan.md) ·
-> [`digests/28.digest.md`](../digests/28.digest.md) · [`plans/28.plan.md`](28.plan.md). Findings marked ▶ were
-> reproduced by running the code (scratch environment, repos untouched)._
+> [`digests/38.digest.md`](../digests/38.digest.md) · [`plans/38.plan.md`](38.plan.md). #9 and #28 are closed
+> (2026-09-24); their digest+plan pairs were removed as for #35 — the issues themselves are the record:
+> [#9](https://github.com/ufal/atrium-nlp-enrich/issues/9) · [#28](https://github.com/ufal/atrium-nlp-enrich/issues/28).
+> Findings marked ▶ were reproduced by running the code (scratch environment, repos untouched)._
 
-## 0. Progress (updated 2026-09-24)
+## 0. Progress (updated 2026-09-24, round 4)
 
-Stages 1–5 are on `test`: nlp `67751ef`/`701b02c`, llm `f62921c`, hub `4d6ea10`, pushed 2026-09-23.
-CI on those heads is green. The **TEITOK Schema Contract** lane passed every step, including the
-conformance lane and the pinned-flexiconv round trip (run 35896731559). The hub E2E runs with
-`SAVE_TEITOK=true` + `--teitok-dir`, but on the published `:latest` image (v0.20.3, format 1), which only a version
-tag moves. Format 2 is exercised by a dispatch with `image-tag=test`.
+Stages 1–6 are on `test` and **released in v0.21.0** (tag at `ecdac10`, 2026-09-24; the tag's Docker
+build succeeded, so `:latest` is format 2). Rounds: Stages 1–5 pushed 2026-09-23 (nlp `67751ef`/`701b02c`,
+llm `f62921c`, hub `4d6ea10`); round 3 (tier-1 fixture, `flexiconv_report.py`, `--with-flexiconv`, Stage 6)
+landed as nlp `8a1ded3` + `ecdac10`. `teitok-schema.yml`: red on `8a1ded3` (the annotated CoNLL-U fixtures
+came one commit later), green on `ecdac10` (runs 35974285161 `test`, 35974294357 `master`). The hub E2E
+last ran on 2026-09-23 (before the tag), so **no E2E has run on format 2 yet**; the next push, schedule or
+dispatch will.
 
-Round 3 (branch `claude/inspiring-cerf-2gdtd1`, local, 2026-09-24) closes the remaining #9/#10
-items and implements Stage 6.
+Issues: #9 and #28 closed; #10 open for its close-out report; **#38 opened** for the annotated path's
+follow-ups. Round 4 (this revision) found that page attribution is wrong in every stage (§3.3, R4-1/R4-2)
+and re-scoped #38 around it; the work is Stage 7 (§5), **implemented the same day** in all four repos and
+delivered as files (not yet on `test`, whose heads meanwhile moved by dev-log commits only: nlp `787b683`,
+llm `c1ad762`, alto `4378c9f`, hub `d006088`). Verified in a scratch venv: nlp-enrich 1123 passed · llm-enrich
+947 · alto-postprocess 1584 · hub 169, `mkdocs build --strict` and `workflow_lint.py --offline` clean.
 
-| Stage                              | State                                                                                               | Deviations from §5                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-|------------------------------------|-----------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1 — dev logs                       | ✅ on `test`                                                                                         | the umbrella plan moved into `plans/`; its links were fixed in Stage 2                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| 2 — P0 fixes                       | ✅ on `test`                                                                                         | hub `atrium_vocab.py` **not** touched: the file is byte-identical in five tool repos, so `teitok_alto._CNEC_TO_CONLL` keeps its name as the declared authority (now an alias of `ner_types.CNEC_TO_CONLL`); a drift test pins it equal to `atrium_vocab.CNEC_TO_ENTITY_TYPE`. `summarize_nt_udp.py` keeps its own CNEC→OntoNotes *explanation* map (a different purpose). `ner_types.CNEC_CODES` recognises every CNEC 2.0 code (`ty`, `n_`, `T`, …), not only the coarse-mapped ones                                                             |
-| 3 — writer conformance             | ✅ on `test`                                                                                         | `entities[].bbox` stays in ALTO page units (it matches `lines[].bbox`); `pages[].teitok_surface` is only written for pages that have a `<surface>` (ALTO input), so `/enrich` records have none. Also fixed on the way: non-ALTO roots (PAGE XML, hOCR) passed as `alto_path` no longer produce an empty facsimile; unnamed ALTO blocks/lines no longer collapse into one; `summarize_nt_udp.py` per-document mode forwards `--dpi/--alto-dpi`; the dead pre-merge writer call is removed; `MODEL_NAMETAG` reaches the header (`--model-nametag`) |
-| 4 — flexiconv path                 | ✅ on `test`; R3: `run_pipeline.py --with-flexiconv` ✅ and `api_util/flexiconv_report.py` ✅ (branch) | reference experiment on flexiconv's own examples in the README; the table for real ATRIUM documents is now two commands (user action)                                                                                                                                                                                                                                                                                                                                                                                                             |
-| 5 — cross-repo                     | ✅ on `test`                                                                                         | hub: E2E asserts TEITOK and turns `SAVE_TEITOK` on; fixture + `document_schema.md` ids. `docs_site/external-tools.md` / `pipelines.md` W11 and the `atrium_vocab.py` authority string left to their own rounds (#57 policy, 5-repo vendoring)                                                                                                                                                                                                                                                                                                     |
-| 6 — annotation of flexiconv output | ✅ R3 (branch), opt-in `FLEXICONV_ANNOTATE`                                                          | in-house stages instead of xmltokenizer/flexipipe, see §5 Stage 6                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Stage                              | State                                                                                            | Deviations from §5                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|------------------------------------|--------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1 — dev logs                       | ✅ on `test`                                                                                      | the umbrella plan moved into `plans/`; its links were fixed in Stage 2                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 2 — P0 fixes                       | ✅ on `test`                                                                                      | hub `atrium_vocab.py` **not** touched: the file is byte-identical in five tool repos, so `teitok_alto._CNEC_TO_CONLL` keeps its name as the declared authority (now an alias of `ner_types.CNEC_TO_CONLL`); a drift test pins it equal to `atrium_vocab.CNEC_TO_ENTITY_TYPE`. `summarize_nt_udp.py` keeps its own CNEC→OntoNotes *explanation* map (a different purpose). `ner_types.CNEC_CODES` recognises every CNEC 2.0 code (`ty`, `n_`, `T`, …), not only the coarse-mapped ones                                                             |
+| 3 — writer conformance             | ✅ on `test`                                                                                      | `entities[].bbox` stays in ALTO page units (it matches `lines[].bbox`); `pages[].teitok_surface` is only written for pages that have a `<surface>` (ALTO input), so `/enrich` records have none. Also fixed on the way: non-ALTO roots (PAGE XML, hOCR) passed as `alto_path` no longer produce an empty facsimile; unnamed ALTO blocks/lines no longer collapse into one; `summarize_nt_udp.py` per-document mode forwards `--dpi/--alto-dpi`; the dead pre-merge writer call is removed; `MODEL_NAMETAG` reaches the header (`--model-nametag`) |
+| 4 — flexiconv path                 | ✅ on `test`, v0.21.0; R3: `run_pipeline.py --with-flexiconv` ✅, `api_util/flexiconv_report.py` ✅ | reference experiment on flexiconv's own examples in the README; the table for real ATRIUM documents is now two commands (user action)                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 5 — cross-repo                     | ✅ on `test`                                                                                      | hub: E2E asserts TEITOK and turns `SAVE_TEITOK` on; fixture + `document_schema.md` ids. `docs_site/external-tools.md` / `pipelines.md` W11 and the `atrium_vocab.py` authority string left to their own rounds (#57 policy, 5-repo vendoring)                                                                                                                                                                                                                                                                                                     |
+| 6 — annotation of flexiconv output | ✅ on `test`, v0.21.0, opt-in `FLEXICONV_ANNOTATE` → follow-ups in #38                            | in-house stages instead of xmltokenizer/flexipipe, see §5 Stage 6                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 7 — page provenance & #38 round    | ✅ implemented 2026-09-24 (delivered, not yet on `test`), see §5 Stage 7                          | re-scoped from #38's "page breaks for table inputs": chunk markers are the producer, and crossing sentences stay on their first page (§3.3). Deviations from the change sets: [`38.plan.md`](38.plan.md) "As implemented". Stage 3's "`/enrich` records have no `teitok_surface`" and Stage 5's "W11 / external-tools left to their own rounds" are superseded by it                                                                                                                                                                              |
 
-#9's last item, the tier-1 evidence, is ✅ R3: `data_samples/pages/CTX000000001-1.png` plus a test.
+#9's last item, the tier-1 evidence, is ✅ R3: `data_samples/pages/CTX000000001-1.png` plus a test. #9 and #28 closed on
+2026-09-24.
 
 Evidence: flexiconv v0.3.10 round-trip of the regenerated samples keeps every `SpaceAfter=No` (7/7, 16/16, 2/2;
 before: 0/7). "abych" is one `<tok>` with two `<dtok>`. OntoNotes `PERSON` → `type="PER" onto="PERSON"`. Sample block
@@ -72,6 +82,27 @@ Upstream quirk worth reporting (user action): flexicorp's text fallbacks are wri
 … — in a raw string that matches a literal backslash, so only the plain patterns (`tokeniz`, `lemmat`, `dependency`,
 `named entit`, `convert`) ever fire ▶. Our header should therefore rely on `change@type`.
 
+**Round-4 re-check (2026-09-24).** The upstream heads are unchanged since 2026-09-23, so the table above still
+describes the reference. Read against it tool by tool, format 2 **conforms** on: namespace-off root, plain `@id`,
+`w-N`/`s-N`/`w-N.K`, token attributes with `head` as a token id, `ord`, text-faithful spacing (the space inside
+`</name>` is what flexiconv and flexipipe's C++ reader need), `<dtok>`, `<name sameAs>`, `<s id text>`, typed
+`<change>` phases, `lang` + `langUsage`. No upstream reader rejects the ATRIUM-only attributes (`onto`/`cnec`/`archaeo`,
+`div@subtype`, the `teitok-2` stamp on `<application>`). Deviations:
+
+| ID | Deviation                                                                                                  | Upstream                                                                             | Handled in                                |
+|----|------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|-------------------------------------------|
+| U1 | punctuation split off an ALTO word keeps the word's `bbox`                                                 | flexiconv `io/alto.py:210-221`, `io/hocr.py:153`: split punctuation gets no box      | #38 C                                     |
+| U2 | the page size is only on `<surface lrx lry>`                                                               | flexiconv's hOCR/xpdf writers and readers use `pb@bbox="0 0 W H"`                    | #38 C                                     |
+| U3 | a `.teitok.xml` file becomes document id `<doc>.teitok` in a TEITOK project; `orgfile` has no `Originals/` | flexiconv `--teitok-project` (`xmlfiles/`, `Originals/`); flexicorp `_scan_xmlfiles` | README, "Importing into a TEITOK project" |
+| U4 | `xpos`, where teitok-tools reads `pos` by default                                                          | `teitok2conllu.pl:53` (needs `--pos=xpos`); the project's `settings.xml`             | README, same section                      |
+
+Upstream bugs found on the way (report them; do not work around them): flexipipe takes a token's number from the
+digits of its document-global `@id` (`teitok.py:1162-1169`, `io_teitok.cpp:476-484`), so dependency heads go wrong from
+the second sentence of any file with `w-N` ids — confirmed by running its loader on the samples; flexiconv
+`load_teitok` ignores `<dtok>` (an MWT sentence exported to CoNLL-U gets ids 1–5, 7, 8); the flexicorp regex quirk above
+is confirmed (`backends/teitokxml.py:31-37`). So a flexiconv round trip keeps spacing and entities but not multi-word
+tokens, and flexipipe is not a safe *reader* of format 2 until its id handling is fixed; the README must say so.
+
 ## 3. Findings
 
 ### Writer — `api_util/teitok_alto.py::write_teitok_merged` (CLI and `/enrich` share it)
@@ -82,7 +113,7 @@ Upstream quirk worth reporting (user action): flexicorp's text fallbacks are wri
 | W3 ▶ | P0  | The coarse NER map is CNEC-only while the default model is OntoNotes (#11): every entity becomes `type="MISC" cnec="PERSON"`. `document_hook.py` maps OntoNotes correctly, so TEITOK and `entities[].type_teitok` disagree; `summarize_nt_udp.py` holds a third map (with archaeo `LOCATION→LOC`) and hub `atrium_vocab.py` a fourth (`CNEC_TO_ENTITY_TYPE`). |
 | W4 ▶ | P0  | Every bbox is shifted by the ALTO PrintSpace origin while `<surface lrx/lry>` is the full Page (block `220 160` → `20 10` on `1654×2339`). Upstream uses page origin; tier-1 scaling divides by Page width (so even the "cropped image" rationale is not met); `document_hook.py` writes **unshifted** boxes to `entities[].bbox`; the XSD allows negatives.  |
 | W5   | P1  | `lang="cs"` hard-coded; ABBYY `TextBlock@LANG` and the model language are ignored.                                                                                                                                                                                                                                                                            |
-| W6   | P1  | `<div type="MarginTextZone-P">` for every block with no ALTO source (the XSD accepts any string; the literal lives in fixtures, samples, READMEs; flagged in llm-enrich #13 / hub #13).                                                                                                                                                                       |
+| W6   | P1  | `<div type="MarginTextZone-P">` for every block with no ALTO source (the XSD accepts any string; the literal lives in fixtures, samples, READMEs; flagged in llm-enrich #13 and the hub's copy of its logs).                                                                                                                                                  |
 | W7   | P1  | Ids `CTX.s1.w3`, no `ord` — flexipipe cannot re-wrap names. Ids are a cross-repo contract (`entities[].teitok_ref`, `lines[].teitok_ref`, `pages[].teitok_surface`).                                                                                                                                                                                          |
 | W8   | P2  | Header lacks `orgfile`, a NameTag `<change>` and phase attributes; `<figure id>` uses `hash() % 10000`.                                                                                                                                                                                                                                                       |
 | W9 ▶ | P1  | Committed `data_samples/TEITOK/*` are stale (`xmlns=` + `xml:lang`, unshifted) — not today's writer output.                                                                                                                                                                                                                                                   |
@@ -109,7 +140,21 @@ Upstream quirk worth reporting (user action): flexicorp's text fallbacks are wri
 | D4 | Hub: `e2e-pipeline-smoke.yml` runs nlp with `SAVE_TEITOK=false`; `external-tools.md` has TEITOK/flexiconv "pending"; `pipelines.md` W11 unwritten; `fixtures/atrium_document.example.json` + `document_schema.md` carry the old id forms.                           |
 | D5 | llm-enrich `README.md`/`CONTRIBUTING.md`/`para_config.txt`: flexiconv licence "not yet checked", "verbatim copies" claim.                                                                                                                                           |
 
-## 4. Decisions (user, 2026-09-23)
+### Round 4 (2026-09-24) — findings on `test` `3654e73` (v0.21.0)
+| ID     | Sev | Finding                                                                                                                                                                                                                                                                                                                                                                                                                         |
+|--------|-----|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| R4-1 ▶ | P0  | **UDPipe chunks are written as pages.** `call_udpipe.merge_conllu_chunks` (`:117-118`) writes `# page_break = true` at every chunk start (~900 words); `call_nametag`, `summarize_nt_udp._collect_merged_rows` and the writer (`teitok_alto.py:1171`) read it as a page. CTX000000002 has 4 real pages but one NE file and `page_id` 1 on every `UDP_NE` row; a mid-page chunk start adds a phantom `<pb>` to an ALTO document. |
+| R4-2 ▶ | P0  | **A sentence crossing a page stays on its first page** (`<pb>` only between sentences; the XSD forbids it inside `<s>`). In the released sample: CTX000000002 page 4's first line is `lb-3.3` under `<pb n="3">`.                                                                                                                                                                                                               |
+| R4-3 ✔ | P1  | Converted-document identity differs between stage 1 (`canonical_doc_id(full name)`) and stage 4 (`canonical_doc_id(stem)`): a table and its converted twin are both annotated; ambiguous siblings are picked silently.                                                                                                                                                                                                          |
+| R4-4   | P1  | The stage-4 gate and the service verdict run the XSD only; `lint_core` never runs on writer output; duplicate `pb`/`lb`/`n`/`b` ids and dangling `sameAs`/`corresp` go undetected.                                                                                                                                                                                                                                              |
+| R4-5   | P1  | `<pb facs>` is invented (`{doc}-{N}.png`) when a page has no image — every `/enrich` output and txt/md conversions.                                                                                                                                                                                                                                                                                                             |
+| R4-6   | P1  | A failed flexiconv conversion is logged as `skip`; `--with-flexiconv` without flexiconv ends green.                                                                                                                                                                                                                                                                                                                             |
+| R4-7   | P1  | Service: `/enrich` never has layout (csv/xlsx/txt only, `INPUT_ALTO_DIR=""`); a gate failure is reported as "empty run"; `/rescale` and `fix_teitok_bboxes.py` give every surface the first one's size and do not clamp shifts.                                                                                                                                                                                                 |
+| R4-8 ✔ | P1  | Readers: `teitok_read`'s `<s>`-mode line counter never resets at `<pb>` (vendored into llm-enrich); llm-enrich enriches **zero lines** from a `.teitok.xml` (quality forced to 0.0 → Trash; its `tests/conftest.py` patches the filter out); the GPU LLM path calls `_should_process_line` with 6 of 7 arguments in both repos; alto-postprocess `read_tei` renumbers pages and breaks lines at every `</s>`.                   |
+| R4-9   | P2  | `teitok_layout` ignores `pb@n`, `<surface><graphic url>` and zones; `BBOX_ORIGIN` is the one TEITOK knob still assigned bare in `config_api.txt`; the README over-states round trips and still calls NE files "per-page … CNEC"; `CONTRIBUTING.md`'s v0.21.0 row has unescaped pipe characters; `teitok-schema.yml` path filters miss the page-path files.                                                                      |
+| R4-10  | P2  | Dev logs: hub `13.*` describe llm-enrich #13 while hub #13 is the CAA paper; llm-enrich #13 claims a JSON→TEITOK "re-projection" that exists nowhere; statuses still said "branch … local".                                                                                                                                                                                                                                     |
+
+## 4. Decisions (user, 2026-09-23; round 4: 2026-09-24)
 
 1. **Bbox origin: page origin by default** (upstream). `BBOX_ORIGIN=page|printspace`; under `printspace`,
    `<surface lrx/lry>` = PrintSpace size and tier-1 scales against PrintSpace. Coordinates never negative.
@@ -120,7 +165,19 @@ Upstream quirk worth reporting (user action): flexicorp's text fallbacks are wri
    `teitok_surface` carry these local ids (`n-5`, `s-3`, `facs-1`); the `atrium_document` schema types them as plain
    strings, so the schema itself does not change — producers, tests, the hub fixture and docs do. Minor version bump
    with a migration note; readers stay id-agnostic, so old files remain readable.
-4. **Stage 1** = refresh of these dev logs (+ status notes in llm-enrich #10/#13 and hub #13).
+4. **Stage 1** = refresh of these dev logs (+ status notes in llm-enrich #10/#13). *(Round 4: the 2026-09-23 note meant for
+   llm-enrich #13 was posted on hub #13, which is the CAA-paper issue; the hub's `13.*` dev logs had the same mix-up —
+   see §4, round 4.)*
+
+**Round 4 (user, 2026-09-24):**
+5. **Pages: layout-first.** Pages come from the layout source — ALTO, the converted flexiconv file, or the table's
+   `page_num`/`line_num` as a coordinate-free layout. `<pb/>` may sit inside `<s>` and `<name>`; UDPipe chunk starts stop
+   being page breaks; NE page files follow the real pages. The stamp stays `teitok-2` (additive XSD change).
+6. **Service parity:** `/enrich` also accepts a flexiconv-produced `*.teitok.xml` (and, for tables, an ALTO file) as
+   the text and layout source; the service image stays free of GPL flexiconv; conversion stays in the CLI.
+7. **Dev logs:** the closed #9/#28 pairs are removed (as for #35), their leftovers carried to #38 and §7; the hub's
+   misfiled `13.*` pair is rewritten for the CAA paper and its design content moves to llm-enrich's #13 pair; the
+   misposted comment on hub #13 is moved by the user.
 
 ## 5. Stages
 
@@ -166,7 +223,7 @@ the real-document experiment table in the README.
   TEITOK, flexiconv, flexipipe, xmltokenizer, flexicorp, teitok-tools; `docs_site/pipelines.md` W11.
 - alto-postprocess: no code change (pass-through of `teitok_surface`/`teitok_ref`); re-vendor shared files only.
 
-**Stage 6 — annotated flexiconv path** (R3, 2026-09-24; its own issue still to be opened). The design changed from
+**Stage 6 — annotated flexiconv path** (R3, 2026-09-24; released in v0.21.0; now issue [#38](38.plan.md)). The design changed from
 xmltokenizer (`profile="teitok"`) + UDPipe/NameTag to **this repo's own stages**. That needs no new dependency or model
 download, gives one writer and one id scheme, lets `document_hook.py` work unchanged, and keeps CI offline. The
 converted file is an intermediate:
@@ -182,6 +239,30 @@ converted file is an intermediate:
   - blocks with the element name as `subtype`.
 - **Output**: `teitok_alto.py` writes format 2 under the full XSD. The header names flexiconv and the original document.
   `run_pipeline.py --with-flexiconv` runs `api_flexiconv.sh` first and sets `FLEXICONV_ANNOTATE=true`.
+
+**Stage 7 — page provenance and the #38 round** (round 4, 2026-09-24; detail and done-criteria in
+[`38.plan.md`](38.plan.md)). Change sets in order:
+- **CS-E** small fixes: flexiconv failures recorded as failures and a missing flexiconv stops the stage (R4-6);
+  `BBOX_ORIGIN="${BBOX_ORIGIN:-page}"`; the LLM filter fixes (R4-8) here and in llm-enrich.
+- **CS-B** identity: `api_util/doc_identity.py` (file identity for converted documents, `find_converted`, a claim rule
+  at stage 1, no silent pick) (R4-3).
+- **CS-A1** page plumbing: stage 1 writes `<doc>.rows.tsv` (normalised rows, page ordinal + label), stage 2 freezes it
+  as `UDP/<doc>.rows.tsv`; `api_util/page_rows.py` places tokens by UDPipe's `SpacesAfter=\n` line ends plus chunk
+  starts; `# chunk_start = K` replaces the old marker, which every reader treats as a chunk start; NE files and CSV
+  pages follow real pages; `teitok_read` resets line numbers per page and splits a sentence row at an inner `<pb/>`
+  (R4-1).
+- **CS-A2** writer: pages resolved per token (layout box, else row, else previous); `<pb/>` inside `<s>`/`<name>`;
+  pages only move forward; `facs` only for real images; `teitok_layout` reads `pb@n`, `graphic@url` and sizes; XSD
+  additive (R4-2, R4-5, R4-9).
+- **CS-C** gate: default profile `contract` = XSD + `lint_core` (unique ids, resolvable refs) + `lint_writer`; exit 5
+  (R4-4).
+- **CS-D** service: `.teitok.xml` upload and an optional `alto` part; distinct error for exit 5; verdict and
+  `layout_source` in the response; page-aware, clamped `/rescale` and `fix_teitok_bboxes.py` (R4-7).
+- **Cross-repo:** llm-enrich (zero-lines fix, GPU-path fix, re-vendor `teitok_read.py`/`flexiconv_convert.py`, a
+  format-2 fixture, bbox origin in `DOC_META`); alto-postprocess (`read_tei`: `pb@n`, inline `<s>`, `</n>` repair);
+  hub (W11, external-tools, `document_schema.md`, `e2e_assert.py` element-type and page checks).
+- **Upstream conformance details:** split punctuation without a box (U1), `pb@bbox` (U2), README "Importing into a
+  TEITOK project" (U3/U4), per-tool round-trip statements.
 
 **Docs & configs, all stages** — nlp: `README.md` (TEITOK section: real example, ids, spacing, MWT, bbox origin, how to
 import into a TEITOK project as `xmlfiles/<id>.xml`; flexiconv section rewrite), `service/README.md`, `config_api.txt`,
@@ -202,12 +283,16 @@ llm-enrich: `README.md`, `CONTRIBUTING.md`, `para_config.txt`; hub: Stage 5.
    produces keywords.
 5. Stage 5 — llm-enrich `pytest -m "not slow"`; hub `pytest tests/`; E2E left to CI unless run locally.
 6. `ruff check` / `pre-commit run --all-files` in every touched repo.
+7. Stage 7 — the done-criteria of [`38.plan.md`](38.plan.md): released CTX000000002 s-5 gets `<pb n="4"/>` inside `<s>`
+   before `lb-4.1`; a chunk marker on the one-page CTX000000003 leaves one `<pb>`; the NE files of CTX000000002 are
+   `-1…-4`; the default gate rejects duplicate or dangling ids with exit 5; `report.csv` + `report.txt.teitok.xml` give
+   one document; `/enrich` accepts a `.teitok.xml` and reports `layout_source`; `--with-flexiconv` without flexiconv fails.
 
-## 7. Roadmap after format 2 (2026-09-24)
+## 7. Roadmap (updated 2026-09-24, round 4)
 
-| When        | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Owner        |
-|-------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|
-| R3 (branch) | tier-1 fixture (#9 closes) · `flexiconv_report.py` (#10 close-out) · Stage 6 + `--with-flexiconv` · `v0.21.0` release prep                                                                                                                                                                                                                                                                                                                                                                                                                                                               | agent        |
-| now         | dispatch the hub E2E with `image-tag=test` (first format-2 run; strict entity refs) · `REGENERATE_TEITOK=true` on local collections · real-document table (#10) · live Stage-6 run (UDPipe/NameTag need LINDAT) · refresh `data_samples/{NE,UDP_NE,TEITOK}` with the OntoNotes model · close #28 and #9 · open the Stage-6 issue · decide the flexiconv GPL policy and the release · upstream: the flexicorp `\\b` regex report, a ping on ufal/flexiconv#1                                                                                                                              | user         |
-| R4          | service parity: document upload → flexiconv → annotated TEITOK in `/enrich` or a `/convert` endpoint, gated by the GPL decision · page breaks for table inputs without layout: `# page_break = true` has consumers (`teitok_alto`, `call_nametag`, `summarize_nt_udp`) but no producer, so CSV pages (`page_num`) are lost before UDPipe · hub `external-tools.md` TEITOK/flexi* entries + `pipelines.md` W11 in the next #57 round · `atrium_vocab.py` authority string → `ner_types.CNEC_TO_CONLL` at the next five-repo vendoring · `lines[].teitok_ref` ↔ `<lb id>` mapping decision | agent + user |
-| later       | TEITOK project export (`xmlfiles/`, `Originals/`, page images), once the TEITOK team confirms the facsimile folder convention (not verifiable offline: teitok.org is unreachable from the build environment) · relative coordinates after flexiconv#1 · flexipipe/xmltokenizer as an alternative annotator, benchmarked against this chain · alto-postprocess ↔ TEITOK line links                                                                                                                                                                                                        | —            |
+| When                                   | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Owner        |
+|----------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|
+| done                                   | R3: tier-1 fixture · `flexiconv_report.py` · Stage 6 + `--with-flexiconv` · v0.21.0 tagged (`ecdac10`) and published · #9 and #28 closed · #38 opened                                                                                                                                                                                                                                                                                                                                 | agent + user |
+| R4 (implemented 2026-09-24, to commit) | Stage 7 = #38 actions A–F (page provenance, identity, gate, layout fidelity, flexiconv failures, service parity) + the cross-repo reader fixes (llm-enrich zero lines, `teitok_read` per-page lines, alto `read_tei`) + hub docs (W11, external-tools, `document_schema.md`) + upstream-conformance details U1–U4; suggested release v0.22.0                                                                                                                                          | agent        |
+| user                                   | first E2E run on format 2 (push, schedule or dispatch; `:latest` is v0.21.0) · `REGENERATE_TEITOK=true` on collections written before v0.21.0 · #10 real-document table · live LINDAT run for #38 and the OntoNotes refresh of `data_samples/{NE,UDP_NE,TEITOK}` · move the misposted hub #13 comment · report the flexipipe id, flexiconv `<dtok>` and flexicorp regex bugs upstream and ping ufal/flexiconv#1                                                                       | user         |
+| later                                  | TEITOK project export (`xmlfiles/`, `Originals/`, page images) once the facsimile folder convention is confirmed · relative coordinates after flexiconv#1 · JSON → TEITOK back-projection of LLM keywords/page categories (asked in flexiconv#1; a design item of atrium-llm-enrich#13) · `lines[].teitok_ref` ↔ `<lb id>` · flexipipe/xmltokenizer as an alternative annotator once the upstream bugs are fixed · `atrium_vocab.py` authority string at the next five-repo vendoring | —            |

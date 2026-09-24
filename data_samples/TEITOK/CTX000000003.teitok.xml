@@ -30,13 +30,13 @@
   </facsimile>
   <text>
     <body>
-      <pb n="1" id="pb-1" facs="CTX000000003-1.png" corresp="#facs-1"/>
+      <pb n="1" id="pb-1" facs="CTX000000003-1.png" corresp="#facs-1" bbox="0 0 1654 2339"/>
       <div type="TextBlock" id="b-1.1" bbox="220 160 820 280">
         <s id="s-1" text="Náčrt sondy.">
-          <lb id="lb-1.1" bbox="220 160 520 200"/><tok id="w-1" type="w" ord="1" lemma="náčrt" upos="NOUN" xpos="NNIS1-----A----" feats="Animacy=Inan|Case=Nom|Gender=Masc|Number=Sing" deprel="root" bbox="220 160 340 194">Náčrt</tok> <tok id="w-2" type="w" ord="2" lemma="sonda" upos="NOUN" xpos="NNFS2-----A----" feats="Case=Gen|Gender=Fem|Number=Sing" head="w-1" deprel="nmod" join="right" bbox="360 160 490 194">sondy</tok><tok id="w-3" type="pc" ord="3" lemma="." upos="PUNCT" xpos="Z:-------------" head="w-1" deprel="punct" bbox="360 160 490 194">.</tok>
+          <lb id="lb-1.1" bbox="220 160 520 200"/><tok id="w-1" type="w" ord="1" lemma="náčrt" upos="NOUN" xpos="NNIS1-----A----" feats="Animacy=Inan|Case=Nom|Gender=Masc|Number=Sing" deprel="root" bbox="220 160 340 194">Náčrt</tok> <tok id="w-2" type="w" ord="2" lemma="sonda" upos="NOUN" xpos="NNFS2-----A----" feats="Case=Gen|Gender=Fem|Number=Sing" head="w-1" deprel="nmod" join="right" bbox="360 160 490 194">sondy</tok><tok id="w-3" type="pc" ord="3" lemma="." upos="PUNCT" xpos="Z:-------------" head="w-1" deprel="punct">.</tok>
         </s>
         <s id="s-2" text="1998">
-          <name id="n-1" type="MISC" cnec="ty" sameAs="#w-4"><lb id="lb-1.2" bbox="220 210 320 250"/><tok id="w-4" type="w" ord="1" lemma="1998" upos="NUM" xpos="C=-------------" feats="NumForm=Digit|NumType=Card" deprel="root" join="right" bbox="220 210 320 244">1998</tok></name></s>
+          <lb id="lb-1.2" bbox="220 210 320 250"/><name id="n-1" type="MISC" cnec="ty" sameAs="#w-4"><tok id="w-4" type="w" ord="1" lemma="1998" upos="NUM" xpos="C=-------------" feats="NumForm=Digit|NumType=Card" deprel="root" join="right" bbox="220 210 320 244">1998</tok></name></s>
       </div>
     </body>
   </text>

@@ -40,14 +40,6 @@ _REPO_ROOT = Path(__file__).resolve().parent
 _CONFIG_NAME = "config_api.txt"
 _STAGE_SPACING_SECONDS = 1.1
 
-_CORE_STAGES: Dict[str, Tuple[str, str]] = {
-    "manifest": ("api_1_manifest.sh", "Generate manifest"),
-    "udp": ("api_2_udp.sh", "UDPipe morphology/syntax"),
-    "nt": ("api_3_nt.sh", "NameTag NER"),
-    "stats": ("api_4_stats.sh", "Statistics + TEITOK"),
-}
-_CORE_ORDER = ["manifest", "udp", "nt", "stats"]
-
 _RUNNER_ENV_VARS = (
     "ATRIUM_RUNNER_IMAGE",
     "ATRIUM_RUNNER_REPO",
@@ -377,55 +369,6 @@ def _is_empty_failure(stats: Dict[str, Any], strict: bool = False) -> bool:
     return True
 
 
-def _build_plan(args: argparse.Namespace, values: Dict[str, str]) -> Dict[str, Any]:
-    core = [s for s in _CORE_ORDER if s in args.stages]
-
-    output_dir = values.get("OUTPUT_DIR", "")
-    paradata_dir = values.get("PARADATA_DIR") or (
-        f"{output_dir}/paradata" if output_dir else "paradata"
-    )
-
-    plan_stages: List[Dict[str, str]] = []
-    for name in core:
-        script, label = _CORE_STAGES[name]
-        plan_stages.append({"name": name, "script": script, "label": label})
-    if getattr(args, "kw", False):
-        plan_stages.append(
-            {
-                "name": "keywords",
-                "script": "keywords.py",
-                "label": f"Keyword extraction ({getattr(args, 'kw_method', 'yake')})",
-            }
-        )
-    if getattr(args, "llm", False):
-        plan_stages.append(
-            {
-                "name": "llm",
-                "script": "llm_run.py",
-                "label": "LLM semantic enrichment",
-            }
-        )
-
-    fail_on_empty = (
-        False if getattr(args, "force", False) else _config_bool(values, "FAIL_ON_EMPTY", True)
-    )
-
-    return {
-        "repository": "https://github.com/ufal/atrium-nlp-enrich",
-        "config_file": str(getattr(args, "config", "config_api.txt")),
-        "output_dir": output_dir,
-        "paradata_dir": paradata_dir,
-        "input_tables_dir": values.get("INPUT_TABLES_DIR", ""),
-        "fail_on_empty": fail_on_empty,
-        "kw": bool(getattr(args, "kw", False)),
-        "kw_method": getattr(args, "kw_method", "yake"),
-        "llm": bool(getattr(args, "llm", False)),
-        "llm_config": getattr(args, "llm_config", "llm_config.txt"),
-        "stage_plan": plan_stages,
-        "runner_provenance": {v: os.environ.get(v, "") for v in _RUNNER_ENV_VARS},
-    }
-
-
 def _space_stages(last_start: Optional[float]) -> float:
     now = time.time()
     if last_start is not None:
@@ -462,7 +405,11 @@ def _build_plan(args: argparse.Namespace, values: Dict[str, str]) -> Dict[str, A
     plan_stages: List[Dict[str, str]] = []
     with_flexiconv = bool(getattr(args, "with_flexiconv", False))
     if with_flexiconv:
-        plan_stages.append(dict(_FLEXICONV_STAGE))
+        # The conversion precedes every stage, so any --start-from (or SKIP_FLEXICONV) skips it.
+        skip_flexiconv = bool(getattr(args, "start_from", None)) or _config_bool(
+            values, "SKIP_FLEXICONV", False
+        )
+        plan_stages.append(dict(_FLEXICONV_STAGE, skip=skip_flexiconv))
 
     # Iterate over 'core' instead of '_CORE_ORDER'
     for name in core:

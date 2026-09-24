@@ -17,7 +17,8 @@ repository_fallback = https://github.com/ufal/atrium-nlp-enrich
 # License rationale (see ATRIUM issue #6 licensing breakdown):
 #   * The NameTag 3 and UDPipe 2 *engines* are MPL 2.0, accessed here only as
 #     hosted Lindat/CLARIAH-CZ APIs. The binding constraint is the pre-trained
-#     *models*: the Czech CNEC 2.0 tagger and the czech-pdt UD parser are both
+#     *models*: the NameTag 3 models (the multilingual OntoNotes model, the default
+#     MODEL_NAMETAG, and the Czech CNEC 2.0 one) and the czech-pdt UD parser are all
 #     CC BY-NC-SA 4.0. Because the core enrichment pipeline (api_2_udp →
 #     api_3_nt → api_4_stats) always exercises both models, CC BY-NC-SA 4.0 is
 #     the project-wide floor for this repo — every core run is non-commercial

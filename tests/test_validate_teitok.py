@@ -250,11 +250,14 @@ def _sample_nametag_model():
 def test_committed_samples_are_what_the_writer_produces_today(doc, tmp_path):
     """The samples used to be artefacts of an older writer (TEI namespace, other bboxes),
     so "the samples validate" said nothing about the code. They must be byte-identical to
-    a fresh run of the writer on the committed inputs (ALTO + NER-merged CoNLL-U + the
-    models their paradata records), apart from the run dates."""
+    a fresh run of the writer on the committed inputs (ALTO + NER-merged CoNLL-U + the rows
+    file stage 2 keeps next to the CoNLL-U + the models their paradata records), apart from
+    the run dates."""
     import re
 
     from teitok_alto import write_teitok_merged
+
+    from api_util.page_rows import read_rows
 
     sample = _committed_sample(doc).name
     out = tmp_path / sample
@@ -264,6 +267,7 @@ def test_committed_samples_are_what_the_writer_produces_today(doc, tmp_path):
         str(REPO_ROOT / "data_samples" / "ALTO" / f"{doc}.alto.xml"),
         doc_id=doc,
         model_nametag=_sample_nametag_model(),
+        rows=read_rows(REPO_ROOT / "data_samples" / "UDP" / f"{doc}.rows.tsv"),
     )
 
     def undated(text):
@@ -278,6 +282,67 @@ def test_committed_samples_are_what_the_writer_produces_today(doc, tmp_path):
         f"data_samples/TEITOK/{sample} is stale -- regenerate it (see data_samples/TEITOK "
         "in README.md)"
     )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# The default "contract" profile (issue #38, D): what the XSD cannot say
+# ═════════════════════════════════════════════════════════════════════════════
+_STAMP = '<application ident="atrium-nlp-enrich" version="teitok-2">'
+
+
+def _mutated(tmp_path, *replacements, stamp=True):
+    """CTX000000002 (4 pages, entities, surfaces) with ``(old, new)`` replacements."""
+    text = _committed_sample("CTX000000002").read_text(encoding="utf-8")
+    assert _STAMP in text
+    for old, new in replacements:
+        assert old in text, old
+        text = text.replace(old, new, 1)
+    if not stamp:
+        text = text.replace(_STAMP, '<application ident="atrium-nlp-enrich">')
+    path = tmp_path / "CTX000000002.teitok.xml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    ("replacement", "message"),
+    [
+        (('id="pb-3"', 'id="pb-2"'), "duplicate @id 'pb-2'"),
+        (('id="pb-3"', 'id="pb-2"'), "pages only move forward"),
+        (('sameAs="#w-18 #w-19"', 'sameAs="#w-18 #w-999"'), "sameAs '#w-999'"),
+        (('corresp="#facs-4"', 'corresp="#facs-9"'), "corresp '#facs-9'"),
+        (('id="lb-4.1"', 'id="lb-3.9"'), "lb-3.9 is not on the page it names"),
+        (('id="lb-1.2"', 'id="lb-1.1"'), "lb-1.1 after lb-1.1"),
+        (('id="b-2.1"', 'id="b-1.2"'), "b-1.2 is not on the page it names"),
+        ((' corresp="#facs-4"', ""), "<surface id='facs-4'> has no <pb>"),
+    ],
+)
+def test_contract_catches_what_the_xsd_cannot(tmp_path, replacement, message):
+    doc = _mutated(tmp_path, replacement)
+    assert validate_document(doc, profile="xsd") == []
+    errors = validate_document(doc)  # default: contract
+    assert any(message in e for e in errors), errors
+
+
+def test_contract_holds_older_documents_to_the_xsd_only(tmp_path):
+    """A document without the teitok-2 stamp (format 1, left by a resumed run) is judged by
+    the XSD alone, as before the contract profile existed."""
+    doc = _mutated(tmp_path, ('id="pb-3"', 'id="pb-2"'), stamp=False)
+    assert validate_document(doc) == []
+
+
+def test_core_catches_dangling_references_in_any_teitok(tmp_path):
+    doc = _mutated(tmp_path, ('sameAs="#w-18 #w-19"', 'sameAs="#w-18 #w-999"'), stamp=False)
+    assert any("does not resolve" in e for e in validate_document(doc, profile="core"))
+
+
+def test_cli_default_is_the_contract(tmp_path, capsys):
+    from api_util.validate_teitok_xml import main
+
+    _mutated(tmp_path, ('id="lb-4.1"', 'id="lb-3.9"'))
+    assert main([str(tmp_path)]) == 1
+    assert "output-contract" in capsys.readouterr().err
+    assert main([str(tmp_path), "--profile", "xsd"]) == 0
 
 
 # ═════════════════════════════════════════════════════════════════════════════

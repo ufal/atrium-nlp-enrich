@@ -39,6 +39,15 @@ while IFS=$'\t' read -r file page path; do
            --url       "$UDPIPE_URL" \
            --timeout   "$TIMEOUT" \
            --retries   "$MAX_RETRIES"; then
+        # Freeze the page provenance with the CoNLL-U it describes (api_util/page_rows.py):
+        # TEMP is rewritten by every stage-1 run and is not kept by a container, while a
+        # resumed run skips documents whose CoNLL-U exists (issue #38, A).
+        rows_file="${path%.txt}.rows.tsv"
+        if [ -f "$rows_file" ]; then
+            cp "$rows_file" "${OUTPUT_DIR}/UDP/${file}.rows.tsv"
+        else
+            echo "[WARN] ${file}: no ${rows_file}; pages will be guessed (legacy)." >&2
+        fi
         python3 atrium_paradata.py success --state "$PARA_STATE" --type conllu
     else
         # P1 FIX: Log the failure and exit immediately to halt the pipeline

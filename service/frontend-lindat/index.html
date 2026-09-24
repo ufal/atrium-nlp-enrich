@@ -22,8 +22,11 @@
 
         <form id="enrichForm">
             <fieldset>
-                <label for="file">Input File (.csv, .xlsx, .txt)</label>
-                <input type="file" id="file" name="file" accept=".csv,.xlsx,.txt" required>
+                <label for="file">Input File (.csv, .xlsx, .txt, or a flexiconv TEITOK .xml)</label>
+                <input type="file" id="file" name="file" accept=".csv,.xlsx,.txt,.xml" required>
+
+                <label for="alto">Page layout (optional ALTO XML, with a .csv/.xlsx)</label>
+                <input type="file" id="alto" name="alto" accept=".xml">
 
                 <div class="row">
                     <div class="column">

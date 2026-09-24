@@ -1431,21 +1431,36 @@ def load_vllm_engine(
 # ---------------------------------------------------------------------------
 
 
+def _row_quality(row: dict) -> Optional[float]:
+    """The row's ``quality_score``, or None when it has none (a TEITOK row, a CSV without the
+    column). None means "unknown", not "worst": the quality bands below then do not apply."""
+    value = row.get("quality_score")
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _should_process_line(
     text: str,
     categ: str,
-    quality_score: float,  # Added via correction
+    quality_score: Optional[float],
     include_non_text: bool,
     min_char_count: int,
     min_char_non_text: int,
     min_alpha_ratio_non_text: float,
 ) -> Tuple[bool, str]:
 
-    # Strict range-based decision matrix for categorization
-    if quality_score < 0.40:
-        categ = "Trash"
-    elif quality_score < 0.70 and categ != "Trash":
-        categ = "Noisy"
+    # Strict range-based decision matrix for categorization. Only for rows that carry a
+    # score: a TEITOK document or a plain text table has none, and treating that as 0.0
+    # turned every such row into "Trash" (issue atrium-nlp-enrich#38, round 4).
+    if quality_score is not None:
+        if quality_score < 0.40:
+            categ = "Trash"
+        elif quality_score < 0.70 and categ != "Trash":
+            categ = "Noisy"
 
     if not text:
         return False, "empty text"
@@ -1485,7 +1500,7 @@ def read_input_rows(input_path: Path) -> list[dict]:
                 "page_num": str(r.get("page_num", "")),
                 "line_num": str(r.get("line_num", "")),
                 "categ": "",  # Falls back to plain text handling
-                "quality_score": 0.0,
+                "quality_score": None,  # unknown: TEITOK carries no line quality
             }
             for r in teitok_read.read_teitok_rows(str(input_path))
         ]
@@ -1691,6 +1706,7 @@ def process_document(
             should_process, _ = _should_process_line(
                 text_chunk,
                 categ,
+                _row_quality(row),
                 include_non_text,
                 min_char_count,
                 min_char_non_text,
@@ -1804,7 +1820,7 @@ def process_document(
                     "page": page_num,
                     "line": line_num,
                     "categ": categ,
-                    "quality_score": float(row.get("quality_score") or 0.0),
+                    "quality_score": _row_quality(row),
                     "original_text": text_chunk,
                     "enrichment": dump_data,
                 }
@@ -1933,6 +1949,7 @@ def process_document_vllm(
         should_process, _ = _should_process_line(
             text_chunk,
             categ,
+            _row_quality(row),
             include_non_text,
             min_char_count,
             min_char_non_text,
@@ -1962,7 +1979,7 @@ def process_document_vllm(
                 "line_num": line_num,
                 "text_chunk": text_chunk,
                 "categ": categ,
-                "quality_score": float(row.get("quality_score") or 0.0),
+                "quality_score": _row_quality(row),
                 "messages": messages,
             }
         )

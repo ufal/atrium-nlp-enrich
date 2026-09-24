@@ -2,6 +2,8 @@
 """
 call_nametag.py  –  Send a CoNLL-U file to the NameTag 3 API, receive NER
 annotations, and write per-page TSV files. Retries automatically on network errors.
+
+Pages are the source's pages (``api_util/page_rows.py``), not UDPipe's chunks.
 """
 
 from __future__ import annotations
@@ -22,6 +24,14 @@ except ImportError:
         "[Error] 'requests' library is required. Run: pip install requests urllib3", file=sys.stderr
     )
     sys.exit(1)
+
+from pathlib import Path  # noqa: E402
+
+_project_root = Path(__file__).resolve().parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+from api_util import page_rows  # noqa: E402
 
 NAMETAG_URL = "https://lindat.mff.cuni.cz/services/nametag/api/recognize"
 
@@ -97,46 +107,32 @@ def call_nametag(
 # ── sent_id → page mapping ────────────────────────────────────────────────────
 
 
-def build_sent_page_map(conllu_path: str) -> list[int]:
-    """Return a list mapping sentence index (0-based) → page number (1-based)."""
-    sent_to_page: list[int] = []
-    current_page = 0
-    pending_page_break = False
+def build_word_page_map(conllu_path: str, rows=None) -> list[list[int]]:
+    """Per sentence, the page of every syntactic word (what NameTag tags).
 
+    Pages come from the document's rows file (``api_util/page_rows.py``: UDPipe's line ends
+    counted against the rows stage 1 wrote). Without one, the legacy per-page convention
+    applies: a later ``# sent_id = 1`` starts a page. Chunk markers (``# chunk_start``, the
+    old ``# page_break = true``) are never pages (issue #38, A)."""
+    return page_rows.word_pages(conllu_path, rows, doc_id=os.path.basename(conllu_path))
+
+
+def build_sent_page_map(conllu_path: str, rows=None) -> list[int]:
+    """Return a list mapping sentence index (0-based) → page number (1-based): the page of the
+    sentence's first word. ``[1]`` when the file has no sentences."""
     try:
-        with open(conllu_path, "r", encoding="utf-8") as fh:
-            for line in fh:
-                line_stripped = line.strip()
-
-                if line_stripped == "# page_break = true":
-                    pending_page_break = True
-                    continue
-
-                if not line_stripped.startswith("# sent_id"):
-                    continue
-
-                if "=" in line_stripped:
-                    val = line_stripped.split("=", 1)[1].strip()
-                    if val == "1" or pending_page_break:
-                        current_page += 1
-                        pending_page_break = False
-
-                if current_page == 0:
-                    current_page = 1
-
-                sent_to_page.append(current_page)
-
+        pages = build_word_page_map(conllu_path, rows)
     except Exception as exc:
         print(f"[Error] reading CoNLL-U {conllu_path}: {exc}", file=sys.stderr)
-
+        pages = []
+    sent_to_page = [p[0] if p else 1 for p in pages]
     if not sent_to_page:
         print(
-            f"[Warn] No sent_id markers found in {conllu_path}; "
+            f"[Warn] No sentences found in {conllu_path}; "
             "treating entire document as a single page.",
             file=sys.stderr,
         )
         sent_to_page = [1]
-
     return sent_to_page
 
 
@@ -159,22 +155,37 @@ def _get_ne_suffix(tag: str) -> str:
 # ── response → per-page TSV ───────────────────────────────────────────────────
 
 
-def write_tsv_files(response_json: dict, sent_to_page: list[int], out_dir: str, doc_id: str) -> int:
-    """Parse NameTag JSON result and write per-page TSV files."""
+def write_tsv_files(response_json: dict, pages: list, out_dir: str, doc_id: str) -> int:
+    """Parse NameTag JSON result and write one TSV file per page (``<doc_id>-<page>.tsv``).
+
+    ``pages`` is per sentence either a page number or a list with the page of every word
+    (``build_word_page_map``); a sentence that crosses a page is split between two files.
+    If NameTag returns a different number of tokens for a sentence, all of them go to its
+    first word's page. Pages only increase, so concatenating the files in page order gives
+    the tokens in document order (``summarize_nt_udp.get_sorted_tsv_content``)."""
     tagged = response_json.get("result", "")
     sentences = [s for s in tagged.strip().split("\n\n") if s.strip()]
+    flat = [p for entry in pages for p in (entry if isinstance(entry, list) else [entry])]
+    last_page = max(flat, default=1)
 
     tokens_by_page: defaultdict[int, list[tuple[str, str]]] = defaultdict(list)
 
     for idx, sent_block in enumerate(sentences):
-        page_num = sent_to_page[idx] if idx < len(sent_to_page) else (max(sent_to_page, default=1))
+        entry = pages[idx] if idx < len(pages) else last_page
+        tokens = []
         for line in sent_block.split("\n"):
             if line.startswith("#"):
                 continue
             cols = line.split("\t")
             if len(cols) < 2:
                 continue
-            word, tag = cols[0], cols[1]
+            tokens.append((cols[0], cols[1]))
+        if isinstance(entry, list) and len(entry) == len(tokens):
+            word_pages = entry
+        else:
+            first = entry[0] if isinstance(entry, list) and entry else entry
+            word_pages = [first if isinstance(first, int) else last_page] * len(tokens)
+        for (word, tag), page_num in zip(tokens, word_pages, strict=True):
             tokens_by_page[page_num].append((word, tag))
 
     os.makedirs(out_dir, exist_ok=True)
@@ -208,6 +219,11 @@ def main() -> None:
     )
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--retries", type=int, default=5)
+    parser.add_argument(
+        "--text-dir",
+        default=os.environ.get("TEMP_TXT_DIR") or None,
+        help="stage 1's TEMP_TXT_DIR: where <doc>.rows.tsv is when it is not next to --input",
+    )
     args = parser.parse_args()
 
     if not os.path.isfile(args.input):
@@ -216,12 +232,20 @@ def main() -> None:
 
     doc_id = os.path.splitext(os.path.basename(args.input))[0]
 
-    sent_to_page = build_sent_page_map(args.input)
+    rows_path = page_rows.find_rows(args.input, args.text_dir)
+    rows = page_rows.read_rows(rows_path) if rows_path else None
+    if rows is None:
+        print(
+            f"  [NameTag] {doc_id}: no rows file; pages follow the legacy convention "
+            "(re-run stage 1 to get real pages)",
+            file=sys.stderr,
+        )
+    word_pages = build_word_page_map(args.input, rows)
 
     with open(args.input, "r", encoding="utf-8") as fh:
         conllu_text = fh.read()
 
-    print(f"  [NameTag] Sending {doc_id} ({len(sent_to_page)} sentences)...")
+    print(f"  [NameTag] Sending {doc_id} ({len(word_pages)} sentences)...")
 
     session = get_robust_session(args.retries)
     response_json = call_nametag(session, conllu_text, args.model, args.url, args.timeout)
@@ -230,7 +254,7 @@ def main() -> None:
         print(f"[Error] NameTag failed permanently for {doc_id}.", file=sys.stderr)
         sys.exit(1)
 
-    n_pages = write_tsv_files(response_json, sent_to_page, args.output_dir, doc_id)
+    n_pages = write_tsv_files(response_json, word_pages, args.output_dir, doc_id)
     print(f"  [NameTag] Written {n_pages} page TSV file(s) → {args.output_dir}")
 
 

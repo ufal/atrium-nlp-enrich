@@ -43,20 +43,42 @@ FORMAT_PATTERN=$(echo "$FLEXICONV_FORMATS" | tr ',' ' ' | xargs | tr ' ' '|')
 FORCE_FLAG=""
 [ "${FLEXICONV_FORCE:-false}" = "true" ] && FORCE_FLAG="--force"
 
-total=0
+candidates=()
 for f in "$INPUT_DOCS_DIR"/*; do
     [ -f "$f" ] || continue
     filename=$(basename -- "$f")
     ext=$(echo "${filename##*.}" | tr '[:upper:]' '[:lower:]')
     echo "$ext" | grep -Eqx "$FORMAT_PATTERN" || continue
-    total=$((total + 1))
+    candidates+=("$f")
+done
+total=${#candidates[@]}
 
+# Preflight (issue #38, E): without flexiconv every file would fail one by one and, recorded as
+# skips, the stage used to finish green with nothing converted. Stop before the first file.
+if [ "$total" -gt 0 ] && ! python3 api_util/flexiconv_convert.py --check; then
+    python3 atrium_paradata.py skip \
+        --state "$PARA_STATE" \
+        --file  "$INPUT_DOCS_DIR" \
+        --reason "flexiconv is not installed (pip install -r requirements_flexiconv.txt)"
+    python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$total"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [CRITICAL ERROR] flexiconv is not installed; ${total} document(s) not converted. Halting." \
+        | tee -a "${LOG_FILE:-/dev/null}" >&2
+    exit 3
+fi
+
+failed=0
+# ${a[@]+...}: an empty array under `set -u` is an error in bash < 4.4 (macOS ships 3.2).
+for f in ${candidates[@]+"${candidates[@]}"}; do
+    filename=$(basename -- "$f")
     # shellcheck disable=SC2086  # FORCE_FLAG is empty or a single flag
     if python3 api_util/flexiconv_convert.py "$f" --out-dir "$FLEXICONV_DIR" \
             --formats "$FLEXICONV_FORMATS" $FORCE_FLAG; then
         python3 atrium_paradata.py success --state "$PARA_STATE" --type xml
     else
-        # One line from the adapter already says why (not installed / unsupported / failed).
+        # One line from the adapter already says why. Paradata has no "failed" record (the
+        # hub-canonical logger knows success/skip), so the reason says it; the exit code below
+        # is what stops the run.
+        failed=$((failed + 1))
         python3 atrium_paradata.py skip \
             --state "$PARA_STATE" \
             --file  "$filename" \
@@ -67,7 +89,7 @@ done
 # TEITOK output gate for this second emitter (issue #28). flexiconv output is a different
 # TEITOK profile than api_util/teitok_alto.py's, so it is checked against the TEITOK-core
 # rules every TEITOK document must meet (--profile core), not against schemas/teitok/teitok.xsd;
-# api_4_stats.sh in turn excludes this directory from its writer-XSD gate.
+# api_4_stats.sh in turn excludes this directory from its output-contract gate.
 if ! python3 api_util/validate_teitok_xml.py "$FLEXICONV_DIR" --allow-empty --profile core; then
     python3 atrium_paradata.py skip \
         --state "$PARA_STATE" \
@@ -80,4 +102,11 @@ if ! python3 api_util/validate_teitok_xml.py "$FLEXICONV_DIR" --allow-empty --pr
 fi
 
 python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$total"
-echo "flexiconv: ${total} candidate document(s) processed into ${FLEXICONV_DIR}"
+echo "flexiconv: ${total} candidate document(s), $((total - failed)) converted or kept, ${failed} failed -> ${FLEXICONV_DIR}"
+if [ "$failed" -gt 0 ]; then
+    # Every file was tried first, so the log lists all failures; then the stage fails like
+    # api_2_udp.sh does, instead of passing an incomplete collection on (issue #38, E).
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [CRITICAL ERROR] flexiconv could not convert ${failed} of ${total} document(s). Halting." \
+        | tee -a "${LOG_FILE:-/dev/null}" >&2
+    exit 1
+fi

@@ -25,6 +25,7 @@ lemmas & part-of-sentence tags, and keywords (KER) per page/document.
 ## Table of contents
 
 - [TEITOK XML — Unified Output Format](#teitok-xml--unified-output-format)
+  - [Importing into a TEITOK project](#importing-into-a-teitok-project)
 - [ ⚙️ Setup](#-setup)
 - [Workflow Stages](#workflow-stages)
   - [Step 1: Prepare CSVs with texts from Page-Specific ALTOs](#-step-1-prepare-csvs-with-texts-from-page-specific-altos)
@@ -55,18 +56,21 @@ lemmas & part-of-sentence tags, and keywords (KER) per page/document.
 platform, carrying spatially-grounded linguistic and NER annotations produced by UDPipe and
 NameTag. The files follow the conventions the TEITOK tools themselves read and write
 ([flexiconv](https://github.com/ufal/flexiconv), [flexipipe](https://github.com/ufal/flexipipe),
-teitok-tools), so they can go straight into a TEITOK project (as `xmlfiles/<doc_id>.xml`) or
-through flexiconv/flexipipe without losing spacing, multi-word tokens or entities.
+teitok-tools), so they can go straight into a TEITOK project (see
+[Importing into a TEITOK project](#importing-into-a-teitok-project)) and be read by flexiconv
+and flexipipe. What each tool keeps on a round trip is listed there: spacing survives all of
+them; two upstream readers still lose something (multi-word tokens in flexiconv, dependency
+heads in flexipipe).
 
 Each document in the collection is serialised as a single `.teitok.xml` file that integrates four
 layers of information in a consistent, machine-readable structure:
 
-| Layer                   | Content                                                                                                                                                                                            |
-|-------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Layout**              | Page, text-block, and line boundaries with pixel bounding boxes from the source ALTO XML (page origin), scaled to the stored page images when those are available                                  |
-| **Morphology & Syntax** | Per-token lemma, UPOS/XPOS tags, morphological features, and dependency relations produced by UDPipe 2; multi-word tokens ("abych" = aby + bych) as one surface `<tok>` with `<dtok>` words        |
-| **Named Entities**      | Entity spans with a coarse category (`PER`, `ORG`, `LOC`, `MISC`) and the raw NameTag label in `@onto` (OntoNotes, the default model), `@cnec` (CNEC 2.0) or `@archaeo` (the archaeological model) |
-| **Facsimile links**     | `<surface>` elements in `<facsimile>` that tie each page to its companion image, enabling TEITOK's side-by-side text/image view                                                                    |
+| Layer                   | Content                                                                                                                                                                                                                     |
+|-------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Layout**              | Page, text-block, and line boundaries with pixel bounding boxes from the source ALTO XML (page origin), scaled to the stored page images when those are available; without a layout, the pages and lines of the input table |
+| **Morphology & Syntax** | Per-token lemma, UPOS/XPOS tags, morphological features, and dependency relations produced by UDPipe 2; multi-word tokens ("abych" = aby + bych) as one surface `<tok>` with `<dtok>` words                                 |
+| **Named Entities**      | Entity spans with a coarse category (`PER`, `ORG`, `LOC`, `MISC`) and the raw NameTag label in `@onto` (OntoNotes, the default model), `@cnec` (CNEC 2.0) or `@archaeo` (the archaeological model)                          |
+| **Facsimile links**     | `<surface>` elements in `<facsimile>` that tie each page to its companion image, enabling TEITOK's side-by-side text/image view                                                                                             |
 
 ### Why TEITOK XML?
 
@@ -101,10 +105,10 @@ An excerpt of [data_samples/TEITOK/CTX000000001.teitok.xml](data_samples/TEITOK/
     </surface>
   </facsimile>
   <text><body>
-    <pb n="1" id="pb-1" facs="CTX000000001-1.png" corresp="#facs-1"/>
+    <pb n="1" id="pb-1" facs="CTX000000001-1.png" corresp="#facs-1" bbox="0 0 1654 2339"/>
     <div type="TextBlock" id="b-1.1" bbox="220 160 1420 280">
       <s id="s-1" text="Výzkumná zpráva č. 1/2024 — Hradiště u Horní Mezí ...">
-        <lb id="lb-1.1" bbox="220 160 1320 200"/><tok id="w-1" type="w" ord="1" lemma="výzkumný" upos="ADJ" head="w-2" deprel="amod" bbox="220 160 420 194">Výzkumná</tok> <tok id="w-2" ...>zpráva</tok> <tok id="w-3" ... join="right">č</tok><tok id="w-4" type="pc" ...>.</tok> ...
+        <lb id="lb-1.1" bbox="220 160 1320 200"/><tok id="w-1" type="w" ord="1" lemma="výzkumný" upos="ADJ" head="w-2" deprel="amod" bbox="220 160 420 194">Výzkumná</tok> <tok id="w-2" ...>zpráva</tok> <tok id="w-3" ... join="right" bbox="...">č</tok><tok id="w-4" type="pc" ...>.</tok> ...
         <name id="n-3" type="LOC" cnec="gu" sameAs="#w-9 #w-10 #w-11 #w-12"><tok id="w-9" ...>Hradiště</tok> ... <tok id="w-12" ...>Mezí</tok>
           </name><lb id="lb-1.2" bbox="220 210 1220 250"/><tok id="w-13" ...>Terénní</tok> ...
       </s>
@@ -126,27 +130,80 @@ The conventions, which are the same as the TEITOK tools' (full list:
   points at the head word's id. The document record (`--document-json`) uses the same ids:
   `entities[].teitok_ref` = `n-N` and `pages[].teitok_surface` = `facs-P`.
 - **Bounding boxes** are `x1 y1 x2 y2` pixels measured from the page's top-left corner, and
-  `<surface lrx lry>` gives the extent they are measured in (see
+  `<surface lrx lry>` (and `pb@bbox="0 0 W H"`, as flexiconv writes it) gives the extent they
+  are measured in (see
   [ALTO-to-TEITOK XML Generation and Coordinate Alignment](#alto-to-teitok-xml-generation-and-coordinate-alignment)).
+  Punctuation that UDPipe splits off an OCR word ("č." → "č" + ".") has no box of its own;
+  the word keeps the OCR string's box, as in flexiconv's ALTO and hOCR import.
+- **Pages come from the layout** (ALTO, a converted file, or the table's `page_num`), never
+  from UDPipe's chunks. A sentence (or an entity) that runs over a page break keeps its
+  tokens together and gets the `<pb/>` inside it, before the first token of the new page —
+  the anchor xmltokenizer and flexiconv allow there. `pb@n` is the page label (`"I"`, `"7a"`);
+  `pb@facs`/`@corresp` appear only for a page that has an image (a `<surface>`).
 - **Header**: `notesStmt/note[@n="orgfile"]` names the source ALTO file, `appInfo` names the
   writer (`atrium-nlp-enrich`, format `teitok-2`) and the UDPipe/NameTag models, and
   `revisionDesc/change@type` records the phases (`converted`, `tagged`/`parsed`, `ner`).
 
-Every file is checked against [schemas/teitok/teitok.xsd](schemas/teitok/teitok.xsd) 📎 before
-the stage finishes, and `tests/test_teitok_conformance.py` reads the writer's output the way
-flexiconv does to keep it TEITOK-conformant.
+Every file is checked before the stage finishes: against
+[schemas/teitok/teitok.xsd](schemas/teitok/teitok.xsd) 📎, and — for files in the current format —
+for unique ids, resolvable `sameAs`/`corresp`/`head` references and the page rules (`pb-K`
+increasing, `lb-P.L` on page P). A file that fails stops the stage with exit code `5`.
+`tests/test_teitok_conformance.py` reads the writer's output the way flexiconv does to keep it
+TEITOK-conformant.
 
 > [!NOTE]
 > TEITOK XML is generated by Step 4 of this pipeline (`api_4_stats.sh`) when
 > `SAVE_TEITOK=true`. The source ALTO XML files must be present in `INPUT_ALTO_DIR`
-> for spatial coordinates to be included. If `INPUT_ALTO_DIR` is not set, TEITOK XML
-> is still produced but without bounding box attributes. If your documents are not in
+> for spatial coordinates to be included. Without a layout, TEITOK XML is still produced:
+> its pages and lines are those of the input table (`<pb>` per page, `<lb>` per line), without
+> bounding boxes and without a facsimile. If your documents are not in
 > ALTO format, see [EXTRA: Converting Other Input Formats with flexiconv](#extra-converting-other-input-formats-with-flexiconv).
 
 > [!IMPORTANT]
 > The format changed in 2026-09 ("format 2": inline spacing, `<dtok>`, `w-N` ids, page-origin
 > bboxes). A resumed run keeps existing `.teitok.xml` files. Rewrite them once, so that old and new
 > files do not mix: `REGENERATE_TEITOK=true bash api_4_stats.sh`, or set it in `config_api.txt`.
+>
+> **Pages changed after v0.21.0** (issue #38): runs up to v0.21.0 counted UDPipe's ~900-word chunks
+> as pages in `NE/<doc>-N.tsv`, `summary_ne_counts.csv`, `UDP_NE/<doc>.csv` and the document record,
+> and left a sentence that runs over a page on its first page in the TEITOK. To correct a collection:
+> re-run it from stage 1 (which writes the rows files pages now come from); or, keeping the
+> CoNLL-U and NE files, rebuild the rows files with stage 1, copy each `TEMP_TXT_DIR/<doc>.rows.tsv`
+> to `UDP/`, re-split the NE files by page without calling NameTag
+> (`python3 api_util/page_rows.py resplit --conllu-dir <OUTPUT_DIR>/UDP --ne-dir <OUTPUT_DIR>/NE`),
+> delete `UDP_NE/<doc>/<doc>.csv` and run stage 4 with `REGENERATE_TEITOK=true`. In-place document
+> records keep entities under their old pages: re-seed them from the record before nlp-enrich.
+
+### Importing into a TEITOK project
+
+The files follow TEITOK's conventions, but a TEITOK project has a few of its own
+(`xmlfiles/`, `Originals/`, `settings.xml`), and the upstream readers differ in what they keep:
+
+- **File name.** A project keeps each document as `xmlfiles/<name>.xml`: copy
+  `TEITOK/<doc_id>.teitok.xml` to `xmlfiles/<doc_id>.xml` (the `.teitok.xml` suffix is this
+  pipeline's, not TEITOK's).
+- **Original.** `note[@n="orgfile"]` names the file the document came from (the ALTO file, the
+  input table, or the original a converted document was made from), without a directory. Put
+  that file in the project's `Originals/`.
+- **Attributes.** Tokens carry `lemma`, `upos`, `xpos`, `feats`, `head`, `deprel` and `ord`.
+  teitok-tools' default tag attribute is `pos`: declare `xpos` (and the others you want to query
+  or show) in the project's `settings.xml`.
+- **Page images.** `pb@facs` and `<graphic url>` name the images (`<doc_id>-N.png` for ALTO
+  documents, the converted file's own names otherwise); place them where the project's
+  facsimile settings look.
+
+What the TEITOK readers keep (flexiconv v0.3.10, the pinned version, is tested in
+`tests/test_teitok_conformance.py` and `tests/test_teitok_pages.py`; flexipipe `73188c5` was
+checked by hand on the committed samples, 2026-09-24):
+
+| Reader                                  | Spacing (`SpaceAfter`) | Sentences, `<pb/>` inside `<s>` | Multi-word tokens (`<dtok>`)                | Dependency heads                                                           |
+|-----------------------------------------|------------------------|---------------------------------|---------------------------------------------|----------------------------------------------------------------------------|
+| flexiconv `load_teitok`                 | ✅                      | ✅                               | ❌ the surface token only, without its words | kept as the raw `@head` id                                                 |
+| flexipipe `load_teitok` (Python loader) | ✅                      | ✅                               | ✅                                           | ❌ `head="w-N"` becomes token N of the *document*: wrong from sentence 2 on |
+| this repo's `teitok_read.py`            | ✅                      | ✅ one row per page part         | ✅ surface form                              | not read                                                                   |
+
+The two ❌ are upstream defects, recorded in issue #38 for an upstream report; `@ord` gives each word's
+sentence-local number for a reader that needs it.
 
 ---
 
@@ -325,7 +382,10 @@ Maps input text files to document IDs and page numbers to ensure correct process
 ```
 
 * **Input:** `../CSVS_with_TEXT/` (raw text files in subdirectories from Step 1).
-* **Output:** `OUTPUT_DIR/manifest.tsv`.
+* **Output:** `OUTPUT_DIR/manifest.tsv`, and per document `TEMP_TXT_DIR/<doc_id>.txt` (one line per
+  table row) with `TEMP_TXT_DIR/<doc_id>.rows.tsv` next to it: the page, line, page label and text
+  of every line. That file is where stages 3 and 4 take page numbers from
+  ([api_util/page_rows.py](api_util/page_rows.py) 📎).
 
 Example output file [manifest.tsv](data_samples/manifest.tsv) 📎 with **file**, **page**
 number, and **path** columns. It lists all text files to be processed in the next steps.
@@ -347,7 +407,9 @@ Sends text to the UDPipe API [^5]. Large documents are automatically split into 
 
 * **Input 1:** `OUTPUT_DIR/manifest.tsv` (mapping of text files to document IDs and page numbers).
 * **Input 2:** `../CSVS_with_TEXT/` (raw text files in subdirectories from Step 1).
-* **Output:** `OUTPUT_DIR/UDP/*.conllu` (Intermediate per-document CoNLL-U files).
+* **Output:** `OUTPUT_DIR/UDP/*.conllu` (Intermediate per-document CoNLL-U files), each with its
+  `<doc_id>.rows.tsv` copied next to it, so the text and its page provenance stay together on
+  resumed runs and in containers (where `TEMP/` is not kept).
 
 Run the following command to see how many documents have been processed into CoNLL-U files:
 
@@ -361,13 +423,15 @@ Example output directory [UDP](data_samples/UDP) 📁 contains per-document CoNL
 > [!NOTE]
 > **Chunking and page boundaries.** [chunk.py](api_util/chunk.py)📎 splits text on OCR line boundaries (not raw whitespace),
 > preserving the newline-separated structure of the source CSV so that UDPipe receives proper
-> sentence-boundary hints between lines.  When a document spans multiple chunks, [call_udpipe.py](api_util/call_udpipe.py)📎
-> merges them into a single CoNLL-U and injects a `# page_break = true` comment immediately before
-> every sentence that began a new page in its source chunk.  All downstream scripts
-> ([call_nametag.py](api_util/call_nametag.py)📎, [summarize_nt_udp.py](api_util/summarize_nt_udp.py)📎,
-> [teitok_alto.py](api_util/teitok_alto.py)📎) recognise this marker alongside the
-> legacy `# sent_id = 1` page-reset convention, so both single-chunk and multi-chunk files are
-> handled transparently.
+> sentence-boundary hints between lines. A chunk is about `WORD_CHUNK_LIMIT` words, **not a page**:
+> when a document spans several chunks, [call_udpipe.py](api_util/call_udpipe.py)📎 merges them into
+> one CoNLL-U and marks where each chunk starts with `# chunk_start = K`. Pages come from the rows
+> file instead: UDPipe marks every line end (`SpacesAfter=\n`), so counting those marks — checked
+> against the text of every row — places each token on its line and page
+> ([page_rows.py](api_util/page_rows.py)📎); if the check fails, the characters are aligned instead.
+> Up to v0.21.0 the chunk marker was `# page_break = true` and every stage read it as a page;
+> it is now read as a chunk start. Without a rows file, only an old per-page CoNLL-U (whose
+> `# sent_id` restarts at 1) has more than one page.
 
 > [!TIP]
 > You can launch the next step when a portion of CoNLL-U files are ready,
@@ -384,8 +448,9 @@ Takes the valid CoNLL-U files and passes them through the NameTag API [^6] to an
 ./api_3_nt.sh
 ```
 
-* **Input:** `OUTPUT_DIR/UDP/*.conllu` (Intermediate per-document CoNLL-U files).
-* **Output:** `OUTPUT_DIR/NE/*/*.tsv` (NE annotated per-page files)
+* **Input:** `OUTPUT_DIR/UDP/*.conllu` (Intermediate per-document CoNLL-U files) and their `.rows.tsv`.
+* **Output:** `OUTPUT_DIR/NE/*/*.tsv` (NE annotated per-page files: `<doc_id>-P.tsv` holds the tokens
+  of page P; a sentence that runs over a page is split between two files, in order)
 
 Run the following command to see how many documents have been processed into TSV files:
 
@@ -394,8 +459,10 @@ ls -l OUTPUT_DIR/NE | wc -l
 ```
 which returns the total number of directories created (each subfolder corresponds to a document).
 
-Example output directory [NE](data_samples/NE) 📁 contains per-page TSV files with NE annotations, where the NE tags
-follow the CNEC 2.0 standard [^3] which is used in the Czech Nametag model.
+Example output directory [NE](data_samples/NE) 📁 contains per-page TSV files with NE annotations. The tags are
+the labels of the configured NameTag model (`MODEL_NAMETAG`): OntoNotes 5 for the default multilingual model,
+CNEC 2.0 [^3] for the Czech one. The committed `NE/` files carry OntoNotes labels, while `UDP_NE/` and `TEITOK/`
+were produced with the Czech CNEC model before the default changed; a sample refresh on LINDAT aligns them.
 
 
 ##### 4. Generate Statistics
@@ -419,6 +486,9 @@ Optionally, TEITOK-related functionality is implemented in
 
 * **Input 1:** `OUTPUT_DIR/UDP/*.conllu` — Per-document CoNLL-U files containing morphology and syntax.
 * **Input 2:** `OUTPUT_DIR/NE/*/*.tsv` — Per-page TSV files containing Named Entity annotations.
+* **Input 2b:** `OUTPUT_DIR/UDP/<doc_id>.rows.tsv` (else `TEMP_TXT_DIR/<doc_id>.rows.tsv`) — the page and line of
+every token; `page_id` in the CSVs, the summary's pages, entity pages and the TEITOK pages come from it
+(or from the layout, where there is one).
 * **Input 3 (Optional):** `INPUT_ALTO_DIR/*.alto.xml` — Source ALTO XML files used during TEITOK conversion to provide spatial bounding box coordinates for each token.
 * **Input 4 (Optional):** `INPUT_PAGES_DIR/<doc_id>-N.png` — Per-page facsimile images. When specified, the pipeline reads
 their pixel size from the file headers to compute the scale factors (sx, sy). If omitted, the ALTO coordinates are written
@@ -430,14 +500,14 @@ as they are (scale 1.0), or scaled by `IMAGE_DPI`.
 
 The behavior of this step is controlled by boolean flags in your [config_api.txt](config_api.txt):
 
-| Variable            | Description                                                                                                                                                                                                                                                | Default   |
-|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
-| `SAVE_CONLLU_NE`    | Keep the enriched CoNLL-U with NER in the `MISC` field.                                                                                                                                                                                                    | `true`    |
-| `SAVE_CSV`          | Write the token-level summary CSV per document.                                                                                                                                                                                                            | `true`    |
-| `SAVE_TEITOK`       | Write TEITOK-style TEI XML with bounding boxes and NER spans. When `INPUT_ALTO_DIR` is not set a warning is emitted and TEITOK XML is still produced without bboxes. If `INPUT_ALTO_DIR` is set but the path does not exist, the step exits with an error. | `true`    |
-| `INPUT_PAGES_DIR`   | Directory of per-page images (`<doc_id>-N.png`). When set, bbox coordinates are scaled to match the actual PNG resolution. Leave empty to write raw ALTO pixel values.                                                                                     | *(empty)* |
-| `BBOX_ORIGIN`       | `page`: bboxes measured from the page's top-left corner (the TEITOK norm). `printspace`: measured from the ALTO PrintSpace, with a PrintSpace-sized `<surface>` — only for page images cropped to the print area.                                          | `page`    |
-| `REGENERATE_TEITOK` | `true`: delete and rewrite each document's `.teitok.xml` instead of skipping it on a resumed run (use once after a TEITOK format change).                                                                                                                  | `false`   |
+| Variable            | Description                                                                                                                                                                                                                                                                        | Default   |
+|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
+| `SAVE_CONLLU_NE`    | Keep the enriched CoNLL-U with NER in the `MISC` field.                                                                                                                                                                                                                            | `true`    |
+| `SAVE_CSV`          | Write the token-level summary CSV per document.                                                                                                                                                                                                                                    | `true`    |
+| `SAVE_TEITOK`       | Write TEITOK-style TEI XML with bounding boxes and NER spans. Without a layout (`INPUT_ALTO_DIR` unset, no converted file) TEITOK XML is still produced, with the table's pages and lines but no bboxes. A file that fails the output contract stops the stage with exit code `5`. | `true`    |
+| `INPUT_PAGES_DIR`   | Directory of per-page images (`<doc_id>-N.png`). When set, bbox coordinates are scaled to match the actual PNG resolution. Leave empty to write raw ALTO pixel values.                                                                                                             | *(empty)* |
+| `BBOX_ORIGIN`       | `page`: bboxes measured from the page's top-left corner (the TEITOK norm). `printspace`: measured from the ALTO PrintSpace, with a PrintSpace-sized `<surface>` — only for page images cropped to the print area.                                                                  | `page`    |
+| `REGENERATE_TEITOK` | `true`: delete and rewrite each document's `.teitok.xml` instead of skipping it on a resumed run (use once after a TEITOK format change).                                                                                                                                          | `false`   |
 
 #### ALTO-to-TEITOK XML Generation and Coordinate Alignment
 
@@ -517,10 +587,12 @@ curl -X POST "http://localhost:8000/rescale" \
      -o CTX000000001.rescaled.teitok.xml
 ```
 
-*What happens behind the scenes:* The API automatically detects the original coordinate space from the `<surface>` tag 
-in your XML. It calculates the exact scaling factors needed to stretch or shrink the bounding boxes (`bbox`) to fit the 
-new 1200x1800 dimensions. As a bonus, it also silently repairs any malformed named-entity tags (like `<name>...</n>`) 
-in the document.
+*What happens behind the scenes:* The API detects each page's coordinate space from its `<surface>` tag 
+in your XML and scales the bounding boxes (`bbox`) of that page to the new 1200x1800 dimensions; boxes are clamped
+to the page, and a `<change type="rescaled">` in the header records what was done. As a bonus, it also repairs any
+malformed named-entity tags (like `<name>...</n>`) in the document. When the pages of a document differ in size,
+width and height would distort some of them: give a factor instead (`-F "scale=0.5"`), and every page image is
+taken to be that fraction of its surface.
 
 **Method 2: The Command-Line Batch Process (Best for whole directories)**
 
@@ -548,6 +620,10 @@ out of the final web image, you can strip that out by shifting everything left a
 python3 fix_teitok_bboxes.py -i my_document.teitok.xml --dx -50 --dy -20
 ```
 
+A shift moves content near the edge off the page; such coordinates are clamped to the page (0, or the
+page's width/height) and counted, rather than written as negative values the stage-4 gate would reject.
+Each `<surface>` is rescaled by its own size, and a `<change type="rescaled">` records the rewrite.
+
 Both methods directly address the historical pain point of facsimile alignment, allowing you to flawlessly overlay
 the NLP enrichments onto the visual documents without needing to re-run the entire pipeline.
 
@@ -570,8 +646,12 @@ their own `@bbox` spatial coordinates.
 `<div type="text">` per page.
 * **Graphics:** Non-text elements like `Illustration` and `GraphicalElement` blocks are parsed and
 appended to their respective pages as `<figure id="fig-P.K">` tags with strict bounding boxes.
-* **Pages:** Page boundaries are marked with `<pb n="N" id="pb-N" facs="..." corresp="#facs-N"/>` elements
-pointing to the page's `<surface>`.
+* **Pages:** Page boundaries are marked with `<pb n="N" id="pb-N" facs="..." corresp="#facs-N" bbox="0 0 W H"/>`
+elements pointing to the page's `<surface>`. A token is on the page of the ALTO string it aligned to; a token
+that did not align is on the page of its line in the rows file. Pages only move forward, so every page gets
+exactly one `<pb>` (pages without text included). A sentence running over a page break gets its `<pb/>`
+inside the `<s>` — inside the `<name>`, too, when an entity runs over — and the figures of that page follow
+the sentence. A `<div>` stays on the page it opens on.
 
 Named entity spans are wrapped in `<name>` elements grouping their constituent `<tok>` nodes, with
 `@sameAs` listing the token ids. `@type` holds the coarse category (`PER`, `ORG`, `LOC`, or `MISC`,
@@ -584,7 +664,9 @@ the Czech CNEC 2.0 model (`<name type="PER" cnec="pf">`), `@archaeo` for the arc
 > Thanks to the sequence matching approach, the script achieves near-perfect spatial alignment between
 > NLP tokens and OCR coordinates, drastically improving upon older greedy matching methods that would
 > break on minor character variations. Alignment statistics (matched vs. total tokens) are printed to
-> the console per document.
+> the console per document; below 90 % a warning asks whether text and layout come from the same
+> document version (e.g. alto-postprocess's text with a flexiconv layout). A token that aligned to
+> a page out of reading order loses its box (the longest in-order run of aligned pages is kept).
 
 ```bash
 ls OUTPUT_DIR/UDP_NE | wc -l
@@ -642,7 +724,7 @@ AND
 │   └── ...
 ├── UDP/
 │   ├── <doc_id>.conllu
-│   ├── <doc_id>.conllu
+│   ├── <doc_id>.rows.tsv
 │   └── ...
 ├── TEITOK/
 │   ├── <doc_id>.teitok.xml
@@ -876,9 +958,11 @@ Each file becomes `<stem>.teitok.xml` in `TEITOK_FLEXICONV_DIR` (default
 become `report.txt.teitok.xml` and `report.md.teitok.xml`. Existing outputs are kept unless
 `FLEXICONV_FORCE=true`. The script calls flexiconv's library (`flexiconv.api.run_convert`), or
 its CLI (`flexiconv --no-auto-install -t teitok IN OUT`) when only the CLI is installed. Either
-way it never `pip install`s missing extras in the middle of a run. A file that cannot be converted
-is reported in one line and recorded as skipped in the paradata record of the run
-(`--program nlp-enrich`, component `flexiconv`). The output directory is then checked with
+way it never `pip install`s missing extras in the middle of a run. Without flexiconv installed the
+stage stops at once with exit code `3`. A file that cannot be converted is reported in one line and
+recorded, with its reason, in the paradata record of the run (`--program nlp-enrich`, component
+`flexiconv`); the stage converts the rest and then exits `1`, so `run_pipeline.py --with-flexiconv`
+does not end green with documents missing. The output directory is then checked with
 `validate_teitok_xml.py --profile core`, the rules any TEITOK document must meet. This is not
 this writer's XSD, and `api_4_stats.sh` leaves this directory out of its own gate.
 
@@ -888,8 +972,10 @@ or `INPUT_DIR` in `llm_config.txt`.
 For a single file, the CLI directly: `flexiconv -t teitok input.page.xml output.teitok.xml`
 (`flexiconv --list-formats` lists every input format).
 
-`run_pipeline.py --with-flexiconv` runs `api_flexiconv.sh` as its first stage (next section);
-the REST service does not call it.
+`run_pipeline.py --with-flexiconv` runs `api_flexiconv.sh` as its first stage (next section;
+`--start-from` any later stage skips it). The REST service never runs flexiconv (no GPL code in its
+image), but it takes flexiconv's output: upload a converted `.teitok.xml` to `/enrich` and it is
+annotated with its own layout ([service/README.md](service/README.md) 📎).
 
 ### Annotating converted documents (`FLEXICONV_ANNOTATE`)
 
@@ -906,17 +992,17 @@ python3 run_pipeline.py --with-flexiconv   # api_flexiconv.sh, then manifest →
 `FLEXICONV_ANNOTATE=true` in `config_api.txt` and run `bash api_flexiconv.sh` before
 `api_1_manifest.sh`.
 
-| Stage               | With `FLEXICONV_ANNOTATE=true`                                                                                                                                                                                                                                                                                                                                                                |
-|---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1 manifest          | Each `TEITOK_FLEXICONV_DIR/*.teitok.xml` adds a row whose text is the rows `teitok_read` gives (one per line or text block). A table with the same `doc_id` wins, and the converted file is recorded as skipped.                                                                                                                                                                              |
-| 2–3 UDPipe, NameTag | Unchanged.                                                                                                                                                                                                                                                                                                                                                                                    |
-| 4 stats             | A document without `<doc_id>.alto.xml` takes its layout from its converted file ([api_util/teitok_layout.py](api_util/teitok_layout.py) 📎): pages from `<pb facs>`, lines from `<lb bbox>`, word boxes from `<tok bbox>`, and text blocks with their element name as `subtype` (`head`, `p`, `item`, …). Files are matched by `canonical_doc_id`, so `report.v2.teitok.xml` serves `report`. |
-| document record     | `entities[].bbox`, `teitok_ref` and `pages[].teitok_surface` are filled as for ALTO documents.                                                                                                                                                                                                                                                                                                |
+| Stage               | With `FLEXICONV_ANNOTATE=true`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1 manifest          | Each `TEITOK_FLEXICONV_DIR/*.teitok.xml` is a document (`report.txt.teitok.xml` is `report.txt`) whose text is the rows `teitok_read` gives (one per line or text block). When a table document uses the file as its layout (next row), the table wins and the converted file is recorded as skipped.                                                                                                                                                                                                                                                                                                                                                                                           |
+| 2–3 UDPipe, NameTag | Unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 4 stats             | A document without `<doc_id>.alto.xml` takes its layout from its converted file ([api_util/teitok_layout.py](api_util/teitok_layout.py) 📎): pages from `<pb>` (label `pb@n`, image and size from `pb@facs`/`@bbox` or its `<surface>`), lines from `<lb bbox>`, word boxes from `<tok bbox>`, and text blocks with their element name as `subtype` (`head`, `p`, `item`, …). The file is `<doc_id>.teitok.xml`, else the one file whose `canonical_doc_id` is the document's (`report.v2.teitok.xml` serves `report`); two such files (`report.txt` and `report.md` conversions) are ambiguous: none is used, and a warning says so ([api_util/doc_identity.py](api_util/doc_identity.py) 📎). |
+| document record     | `entities[].bbox`, `teitok_ref` and `pages[].teitok_surface` are filled as for ALTO documents.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
-| Source                             | Layout in the annotated TEITOK                                                                                                                                                                               |
-|------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| PAGE XML, hOCR, ALTO via flexiconv | Word and line boxes, and the page image under its own name (`<graphic url>` = flexiconv's `facs`). The page size is set when the source has one (hOCR). Punctuation that flexiconv did not box gets no bbox. |
-| txt, md, docx, odt, pdf, …         | `<div type="TextBlock" subtype="p\|head\|item\|…">`, with no boxes and no facsimile.                                                                                                                         |
+| Source                             | Layout in the annotated TEITOK                                                                                                                                                                                                                                               |
+|------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| PAGE XML, hOCR, ALTO via flexiconv | Word and line boxes, and the page image under its own name (`<graphic url>` = flexiconv's `facs`). The page size is set when the source has one (hOCR). Punctuation that flexiconv did not box gets no bbox. flexiconv's `<zone>`s are not carried over (format 2 has none). |
+| txt, md, docx, odt, pdf, …         | `<div type="TextBlock" subtype="p\|head\|item\|…">`, with no boxes and no facsimile.                                                                                                                                                                                         |
 
 Inline markup such as `<hi>` is flattened into its block. The converted file stays in
 `TEITOK_FLEXICONV_DIR` as the record of the conversion.
@@ -1678,13 +1764,14 @@ python3 run_pipeline.py --kw
 
 #### Exit codes
 
-| Code | Meaning                                                                                                                                                                             |
-|------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `0`  | All requested stages completed; nothing flagged.                                                                                                                                    |
-| `1`  | A stage processed **nothing** despite having input and no resume, and `FAIL_ON_EMPTY=true` (the default).                                                                           |
-| `2`  | A required stage script was not found.                                                                                                                                              |
-| `3`  | A dependency preflight failed (e.g. `--kw-method keybert` without `keybert`/`sentence-transformers`, or `--llm` without the [requirements_llm.txt](requirements_llm.txt) 📎 stack). |
-| `≠0` | A stage script itself exited non-zero (its code is propagated).                                                                                                                     |
+| Code | Meaning                                                                                                                                                                                                                   |
+|------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`  | All requested stages completed; nothing flagged.                                                                                                                                                                          |
+| `1`  | A stage processed **nothing** despite having input and no resume, and `FAIL_ON_EMPTY=true` (the default). Also: `--with-flexiconv` could not convert at least one document.                                               |
+| `2`  | A required stage script was not found.                                                                                                                                                                                    |
+| `3`  | A dependency preflight failed (e.g. `--kw-method keybert` without `keybert`/`sentence-transformers`, `--llm` without the [requirements_llm.txt](requirements_llm.txt) 📎 stack, or `--with-flexiconv` without flexiconv). |
+| `5`  | The TEITOK output failed its output contract (`api_4_stats.sh`'s gate: the XSD, unique ids, resolvable references, the page rules). A writer defect: please report it.                                                    |
+| `≠0` | A stage script itself exited non-zero (its code is propagated).                                                                                                                                                           |
 
 > [!TIP]
 > **Using `--force` (`-f`)** overrides exit codes `1`, `3`, and `≠0`. It bypasses preflight dependency crashes and forces `FAIL_ON_EMPTY=False`, allowing the pipeline to continue attempting subsequent stages even if one stage crashes or processes zero files.

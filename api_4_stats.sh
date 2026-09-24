@@ -101,6 +101,7 @@ while IFS= read -r -d '' conllu; do
             --tt-dir         "$tt_out_dir" \
             --alto-dir       "${INPUT_ALTO_DIR:-}" \
             --flexiconv-dir  "$FLEXICONV_LAYOUT_DIR" \
+            --text-dir       "${TEMP_TXT_DIR:-}" \
             --pages-dir      "${INPUT_PAGES_DIR:-}" \
             --dpi            "${IMAGE_DPI:-}" \
             --alto-dpi       "${ALTO_DPI:-}" \
@@ -136,11 +137,17 @@ while IFS= read -r -d '' conllu; do
     fi
 done < <(find "${CONLLU_INPUT_DIR}" -name '*.conllu' -type f -print0)
 
-# XSD validation gate (issue #28): TEITOK XML is a formal output contract —
+# Output-contract gate (issues #28, #38): TEITOK XML is a formal output contract —
 # malformed documents must never reach packaging or the LINDAT release.
 # Runs after generation, before atrium_paradata.py finish, and over the
 # TEITOK_OUTPUT_DIR as a whole (not just this run's docs) so a resumed run
-# still re-checks everything currently on disk.
+# still re-checks everything currently on disk. The default profile, "contract",
+# is the XSD for every file plus unique ids, resolvable references and the page
+# rules (pb-K increasing, lb-P.L on page P) for files this writer stamps teitok-2;
+# older files are held to the XSD only.
+#
+# Exit 5 (not 1): the runner and the service tell "the output failed its contract"
+# apart from "the run produced nothing" (exit 1).
 #
 # --allow-empty: TEITOK_OUTPUT_DIR is only created inside the per-document
 # loop above, so a run with zero input documents legitimately has nothing to
@@ -165,11 +172,11 @@ if [ "${SAVE_TEITOK:-true}" = "true" ]; then
         python3 atrium_paradata.py skip \
             --state "$PARA_STATE" \
             --file  "${TEITOK_OUTPUT_DIR}" \
-            --reason "TEITOK XSD validation failed"
+            --reason "TEITOK output contract failed"
 
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [CRITICAL ERROR] TEITOK XSD validation failed. Halting pipeline before packaging." \
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [CRITICAL ERROR] TEITOK output contract failed (see the [FAIL] lines above). Halting pipeline before packaging." \
             | tee -a "${LOG_FILE:-/dev/null}" >&2
-        exit 1
+        exit 5
     fi
 fi
 

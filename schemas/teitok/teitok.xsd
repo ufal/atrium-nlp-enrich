@@ -255,13 +255,20 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- A page break. It may sit inside <s> and <name> too: a sentence (or an
+       entity) that runs over a page break keeps its tokens together, and the
+       <pb/> comes before the first token of the new page: the anchor
+       xmltokenizer and flexiconv allow there. @n is the page label (a number,
+       or e.g. "I"); @facs, @corresp ("#facs-P") and @bbox ("0 0 W H", the
+       page extent, as flexiconv writes it for hOCR/PDF) appear only when the
+       page has a <surface>: a page of a text-only document has no image. -->
   <xs:element name="pb">
     <xs:complexType>
       <xs:attribute name="n" type="xs:string" use="required"/>
       <xs:attribute name="id" type="xs:string" use="required"/>
-      <xs:attribute name="facs" type="xs:string" use="required"/>
-      <!-- "#facs-P": the <surface> of this page, when the document has one. -->
+      <xs:attribute name="facs" type="xs:string" use="optional"/>
       <xs:attribute name="corresp" type="xs:string" use="optional"/>
+      <xs:attribute name="bbox" type="bboxType" use="optional"/>
     </xs:complexType>
   </xs:element>
 
@@ -298,6 +305,7 @@
   <xs:element name="s">
     <xs:complexType>
       <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="pb"/>
         <xs:element ref="lb"/>
         <xs:element ref="tok"/>
         <xs:element ref="name"/>
@@ -321,6 +329,7 @@
   <xs:element name="name">
     <xs:complexType>
       <xs:choice minOccurs="1" maxOccurs="unbounded">
+        <xs:element ref="pb"/>
         <xs:element ref="lb"/>
         <xs:element ref="tok"/>
       </xs:choice>

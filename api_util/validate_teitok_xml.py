@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""validate_teitok_xml.py -- XSD output-contract gate for `.teitok.xml` (issue #28).
+"""validate_teitok_xml.py -- output-contract gate for `.teitok.xml` (issues #28, #38).
 
 Validates every ``*.teitok.xml`` file under a directory against the
-vendored, pinned schema in ``schemas/teitok/teitok.xsd``. Invoked by
+vendored, pinned schema in ``schemas/teitok/teitok.xsd`` and, for this repo's
+own current output, against the rules a schema cannot express. Invoked by
 ``api_4_stats.sh`` immediately after TEITOK generation and before
 ``atrium_paradata.py finish`` -- malformed TEITOK XML must never reach the
 LINDAT release or downstream visualizers/search indexes.
@@ -10,15 +11,24 @@ LINDAT release or downstream visualizers/search indexes.
 Usage:
     python3 api_util/validate_teitok_xml.py <target_dir> [--schema PATH]
                                             [--quiet] [--allow-empty]
-                                            [--profile {xsd,core,wellformed}]
+                                            [--profile {contract,xsd,core,wellformed}]
                                             [--exclude PATH ...]
 
 Profiles:
-    xsd         (default) the pinned output contract of this repo's writer
+    contract    (default) ``xsd`` for every document; for documents this writer stamps as
+                its current format (``<application ident="atrium-nlp-enrich"
+                version="teitok-2">``) also ``core`` and the writer's page/line/id rules
+                (``lint_writer``). Older documents on disk (format 1, from resumed runs)
+                are held to the XSD only, as before.
+    xsd         the pinned XSD alone
     core        TEITOK-core lint that holds for *any* TEITOK profile (e.g. flexiconv
-                output): <TEI> root, a <text>, unique token/sentence ids, resolvable
-                heads, no whitespace after a join="right" token, non-negative bboxes
+                output): <TEI> root, a <text>, unique ids, resolvable heads and
+                ``#`` references (``sameAs``, ``corresp``), no whitespace after a
+                join="right" token, non-negative bboxes
     wellformed  well-formedness + <TEI> root only (``--wellformed-only`` is an alias)
+
+The XSD types ids as plain strings, so a duplicate ``pb``/``lb`` id or a ``sameAs``
+pointing nowhere passed it; ``core`` and ``lint_writer`` catch those (issue #38, D).
 
 Exit codes:
     0  every discovered *.teitok.xml document is schema-valid
@@ -148,12 +158,19 @@ def _token_gaps(root):
     return out
 
 
+_XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
+# Attributes holding space-separated local references ("#w-1 #w-2").
+_REF_ATTRS = ("sameAs", "corresp")
+
+
 def lint_core(doc) -> list[str]:
     """TEITOK-core conventions every TEITOK document should meet, whatever its profile.
 
     Deliberately weaker than the XSD: flexiconv, teitok-tools and TEITOK itself write
     documents our schema does not describe (and tokens without ``@id`` before TEITOK
-    renumbers them), so only rules those tools rely on are checked here.
+    renumbers them), so only rules those tools rely on are checked here: ids are unique
+    across the document (TEITOK addresses every element by id), and a ``#id`` in
+    ``sameAs``/``corresp`` names one of them.
     """
     root = doc.getroot()
     errors = []
@@ -165,9 +182,9 @@ def lint_core(doc) -> list[str]:
     ids = {}
     for el in root.iter():
         tag = _local(el.tag)
-        if tag not in ("tok", "dtok", "s"):
+        if not tag:
             continue
-        el_id = el.get("id") or el.get("{http://www.w3.org/XML/1998/namespace}id")
+        el_id = el.get("id") or el.get(_XML_ID)
         if el_id is None:
             continue
         if not el_id.strip():
@@ -181,8 +198,14 @@ def lint_core(doc) -> list[str]:
         tag = _local(el.tag)
         if tag in ("tok", "dtok"):
             head = el.get("head")
-            if head and not head.isdigit() and head not in ids:
+            if head and not head.isdigit() and ids.get(head) not in ("tok", "dtok"):
                 errors.append(f"line {el.sourceline}: head {head!r} does not resolve to a token id")
+        for attr in _REF_ATTRS:
+            for ref in (el.get(attr) or "").split():
+                if ref.startswith("#") and ref[1:] not in ids:
+                    errors.append(
+                        f"line {el.sourceline}: {attr} {ref!r} on <{tag}> does not resolve"
+                    )
         bbox = el.get("bbox")
         if bbox is not None and not _BBOX_OK.match(bbox.strip()):
             errors.append(f"line {el.sourceline}: bbox {bbox!r} is not four non-negative integers")
@@ -197,6 +220,74 @@ def lint_core(doc) -> list[str]:
     return errors
 
 
+WRITER_IDENT = "atrium-nlp-enrich"
+#: The writer format ``lint_writer`` knows (``teitok_alto.WRITER_FORMAT``; not imported, so
+#: this module stays free of the writer's dependencies).
+WRITER_FORMAT = "teitok-2"
+_PB_ID = re.compile(r"^pb-(\d+)$")
+_PAGED_ID = re.compile(r"^(lb|b|fig)-(\d+)\.(\d+)$")
+
+
+def writer_format(doc) -> str | None:
+    """The ``version`` this repo's writer stamped on ``doc``, or None when another tool
+    (or an old run of ours, before the stamp existed) wrote it."""
+    for el in doc.getroot().iter():
+        if _local(el.tag) == "application" and el.get("ident") == WRITER_IDENT:
+            return el.get("version")
+    return None
+
+
+def lint_writer(doc) -> list[str]:
+    """Rules of this writer's page model (issue #38) that neither the XSD nor ``core`` can
+    state: ``pb-K`` ids strictly increase in document order; ``lb-P.L``, ``b-P.K`` and
+    ``fig-P.K`` carry the page they are on (the last ``<pb>`` before them), with ``L``
+    increasing on the page; ``pb@corresp`` names a ``<surface>`` and every ``<surface>``
+    has its ``<pb>``."""
+    root = doc.getroot()
+    errors = []
+    surfaces = {el.get("id") for el in root.iter() if _local(el.tag) == "surface" and el.get("id")}
+    text = next((el for el in root.iter() if _local(el.tag) == "text"), None)
+    if text is None:
+        return errors
+    page, last_line, used = None, 0, set()
+    for el in text.iter():
+        tag = _local(el.tag)
+        el_id = el.get("id") or ""
+        if tag == "pb":
+            match = _PB_ID.match(el_id)
+            if not match:
+                errors.append(f"line {el.sourceline}: <pb> id {el_id!r} is not pb-K")
+                continue
+            number = int(match.group(1))
+            if page is not None and number <= page:
+                errors.append(
+                    f"line {el.sourceline}: {el_id} after pb-{page} (pages only move forward)"
+                )
+            page, last_line = number, 0
+            corresp = (el.get("corresp") or "").lstrip("#")
+            if corresp:
+                if corresp not in surfaces:
+                    errors.append(f"line {el.sourceline}: {el_id} corresp names no <surface>")
+                used.add(corresp)
+        elif tag in ("lb", "div", "figure"):
+            match = _PAGED_ID.match(el_id)
+            if not match:
+                continue  # format-1 style or foreign ids: the XSD judges them
+            on_page, number = int(match.group(2)), int(match.group(3))
+            if page is None or on_page != page:
+                errors.append(
+                    f"line {el.sourceline}: {el_id} is not on the page it names "
+                    f"(current page: {f'pb-{page}' if page is not None else 'none'})"
+                )
+            if tag == "lb":
+                if number <= last_line:
+                    errors.append(f"line {el.sourceline}: {el_id} after lb-{page}.{last_line}")
+                last_line = number
+    for missing in sorted(surfaces - used):
+        errors.append(f"<surface id={missing!r}> has no <pb> pointing at it")
+    return errors
+
+
 def _check(schema, doc, profile: str) -> list[str]:
     """Run ``profile`` on an already-parsed, namespace-normalised document."""
     root = doc.getroot()
@@ -206,13 +297,14 @@ def _check(schema, doc, profile: str) -> list[str]:
         return []
     if profile == "core":
         return lint_core(doc)
-    if schema.validate(doc):
-        return []
-    return [str(err) for err in schema.error_log]
+    errors = [] if schema.validate(doc) else [str(err) for err in schema.error_log]
+    if profile == "contract" and writer_format(doc) == WRITER_FORMAT:
+        errors += lint_core(doc) + lint_writer(doc)
+    return errors
 
 
 def _validate_one(
-    schema, xml_path: Path, wellformed_only: bool = False, profile: str = "xsd"
+    schema, xml_path: Path, wellformed_only: bool = False, profile: str = "contract"
 ) -> list[str]:
     """Validate a single document. Returns a list of diagnostic strings
     (empty list means the document is valid). Well-formedness errors
@@ -239,7 +331,7 @@ def validate_document(
     xml_path: Path,
     schema_path: Path = DEFAULT_SCHEMA,
     wellformed_only: bool = False,
-    profile: str = "xsd",
+    profile: str = "contract",
 ) -> list[str]:
     """Validate one document on disk and return its diagnostics (empty == valid).
 
@@ -247,12 +339,12 @@ def validate_document(
     """
     if wellformed_only:
         profile = "wellformed"
-    schema = _load_schema(schema_path) if profile == "xsd" else None
+    schema = _load_schema(schema_path) if profile in _XSD_PROFILES else None
     return _validate_one(schema, Path(xml_path), profile=profile)
 
 
 def validate_xml_text(
-    xml_text: str, schema_path: Path = DEFAULT_SCHEMA, profile: str = "xsd"
+    xml_text: str, schema_path: Path = DEFAULT_SCHEMA, profile: str = "contract"
 ) -> list[str]:
     """Validate an in-memory TEITOK document and return its diagnostics
     (empty == valid).
@@ -271,7 +363,7 @@ def validate_xml_text(
 
     tree = doc.getroottree()
     _strip_tei_namespace(tree)
-    schema = _load_schema(schema_path) if profile == "xsd" else None
+    schema = _load_schema(schema_path) if profile in _XSD_PROFILES else None
     return _check(schema, tree, profile)
 
 
@@ -284,7 +376,13 @@ def _is_excluded(path: Path, exclude) -> bool:
     return False
 
 
-_MODE_LABEL = {"xsd": "XSD", "core": "core", "wellformed": "well-formedness"}
+_MODE_LABEL = {
+    "contract": "output-contract",
+    "xsd": "XSD",
+    "core": "core",
+    "wellformed": "well-formedness",
+}
+_XSD_PROFILES = ("contract", "xsd")
 
 
 def validate_directory(
@@ -293,7 +391,7 @@ def validate_directory(
     quiet: bool = False,
     allow_empty: bool = False,
     wellformed_only: bool = False,
-    profile: str = "xsd",
+    profile: str = "contract",
     exclude=(),
 ) -> bool:
     """Validate every *.teitok.xml under target_dir. Returns True iff all
@@ -318,7 +416,7 @@ def validate_directory(
         return False
 
     try:
-        schema = _load_schema(schema_path) if profile == "xsd" else None
+        schema = _load_schema(schema_path) if profile in _XSD_PROFILES else None
     except LxmlMissing as exc:
         print(f"[FATAL] {exc}", file=sys.stderr)
         return False
@@ -367,7 +465,7 @@ def validate_directory(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Validate *.teitok.xml files against the pinned TEITOK XSD contract."
+        description="Validate *.teitok.xml files against the TEITOK output contract."
     )
     parser.add_argument(
         "target_dir",
@@ -394,8 +492,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--profile",
         choices=sorted(_MODE_LABEL),
-        default="xsd",
-        help="xsd (default): this repo's writer contract; core: TEITOK-core lint for any "
+        default="contract",
+        help="contract (default): the XSD, plus TEITOK-core and the writer's page rules for "
+        "documents stamped teitok-2; xsd: the XSD alone; core: TEITOK-core lint for any "
         "TEITOK profile (flexiconv output); wellformed: well-formedness + <TEI> root only.",
     )
     parser.add_argument(

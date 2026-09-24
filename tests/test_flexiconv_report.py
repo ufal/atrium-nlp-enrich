@@ -1,13 +1,24 @@
 """api_util/flexiconv_report.py -- the #10 close-out table, on real flexiconv v0.3.10 output."""
 
+import importlib.util
 import shutil
 from pathlib import Path
 
+import pytest
+
 from api_util import flexiconv_report
+
+# describe() runs validate_teitok_xml's core profile, which needs lxml: skip, not error,
+# in a lane that installed only requirements-test.txt.
+needs_lxml = pytest.mark.skipif(
+    importlib.util.find_spec("lxml") is None,
+    reason="the TEITOK-core verdict needs lxml",
+)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "teitok" / "flexiconv"
 
 
+@needs_lxml
 def test_describe_layout_document():
     row = flexiconv_report.describe(FIXTURES / "page.teitok.xml")
     assert (row["source"], row["format"]) == ("sample_page.xml", "xml")
@@ -15,12 +26,14 @@ def test_describe_layout_document():
     assert row["core"] == []
 
 
+@needs_lxml
 def test_describe_plain_document():
     row = flexiconv_report.describe(FIXTURES / "txt.teitok.xml")
     assert (row["source"], row["format"]) == ("sample_txt.txt", "txt")
     assert (row["pages"], row["rows"], row["tokens"], row["bbox"]) == (0, 2, 10, 0)
 
 
+@needs_lxml
 def test_fixture_directory_passes(capsys):
     assert flexiconv_report.main([str(FIXTURES)]) == 0
     out = capsys.readouterr().out
@@ -32,6 +45,7 @@ def test_fixture_directory_passes(capsys):
     assert "5/5 document(s)" in out
 
 
+@needs_lxml
 def test_unconverted_inputs_are_listed_and_fail(tmp_path, capsys):
     out_dir = tmp_path / "flexiconv"
     out_dir.mkdir()

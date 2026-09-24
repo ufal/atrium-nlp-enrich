@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines. 7 open issues (#6, #7, #9, #10, #18, #19, #28); #8/#11/#35 closed. `test` HEAD `5fa5d95` (2026-09-23) · **v0.20.3** (v0.21.0 prepared on the branch). TEITOK/flexi* work (#9/#10/#28) is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines. 6 open issues (#6, #7, #10, #18, #19, #38); #8/#9/#11/#28/#35 closed. `test` HEAD `787b683` (2026-09-24; code as at `3654e73`) · **v0.21.0** (tagged at `ecdac10`, image published); round-4 change set (#38) implemented, not yet committed. TEITOK/flexi* work (#10/#38, formerly #9/#28) is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). #6's saga (April→September) is condensed below; `digests/6.digest.md` is the authoritative 13-phase record. Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -353,7 +353,51 @@ action: provenance is not fabricated here.
 * **Roadmap found on the way**: `# page_break = true` has three consumers and no producer. So table inputs without
 layout lose their pages before UDPipe, and their TEITOK has one `<pb>`. That is an R4 item (umbrella plan §7).
 
+## 2026-09-24: v0.21.0 released; #9/#28 closed; #38 opened; round-4 audit (TEITOK / flexi*)
+
+* **Landed and released.** Round 3 reached `test` as `8a1ded3` + `ecdac10` (the annotated CoNLL-U fixtures and the
+tier-1 page image came in the second commit, which is why `teitok-schema.yml` was red on `8a1ded3` and green on
+`ecdac10`, runs 35974285161/35974294357). **v0.21.0** is tagged at `ecdac10` and its image published, so `:latest`
+now writes TEITOK format 2. The hub E2E has not run since (its last run was on 2026-09-23), so the first E2E on
+format 2 is still to come.
+* **Issues.** #9 and #28 closed; their exports left `issues/` in `3654e73`, and their digest+plan pairs are removed as
+for #35 (leftovers carried to #38 and the umbrella plan §7). **#38 "Annotate flexiconv-converted documents
+(FLEXICONV_ANNOTATE)"** opened as #10's action D: [`digests/38.digest.md`](digests/38.digest.md) ·
+[`plans/38.plan.md`](plans/38.plan.md). #10 stays open for its real-document report.
+* **Round-4 audit.** Same upstream heads as on 2026-09-23 (teitok.org, the TEI wiki and RIDE are blocked by the
+egress policy, so the TEITOK author's code stays the reference). Format 2 conforms upstream except for four details
+(split punctuation keeps a box, page size not on `pb@bbox`, TEITOK-project naming, `xpos` vs `pos`). Found:
+  * ▶ UDPipe **chunk starts are written as pages** (`call_udpipe.py:117-118`) and read as pages by NameTag, the
+    summary and the writer: CTX000000002 has 4 pages but one NE file and `page_id` 1 everywhere; a mid-page chunk start
+    adds a phantom `<pb>` to an ALTO document. #38's "`# page_break` has no producer" was wrong.
+  * ▶ **A sentence crossing a page stays on its first page** — already in the released sample (CTX000000002, page 4's
+    first line is `lb-3.3` under `<pb n="3">`).
+  * converted-document identity differs between stages 1 and 4; the gate runs the XSD only; `<pb facs>` is invented
+    without an image; flexiconv failures are logged as `skip`; the service never has layout and mislabels gate failures;
+    `/rescale`/`fix_teitok_bboxes.py` are single-surface and unclamped; `BBOX_ORIGIN` is not overridable per run.
+  * Readers elsewhere: llm-enrich enriches **zero lines** from `.teitok.xml` (quality forced to 0.0) and its GPU path —
+    like this repo's `llm_utils.py` copy — calls the line filter with 6 of 7 arguments; `teitok_read` never resets line
+    numbers at `<pb>`; alto-postprocess renumbers TEITOK pages.
+  * Upstream bugs to report: flexipipe misreads heads with document-global ids; flexiconv ignores `<dtok>`; flexicorp's
+    regexes never match.
+* **Decisions (user):** layout-first pages (`<pb/>` may sit inside `<s>`; chunk starts stop being pages; the stamp stays
+`teitok-2`); `/enrich` accepts a flexiconv `.teitok.xml` and an optional ALTO file, image stays GPL-free; #9/#28 pairs
+removed; the hub's misfiled `13.*` pair rewritten for the CAA paper.
+* **Dev logs refreshed:** new #38 pair; #10 pair; umbrella plan (progress, round-4 re-check U1–U4, findings R4-1…R4-10,
+decisions 5–7, Stage 7, roadmap). The work itself is Stage 7 of the umbrella plan.
+* **Stage 7 implemented (same day, delivered as files; not yet on `test`).** Pages come from the layout: stage 1 writes
+`<doc>.rows.tsv`, stage 2 keeps it next to the CoNLL-U, `api_util/page_rows.py` places tokens by UDPipe's line-end
+marks; chunk starts are `# chunk_start = K`; the writer puts `<pb/>` inside `<s>`/`<name>` where a page changes (released
+CTX000000002 now has `pb-4` before `lb-4.1` "Soubor"), `pb@facs` only with a surface, `pb@n` labels, `pb@bbox`, no box on
+split-off punctuation; `api_util/doc_identity.py` (one converted-file identity rule for stages 1 and 4); the stage-4
+gate's default profile `contract` (unique ids, resolvable refs, page rules) exits 5; `api_flexiconv.sh` exits 3/1;
+`/enrich`/`/jobs` accept a converted `.teitok.xml` or a table + `alto`; `/rescale` and `fix_teitok_bboxes.py` are
+page-aware and clamped; the LLM line filter treats a missing quality score as unknown. Samples regenerated (rows files,
+NE re-split by page). Fast suite 1123 passed. Migration note in `CONTRIBUTING.md` (Unreleased; suggested v0.22.0).
+Same round in llm-enrich (re-vendor, filter, `xml_to_md`), alto-postprocess (`read_tei`) and the hub (`assert_teitok`,
+docs). The user applied the #9/#28 pair removal on `test` (`787b683`).
+
 ---
-_Timeline index refreshed 2026-09-24 against `test` HEAD `5fa5d95`, the `CONTRIBUTING.md` changelog, commit subjects,
-the issue exports in `issues/`, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);
+_Timeline index refreshed 2026-09-24 (round 4) against `test` HEAD `3654e73`, the `CONTRIBUTING.md` changelog, commit
+subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);
 this file is a derived reading aid in `agent_dev_logs/`._

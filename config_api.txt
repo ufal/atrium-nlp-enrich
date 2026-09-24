@@ -5,6 +5,8 @@ WORK_DIR="./TEMP"
 
 LOG_FILE="$OUTPUT_DIR/processing.log"
 CONLLU_INPUT_DIR="$OUTPUT_DIR/UDP"
+# Stage 1 writes <doc>.txt and <doc>.rows.tsv (page and line of every text line) here; stage 2
+# copies the rows file next to the CoNLL-U in UDP/, where stages 3-4 take pages from (issue #38).
 TEMP_TXT_DIR="./TEMP/TXT_EXTRACT"
 CHUNK_DIR="./TEMP/CHUNKS"
 
@@ -46,16 +48,18 @@ SAVE_TEITOK=true
 # TEITOK bboxes are page-image pixels with the origin at the page's top-left corner —
 # the convention of the TEITOK tools themselves (flexiconv, teitok-tools).
 # INPUT_PAGES_DIR: per-page images named <doc_id>-<N>.<png|jpg|tif>; when present, bboxes
-#   are scaled to the image size (sx = image width / ALTO Page WIDTH).
+#   are scaled to the image size (sx = image width / ALTO Page WIDTH, or / PrintSpace WIDTH
+#   under BBOX_ORIGIN=printspace).
 # IMAGE_DPI / ALTO_DPI: with no image, derive the scale from the ALTO MeasurementUnit
 #   (inch1200, mm10) or from ALTO_DPI for pixel units. Empty = no scaling.
 # BBOX_ORIGIN: "page" (default) keeps ALTO page coordinates; "printspace" subtracts the ALTO
 #   PrintSpace origin and declares a PrintSpace-sized <surface> — only for page images that
-#   were cropped to the print space.
+#   were cropped to the print space. Written as ${BBOX_ORIGIN:-page} so it can be set for one
+#   run (`BBOX_ORIGIN=printspace bash api_4_stats.sh`) without editing this file.
 INPUT_PAGES_DIR=""
 IMAGE_DPI=""
 ALTO_DPI=""
-BBOX_ORIGIN="page"
+BBOX_ORIGIN="${BBOX_ORIGIN:-page}"
 
 # REGENERATE_TEITOK: stage 4 skips documents whose .teitok.xml already exists (resume).
 # Set to true once after a TEITOK format change so old and new files never mix in one directory,
@@ -66,12 +70,13 @@ REGENERATE_TEITOK="${REGENERATE_TEITOK:-false}"
 INPUT_DOCS_DIR="$OUTPUT_DIR/DOCS"
 # flexiconv's TEITOK goes to its own subdirectory: it is a different TEITOK profile (no
 # UDPipe/NameTag annotation), gated with `validate_teitok_xml.py --profile core`, and
-# excluded from stage 4's writer-XSD gate. Point keywords.py -i / llm_config INPUT_DIR here.
+# excluded from stage 4's output-contract gate. Point keywords.py -i / llm_config INPUT_DIR here.
 TEITOK_FLEXICONV_DIR="$TEITOK_OUTPUT_DIR/flexiconv"
 # Re-convert documents whose output already exists (default: keep them, resume-safe).
 FLEXICONV_FORCE=false
 # FLEXICONV_ANNOTATE=true: the converted documents also go through UDPipe and NameTag. Stage 1
-# reads their text from TEITOK_FLEXICONV_DIR (a table with the same doc_id wins, e.g.
+# reads their text from TEITOK_FLEXICONV_DIR, unless a table document uses the converted file
+# as its layout (same doc_id, or the file's canonical id -- api_util/doc_identity.py; e.g.
 # alto-postprocess's DOC_LINE_CATEG/ for the same inputs), and stage 4 takes a document's
 # layout (bboxes, page images, blocks) from its converted file when it has no ALTO. The result
 # is TEITOK format 2 in TEITOK_OUTPUT_DIR, like any other document. `run_pipeline.py

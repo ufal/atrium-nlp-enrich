@@ -14,9 +14,14 @@ for ALTO -- ``(strings, pages, graphics, blocks, meta)`` -- so the alignment, th
   it has one. Untokenized documents (txt, md, docx, ...) have no ``<tok>``: their strings are
   the words of each leaf text block, without coordinates. Either way the stream of characters
   is the text ``teitok_read.read_teitok_rows()`` gives stage 1, so every UDPipe token aligns.
-* **pages** -- one per ``<pb>``, numbered 1..N. Only pages that name an image (``facs``) or a
-  size (hOCR ``pb@bbox``, ``<surface lrx lry>``) get an entry, i.e. a ``<surface>``: a PDF page
-  without an image stays a page break, not a facsimile.
+* **pages** -- one per ``<pb>``, numbered 1..N in document order (text before the first
+  ``<pb>`` is page 1, as in ``teitok_read``). A page's ``<surface>`` is the one ``pb@corresp``
+  names, else the k-th ``<surface>`` of the ``<facsimile>``; its image is ``pb@facs``, else
+  ``surface@facs``, else the surface's ``<graphic url>``; its size is ``pb@bbox``, else
+  ``surface@lrx/lry``, else ``graphic@width/height``. Only pages with an image or a size get
+  an entry, i.e. a ``<surface>`` in the output: a PDF page without an image stays a page
+  break, not a facsimile. ``meta["page_labels"]`` keeps ``pb@n`` (``"I"``, ``"7a"``) for the
+  writer's ``<pb n>``, and ``meta["page_count"]`` the number of pages.
 * **blocks** -- the innermost ``div p head item cell l u ab quote`` around the text, with its
   ``bbox``. ``subtype`` is the element name (``p``, ``head``, ``item``, ...), or ``@type`` for a
   ``div``, so a converted document keeps its headings/paragraphs/list items as
@@ -87,6 +92,12 @@ def _ints(value, n=4):
         return None
 
 
+def _dimension(value) -> str:
+    """``graphic@width``/``@height`` as a pixel count (``"1654"``, ``"1654px"``), else ``""``."""
+    match = re.fullmatch(r"\s*(\d+)(?:\.\d+)?\s*(?:px)?\s*", value or "")
+    return match.group(1) if match else ""
+
+
 def _lang(el, inherited):
     return _norm_lang(el.get("lang") or el.get(_XML_LANG)) or inherited
 
@@ -106,6 +117,8 @@ def _empty_meta():
         "converter": "",
         "converter_version": "",
         "orgfile": "",
+        "page_labels": {},
+        "page_count": 0,
     }
 
 
@@ -133,30 +146,53 @@ def parse_teitok_layout(path):
         who = next((el.get("who") for el in root.iter() if _local(el.tag) == "change"), None)
         meta["converter"] = who or ""
     meta["orgfile"] = source_name(root)
-    surfaces = {}
+    surfaces, surface_order = {}, []
     for el in root.iter():
-        if _local(el.tag) == "surface" and el.get("id"):
-            surfaces[el.get("id")] = el
+        if _local(el.tag) == "surface":
+            surface_order.append(el)
+            if el.get("id"):
+                surfaces[el.get("id")] = el
 
     text = next((el for el in root.iter() if _local(el.tag) == "text"), root)
     tokenized = any(_local(el.tag) == "tok" for el in text.iter())
-    state = {"page": 0, "line": None, "line_bbox": "", "lines": 0, "blocks": 0}
+    state = {"page": 0, "line": None, "line_bbox": "", "lines": 0, "blocks": 0, "pbs": 0}
 
     def page_idx():
         return state["page"] or 1
 
     def start_page(pb):
-        state["page"] += 1
+        # text before the first <pb> is page 1, so that <pb> starts page 2 (teitok_read)
+        state["page"] = (state["page"] or (1 if strings else 0)) + 1
         state["line"], state["line_bbox"] = None, ""
         idx = state["page"]
-        surface = surfaces.get((pb.get("corresp") or "").lstrip("#"))
-        facs = pb.get("facs") or (surface.get("facs") if surface is not None else "") or ""
+        meta["page_count"] = idx
+        label = (pb.get("n") or "").strip()
+        if label and label != str(idx):
+            meta["page_labels"][idx] = label
+        corresp = (pb.get("corresp") or "").lstrip("#")
+        if corresp:
+            surface = surfaces.get(corresp)
+        else:
+            k = state["pbs"]  # no corresp: the k-th surface belongs to the k-th <pb>
+            surface = surface_order[k] if k < len(surface_order) else None
+        state["pbs"] += 1
+        graphic = None
+        if surface is not None:
+            graphic = next((g for g in surface if _local(g.tag) == "graphic"), None)
+        facs = (
+            pb.get("facs")
+            or (surface.get("facs") if surface is not None else "")
+            or (graphic.get("url") if graphic is not None else "")
+            or ""
+        )
         width = height = ""
         size = _ints(pb.get("bbox"))
         if size:
             width, height = str(size[2]), str(size[3])
         elif surface is not None and surface.get("lrx") and surface.get("lry"):
             width, height = surface.get("lrx"), surface.get("lry")
+        elif graphic is not None and graphic.get("width") and graphic.get("height"):
+            width, height = _dimension(graphic.get("width")), _dimension(graphic.get("height"))
         if facs and not meta["source_image"]:
             meta["source_image"] = facs
         if facs or width:

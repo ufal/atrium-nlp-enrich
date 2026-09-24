@@ -59,12 +59,21 @@ def test_read_teitok_rows(sample_teitok):
     assert len(rows) == 3
 
     # Check page and line tracking
-    assert rows[0] == {"page_num": 1, "line_num": 1, "text": "První věta na stránce."}
+    assert rows[0] == {
+        "page_num": 1,
+        "line_num": 1,
+        "text": "První věta na stránce.",
+        "page_idx": 1,
+        "page_label": "1",
+    }
 
     # Check fallback text reconstruction from <tok> elements if @text is missing
-    assert rows[1] == {"page_num": 1, "line_num": 2, "text": "Druhá chybí text"}
+    assert rows[1]["text"] == "Druhá chybí text"
+    assert (rows[1]["page_num"], rows[1]["line_num"]) == (1, 2)
 
-    assert rows[2] == {"page_num": 2, "line_num": 2, "text": "Věta na druhé straně."}
+    # Line numbers restart on every page (they used to run on: line 2 here).
+    assert rows[2]["text"] == "Věta na druhé straně."
+    assert (rows[2]["page_num"], rows[2]["line_num"], rows[2]["page_idx"]) == (2, 1, 2)
 
 
 def test_read_teitok_text(sample_teitok):
@@ -266,6 +275,52 @@ def test_non_numeric_page_labels_advance_the_counter(tmp_path):
     )
     rows = read_teitok_rows(_write(tmp_path, xml))
     assert [r["page_num"] for r in rows] == [1, 2, 3, 4]
+
+
+def test_page_ordinals_and_labels(tmp_path):
+    xml = (
+        '<TEI><text><pb n="I"/><s text="Předmluva."/><pb n="7"/><s text="Text."/>'
+        '<pb/><pb n="7a"/><s text="Příloha."/></text></TEI>'
+    )
+    rows = read_teitok_rows(_write(tmp_path, xml))
+    assert [r["page_idx"] for r in rows] == [1, 2, 4]  # the empty third page is counted
+    assert [r["page_label"] for r in rows] == ["I", "7", "7a"]
+
+
+def test_text_before_the_first_page_break_is_page_one(tmp_path):
+    xml = '<TEI><text><s text="Titul."/><pb n="1"/><s text="Text."/></text></TEI>'
+    rows = read_teitok_rows(_write(tmp_path, xml))
+    assert [r["page_idx"] for r in rows] == [1, 2]
+
+
+def test_a_sentence_over_a_page_break_gives_one_row_per_page(tmp_path):
+    """nlp-enrich writes a <pb/> inside <s> when a sentence runs over a page break (issue
+    #38); the page parts become separate rows, each with its own page and line."""
+    xml = (
+        '<TEI><text><pb n="3" id="pb-3"/><s id="s-5" text="Nálezy z vrstvy uloženy v depozitáři.">'
+        '<lb id="lb-3.1"/><tok id="w-1">Nálezy</tok> <tok id="w-2">z</tok>\n'
+        '<lb id="lb-3.2"/><tok id="w-3">vrstvy</tok>\n'
+        '<pb n="4" id="pb-4"/><lb id="lb-4.1"/><tok id="w-4">uloženy</tok> <tok id="w-5">v</tok> '
+        '<tok id="w-6" join="right">depozitáři</tok><tok id="w-7">.</tok></s>'
+        '<s id="s-6" text="Konec."><tok id="w-8">Konec.</tok></s></text></TEI>'
+    )
+    rows = read_teitok_rows(_write(tmp_path, xml))
+    assert [(r["page_num"], r["line_num"], r["text"]) for r in rows] == [
+        (3, 1, "Nálezy z vrstvy"),
+        (4, 1, "uloženy v depozitáři."),
+        (4, 1, "Konec."),
+    ]
+
+
+def test_writer_lines_restart_per_page():
+    """The released format-2 sample: lb-P.L is line L of page P in the rows as well."""
+    sample = Path(__file__).resolve().parent.parent / "data_samples" / "TEITOK"
+    rows = read_teitok_rows(sample / "CTX000000003.teitok.xml")
+    assert rows and all(r["line_num"] >= 1 for r in rows)
+    firsts = {}
+    for r in rows:
+        firsts.setdefault(r["page_idx"], r["line_num"])
+    assert set(firsts.values()) == {1}
 
 
 def test_sentences_without_tokens_yield_their_text_as_tokens(tmp_path):

@@ -1,6 +1,6 @@
 # .github/workflows/teitok-schema.yml
 #
-# TEITOK XSD output-contract gate (issue #28).
+# TEITOK output-contract gate (issues #28, #38).
 #
 # Standalone rather than a caller for a hub reusable workflow: nlp-enrich is the
 # only ATRIUM repo that emits TEITOK, so there is nothing to share. Same shape
@@ -39,15 +39,33 @@ on:
       - "api_util/teitok_layout.py"
       - "api_util/flexiconv_report.py"
       - "api_util/build_manifest_row.py"
+      # pages (issue #38): every file that decides which page a token is on
+      - "api_util/page_rows.py"
+      - "api_util/doc_identity.py"
+      - "api_util/page_boxes.py"
+      - "api_util/chunk.py"
+      - "api_util/call_udpipe.py"
+      - "api_util/call_nametag.py"
+      - "api_util/summarize_nt_udp.py"
+      - "api_util/document_hook.py"
+      - "fix_teitok_bboxes.py"
+      - "service/rescale.py"
+      - "service/enrichment.py"
       - "requirements_flexiconv.txt"
       - "data_samples/TEITOK/**"
+      - "data_samples/UDP/**"
       - "tests/fixtures/teitok/**"
+      - "tests/fixtures/pages/**"
       - "tests/test_validate_teitok.py"
       - "tests/test_teitok_conformance.py"
       - "tests/test_teitok_layout.py"
+      - "tests/test_teitok_pages.py"
+      - "tests/test_page_rows.py"
+      - "tests/test_stats_stage_pages.py"
       - "tests/test_flexiconv_annotate.py"
       - "tests/test_flexiconv_report.py"
       - "api_1_manifest.sh"
+      - "api_2_udp.sh"
       - "api_4_stats.sh"
       - "api_flexiconv.sh"
       - ".github/workflows/teitok-schema.yml"
@@ -63,15 +81,33 @@ on:
       - "api_util/teitok_layout.py"
       - "api_util/flexiconv_report.py"
       - "api_util/build_manifest_row.py"
+      # pages (issue #38): every file that decides which page a token is on
+      - "api_util/page_rows.py"
+      - "api_util/doc_identity.py"
+      - "api_util/page_boxes.py"
+      - "api_util/chunk.py"
+      - "api_util/call_udpipe.py"
+      - "api_util/call_nametag.py"
+      - "api_util/summarize_nt_udp.py"
+      - "api_util/document_hook.py"
+      - "fix_teitok_bboxes.py"
+      - "service/rescale.py"
+      - "service/enrichment.py"
       - "requirements_flexiconv.txt"
       - "data_samples/TEITOK/**"
+      - "data_samples/UDP/**"
       - "tests/fixtures/teitok/**"
+      - "tests/fixtures/pages/**"
       - "tests/test_validate_teitok.py"
       - "tests/test_teitok_conformance.py"
       - "tests/test_teitok_layout.py"
+      - "tests/test_teitok_pages.py"
+      - "tests/test_page_rows.py"
+      - "tests/test_stats_stage_pages.py"
       - "tests/test_flexiconv_annotate.py"
       - "tests/test_flexiconv_report.py"
       - "api_1_manifest.sh"
+      - "api_2_udp.sh"
       - "api_4_stats.sh"
       - "api_flexiconv.sh"
       - ".github/workflows/teitok-schema.yml"
@@ -157,6 +193,13 @@ jobs:
       - name: Upstream conformance (stdlib reader) and TEITOK readers
         run: python3 -m pytest tests/test_teitok_conformance.py tests/test_teitok_read.py -v --tb=short
 
+      - name: Pages come from the layout, not from UDPipe's chunks (issue #38)
+        # The rows file (page_rows.py), the writer's <pb/> inside <s>/<name>, the contract
+        # profile's page rules, and a real api_4_stats.sh run on a committed sample.
+        run: >-
+          python3 -m pytest tests/test_page_rows.py tests/test_teitok_pages.py
+          tests/test_stats_stage_pages.py -v --tb=short
+
       - name: Converted documents annotated into TEITOK format 2 (FLEXICONV_ANNOTATE)
         # flexiconv output as the layout source of the writer (api_util/teitok_layout.py),
         # the manifest/stage-4 wiring and the close-out report, on the committed fixtures.
@@ -172,4 +215,4 @@ jobs:
       - name: Upstream conformance (flexiconv round-trip)
         run: >-
           python3 -m pytest tests/test_teitok_conformance.py tests/test_flexiconv_convert.py
-          tests/test_flexiconv_annotate.py -v --tb=short
+          tests/test_flexiconv_annotate.py tests/test_teitok_pages.py -v --tb=short

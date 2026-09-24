@@ -77,10 +77,12 @@ def two_page_conllu(tmp_path):
 @pytest.fixture
 def page_break_conllu(tmp_path):
     """
-    Merged CoNLL-U file that uses ``# page_break = true`` comments
-    (produced by call_udpipe.merge_conllu_chunks) instead of sent_id resets.
+    Merged CoNLL-U file with the ``# page_break = true`` comment that
+    call_udpipe.merge_conllu_chunks used to write at every UDPipe chunk start.
+    It marks a chunk start, never a page (issue #38, A): the renumbered file is
+    one page unless a rows file says otherwise.
 
-    Expected page map: [1, 1, 2, 2]
+    Expected page map without rows: [1, 1, 1, 1]
     """
     content = (FIXTURES_DIR / "page_break.conllu").read_text(encoding="utf-8")
     dest = tmp_path / "page_break.conllu"

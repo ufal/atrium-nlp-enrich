@@ -86,13 +86,14 @@ def test_process_chunk_empty_result_returns_empty_string():
     assert process_chunk(session, "x", "m", timeout=10) == ""
 
 
-def test_merge_conllu_chunks_renumbers_and_marks_page_break():
+def test_merge_conllu_chunks_renumbers_and_marks_chunk_start():
     chunk1 = "# sent_id = 1\n1\tA\n\n# sent_id = 2\n1\tB\n"
     chunk2 = "# sent_id = 1\n1\tC\n"
     merged = merge_conllu_chunks([chunk1, chunk2])
     assert "# sent_id = 1" in merged  # first chunk keeps its numbering
     assert "# sent_id = 3" in merged  # second chunk offset by chunk1's max (2)
-    assert "# page_break = true" in merged  # inserted when a chunk restarts at 1
+    assert "# chunk_start = 2" in merged  # a chunk, not a page (issue #38, A)
+    assert "# page_break" not in merged
 
 
 def test_run_udpipe_like_workflow_is_callable():

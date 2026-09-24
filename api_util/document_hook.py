@@ -130,9 +130,10 @@ def _augment_tokens_with_position(tokens: List[dict]) -> None:
     the entities[] merge key needs — it does not need to match alto-postprocess's own
     line numbering, since nlp-enrich is entities[]'s sole owner).
 
-    Tokens with no matched ALTO bbox (alignment miss, or no ALTO supplied at all) are
-    grouped onto one synthetic per-page line rather than dropped, so entities from an
-    unaligned document still get a valid (page, line) pair instead of crashing later.
+    Tokens with no matched ALTO bbox (alignment miss, or no layout at all) are grouped onto
+    one synthetic line of their page (``_page_idx``, resolved by ``parse_and_align_conllu``)
+    rather than dropped, so entities from an unaligned document still get a valid (page,
+    line) pair instead of crashing later.
 
     Offsets count the *surface* text, the text the page shows: the syntactic words of a
     multi-word token (``tok["_surface"]``, e.g. "abych" = aby + bych) all get the span of
@@ -153,7 +154,9 @@ def _augment_tokens_with_position(tokens: List[dict]) -> None:
             continue
         last_unit = unit
         bbox = tok.get("_bbox") or {}
-        page_idx = bbox.get("page_idx")
+        # _page_idx: the page parse_and_align_conllu resolved (layout, else rows) -- the
+        # page the writer puts the token on; the box's page is the same whenever there is one
+        page_idx = tok.get("_page_idx") or bbox.get("page_idx")
         line_id = bbox.get("line_id")
         page = str(page_idx) if page_idx is not None else "1"
         line_marker = line_id if line_id is not None else f"__noalign_{page}"
@@ -215,19 +218,21 @@ def run_document_hook(
     license_detail: Dict[str, Any],
     alto_path: Optional[str] = None,
     include_lines: bool = False,
+    rows: Optional[list] = None,
 ):
     """
     Integrates nlp-enrich outputs (entities, TEITOK refs) into the AtriumDocument pair.
 
-    ``alto_path`` is required to recover page/line/bbox for each token — without it
-    ``parse_and_align_conllu`` returns no ALTO strings to align against, and every
-    token falls back to page "1" with a synthetic, unaligned line.
+    ``alto_path`` (ALTO or a converted TEITOK layout) gives each token its page, line and
+    bbox; ``rows`` (stage 1's rows file, ``api_util/page_rows.py``) gives page and line where
+    there is no layout -- the same pages the TEITOK writer uses (issue #38, A). With
+    neither, every token is on page "1", on one synthetic line per page.
     """
     # 1. Parse tokens & bboxes (reusing the unified teitok_alto refactor). This
     # returns {"sentences": [...], ...} — NOT a flat token list — so it must be
     # flattened the same way parse_and_align_conllu itself does internally before
     # bbox alignment.
-    parsed = parse_and_align_conllu(conllu_path, alto_path=alto_path, doc_id=doc_id)
+    parsed = parse_and_align_conllu(conllu_path, alto_path=alto_path, doc_id=doc_id, rows=rows)
     tokens: List[dict] = (
         [tok for sent in parsed["sentences"] for tok in sent["tokens"]] if parsed else []
     )

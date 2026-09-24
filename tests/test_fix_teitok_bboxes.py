@@ -89,3 +89,48 @@ def test_cli_entry_point_runs(tmp_path):
     )
     assert res.returncode == 0, res.stderr
     assert "[OK]" in res.stdout
+
+
+TWO_PAGES = DOC.replace(
+    '<surface id="facs-1" lrx="1000" lry="2000"><graphic url="d-1.png"/></surface>',
+    '<surface id="facs-1" lrx="1000" lry="2000"><graphic url="d-1.png"/></surface>\n'
+    '    <surface id="facs-2" lrx="2000" lry="1000"><graphic url="d-2.png"/></surface>',
+).replace(
+    "  </body></text>",
+    '    <pb n="2" id="pb-2" facs="d-2.png" corresp="#facs-2"/>\n'
+    '    <div type="TextBlock" id="b-2.1" bbox="1900 900 2000 1000"><s id="s-2">'
+    '<tok id="w-2" bbox="1900 900 2000 1000">B</tok></s></div>\n'
+    "  </body></text>",
+)
+
+
+def test_every_surface_keeps_its_own_extent(tmp_path):
+    """Every <surface> used to get the first page's new size."""
+    path = _write(tmp_path, "d.teitok.xml", TWO_PAGES)
+    assert fix_teitok_bboxes.main(["-i", str(path), "--sx", "0.5", "--sy", "0.5"]) == 0
+    out = path.read_text(encoding="utf-8")
+    assert 'id="facs-1" lrx="500" lry="1000"' in out
+    assert 'id="facs-2" lrx="1000" lry="500"' in out
+
+
+def test_a_shift_is_clamped_to_the_page(tmp_path, capsys):
+    """A shift past the page edge used to leave negative (or off-page) boxes, which the
+    next stage-4 gate rejects."""
+    path = _write(tmp_path, "d.teitok.xml", TWO_PAGES)
+    assert fix_teitok_bboxes.main(["-i", str(path), "--dx", "-150", "--dy", "150"]) == 0
+    out = path.read_text(encoding="utf-8")
+    assert 'id="w-1" bbox="0 350 0 390"' in out  # 100-150 < 0 -> 0
+    assert 'id="w-2" bbox="1750 1000 1850 1000"' in out  # 900+150 > 1000 -> 1000
+    assert "clamped" in capsys.readouterr().out
+
+
+def test_the_rewrite_is_recorded(tmp_path):
+    doc = DOC.replace(
+        "  <facsimile>",
+        '  <teiHeader><revisionDesc><change when="2026-01-01" who="x">made</change>'
+        "</revisionDesc></teiHeader>\n  <facsimile>",
+    )
+    path = _write(tmp_path, "d.teitok.xml", doc)
+    assert fix_teitok_bboxes.main(["-i", str(path), "--sx", "2", "--sy", "2"]) == 0
+    out = path.read_text(encoding="utf-8")
+    assert 'who="atrium-nlp-enrich" type="rescaled">coordinates scaled by 2,2' in out

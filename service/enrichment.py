@@ -14,7 +14,9 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -89,6 +91,19 @@ class EnrichmentResult:
     #: "the file exists": the path being set is what says the client ASKED for a record,
     #: which is the only way api.py can tell "not requested" from "requested and missing".
     document_json_out: Optional[Path] = None
+    #: Where the TEITOK's page layout came from: "alto" (an uploaded ALTO file), "teitok"
+    #: (an uploaded, flexiconv-converted TEITOK file) or "rows" (the input's own pages and
+    #: lines, no coordinates) -- issue #38, F.
+    layout_source: str = "rows"
+
+
+@dataclass
+class Layout:
+    """A layout source uploaded with the text (issue #38, F): ``kind`` is "teitok" (the text
+    and layout of a converted TEITOK file) or "alto" (the layout of a table's page)."""
+
+    kind: str
+    data: bytes
 
 
 # ── input normalization helpers ───────────────────────────────────────────────
@@ -96,8 +111,12 @@ class EnrichmentResult:
 
 def sanitize_doc_id(name: str) -> str:
     stem = Path(str(name or "")).name
+    for suffix in (".teitok.xml", ".alto.xml"):
+        if stem.lower().endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
     root, ext = os.path.splitext(stem)
-    if ext.lower() in (".csv", ".xlsx", ".txt"):
+    if ext.lower() in (".csv", ".xlsx", ".txt", ".xml"):
         stem = root
     safe = _DOC_ID_RE.sub("_", stem).strip("._-")
     return safe or _DEFAULT_DOC_ID
@@ -144,13 +163,74 @@ def _read_csv_bytes(data: bytes) -> List[Dict[str, Any]]:
 
 
 def _read_txt_bytes(data: bytes) -> List[Dict[str, Any]]:
+    """One row per non-empty line; a form feed (``\\f``, what pdftotext writes between
+    pages) starts the next page."""
     text = data.decode("utf-8-sig", errors="replace")
     rows: List[Dict[str, Any]] = []
-    for i, line in enumerate(text.splitlines(), start=1):
-        s = line.strip()
-        if s:
-            rows.append({"text": s, "page_num": 1, "line_num": i})
+    for page_num, page in enumerate(text.split("\f"), start=1):
+        for i, line in enumerate(page.splitlines(), start=1):
+            s = line.strip()
+            if s:
+                rows.append({"text": s, "page_num": page_num, "line_num": i})
     return rows
+
+
+def is_teitok_upload(filename: str, data: bytes) -> bool:
+    """A ``*.teitok.xml`` file, or any ``.xml`` whose first 4 KB contain ``<TEI``."""
+    name = (filename or "").lower()
+    if name.endswith(".teitok.xml"):
+        return True
+    return name.endswith(".xml") and b"<TEI" in data[:4096]
+
+
+def _read_teitok_bytes(data: bytes) -> List[Dict[str, Any]]:
+    """The rows of an uploaded TEITOK file (e.g. flexiconv's conversion of a PDF or DOCX),
+    as ``teitok_read`` gives them to stage 1: page = the page's ordinal, as the layout
+    reader numbers it. Rejects a file that is not well-formed or breaks TEITOK-core rules
+    (duplicate ids, dangling references), with the diagnostics."""
+    text = data.decode("utf-8-sig", errors="replace")
+    try:
+        from api_util.validate_teitok_xml import LxmlMissing, validate_xml_text
+
+        errors = validate_xml_text(text, profile="core")
+    except LxmlMissing:  # pragma: no cover - lxml ships in the service image
+        errors = []
+    if errors:
+        raise ValueError("Uploaded TEITOK is not usable: " + "; ".join(errors[:10]))
+    from api_util.teitok_read import read_teitok_rows
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "upload.teitok.xml"
+        path.write_text(text, encoding="utf-8")
+        try:
+            rows = read_teitok_rows(path)
+        except ET.ParseError as exc:
+            raise ValueError(f"Uploaded TEITOK is not well-formed XML: {exc}") from exc
+    return [
+        {
+            "text": r["text"],
+            "page_num": r.get("page_idx", r["page_num"]),
+            "line_num": r["line_num"],
+        }
+        for r in rows
+    ]
+
+
+def read_alto_upload(filename: str, data: bytes) -> Layout:
+    """An uploaded ALTO file, checked to be one. PAGE XML and hOCR take the CLI's flexiconv
+    route (``api_flexiconv.sh``): converted to TEITOK, they can be uploaded as ``file``."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError as exc:
+        raise ValueError(f"The alto part is not well-formed XML: {exc}") from exc
+    local = root.tag.split("}")[-1]
+    if local.lower() != "alto":
+        raise ValueError(
+            f"The alto part has root <{local}>, not <alto>. PAGE XML and hOCR are read "
+            "through flexiconv: convert them with api_flexiconv.sh (CLI) and upload the "
+            "*.teitok.xml as the file."
+        )
+    return Layout(kind="alto", data=data)
 
 
 def _read_xlsx_bytes(data: bytes) -> List[Dict[str, Any]]:
@@ -182,6 +262,8 @@ def _read_xlsx_bytes(data: bytes) -> List[Dict[str, Any]]:
 
 
 def normalize_upload(filename: str, data: bytes) -> List[Dict[str, Any]]:
+    if is_teitok_upload(filename, data):
+        return _read_teitok_bytes(data)
     ext = os.path.splitext(filename or "")[1].lower()
     if ext == ".csv":
         return _read_csv_bytes(data)
@@ -189,7 +271,10 @@ def normalize_upload(filename: str, data: bytes) -> List[Dict[str, Any]]:
         return _read_txt_bytes(data)
     if ext == ".xlsx":
         return _read_xlsx_bytes(data)
-    raise ValueError(f"Unsupported file type '{ext}'. Allowed: .csv, .xlsx, .txt")
+    raise ValueError(
+        f"Unsupported file type '{ext}'. Allowed: .csv, .xlsx, .txt, and a TEITOK .xml "
+        "(e.g. flexiconv's conversion of a PDF or DOCX)."
+    )
 
 
 def count_words(rows: List[Dict[str, Any]]) -> int:
@@ -218,6 +303,8 @@ _RELOCATED_KEYS = {
     "INPUT_ALTO_DIR",
     "INPUT_PAGES_DIR",
     "LOG_FILE",
+    "TEITOK_FLEXICONV_DIR",
+    "FLEXICONV_ANNOTATE",
 }
 
 _ASSIGN_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
@@ -240,7 +327,10 @@ _ENV_OVERRIDABLE = {
 }
 
 
-def _derive_config(workspace: Path) -> Path:
+def _derive_config(workspace: Path, layout_kind: Optional[str] = None) -> Path:
+    """The workspace's config. ``layout_kind`` ("teitok" or "alto") points stage 4 at the
+    uploaded layout under ``layout/`` (outside ``in/``, which stage 1 reads as tables);
+    otherwise no layout directory is set, whatever the template says."""
     out = workspace / "config_api.txt"
     ws = str(workspace)
 
@@ -256,8 +346,10 @@ def _derive_config(workspace: Path) -> Path:
         "TSV_INPUT_DIR": f'"{ws}/out/NE"',
         "SUMMARY_OUTPUT_DIR": f'"{ws}/out/UDP_NE"',
         "TEITOK_OUTPUT_DIR": f'"{ws}/out/TEITOK"',
-        "INPUT_ALTO_DIR": '""',
+        "INPUT_ALTO_DIR": f'"{ws}/layout/alto"' if layout_kind == "alto" else '""',
         "INPUT_PAGES_DIR": '""',
+        "TEITOK_FLEXICONV_DIR": f'"{ws}/layout/flexiconv"',
+        "FLEXICONV_ANNOTATE": '"true"' if layout_kind == "teitok" else '"false"',
     }
 
     seen: set = set()
@@ -289,6 +381,8 @@ def _derive_config(workspace: Path) -> Path:
         "out/paradata",
         "tmp/TXT_EXTRACT",
         "tmp/CHUNKS",
+        "layout/alto",
+        "layout/flexiconv",
     ):
         (workspace / sub).mkdir(parents=True, exist_ok=True)
     return out
@@ -459,6 +553,7 @@ class PipelineManager:
         num_keywords: int = 20,
         lang: str = "cs",
         document_json: Optional[bytes] = None,
+        layout: Optional[Layout] = None,
     ) -> EnrichmentResult:
         if kw_method not in _KW_METHODS:
             raise ValueError(f"Invalid kw_method '{kw_method}'. Choose from {_KW_METHODS}.")
@@ -473,8 +568,18 @@ class PipelineManager:
         # try/except — NOT try/finally — because on success the workspace must
         # survive until the caller reads the outputs and calls cleanup().
         try:
-            cfg = _derive_config(workspace)
+            cfg = _derive_config(workspace, layout.kind if layout else None)
             pages = _write_canonical_csvs(rows, workspace / "in", doc_id)
+            # The text always enters as the canonical table (no input bypasses stage 1); the
+            # uploaded layout sits where stage 4 looks for it. A converted TEITOK file named
+            # after the table is claimed by it (api_util/doc_identity.py), so it is the
+            # layout of that one document -- never a second document.
+            if layout is not None and layout.kind == "teitok":
+                (workspace / "layout" / "flexiconv" / f"{doc_id}.teitok.xml").write_bytes(
+                    layout.data
+                )
+            elif layout is not None and layout.kind == "alto":
+                (workspace / "layout" / "alto" / f"{doc_id}.alto.xml").write_bytes(layout.data)
 
             cmd = [sys.executable, str(_RUN_PIPELINE), "--config", str(cfg)]
             cmd.extend(["--kw-fallback", "--strict-empty", "--lang", lang])
@@ -528,6 +633,13 @@ class PipelineManager:
                 )
             if rc == 4:
                 raise KeywordPreflightError("Keyword backend failed at runtime.", returncode=4)
+            if rc == 5:
+                raise PipelineError(
+                    "The TEITOK output failed its output contract (exit 5): a writer defect, "
+                    f"not a problem with the input -- please report it.\n{tail}",
+                    http_status=500,
+                    returncode=rc,
+                )
             if rc != 0:
                 raise PipelineError(
                     f"Pipeline stage failed (exit {rc}).\n{tail}", http_status=502, returncode=rc
@@ -557,6 +669,7 @@ class PipelineManager:
                 stages=self._read_stage_records(workspace / "out" / "paradata"),
                 stdout_tail=tail,
                 document_json_out=document_json_out,
+                layout_source=layout.kind if layout is not None else "rows",
             )
 
         except Exception:

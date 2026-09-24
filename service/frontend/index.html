@@ -15,13 +15,17 @@
 <body>
     <div class="container">
         <h2>ATRIUM NLP Document Enrichment</h2>
-        <p>Upload a CSV, XLSX, or TXT file containing text lines to generate NLP-enriched TEITOK XML and keywords.</p>
+        <p>Upload a CSV, XLSX, or TXT file containing text lines, or a TEITOK XML file converted by flexiconv (e.g. from a PDF, DOCX or PAGE XML), to generate NLP-enriched TEITOK XML and keywords. A table can come with the ALTO XML of its pages, for bounding boxes.</p>
         <form id="enrichForm">
             <fieldset>
                 <div class="row">
                     <div class="column">
                         <label for="file">Document Upload</label>
-                        <input type="file" id="file" name="file" accept=".csv,.xlsx,.txt" required>
+                        <input type="file" id="file" name="file" accept=".csv,.xlsx,.txt,.xml" required>
+                    </div>
+                    <div class="column">
+                        <label for="alto">Page layout (optional ALTO XML, with a .csv/.xlsx)</label>
+                        <input type="file" id="alto" name="alto" accept=".xml">
                     </div>
                 </div>
                 <div class="row">

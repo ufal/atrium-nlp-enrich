@@ -30,10 +30,13 @@ from .atrium_service import (
 )
 from .enrichment import (
     KeywordPreflightError,
+    Layout,
     PipelineError,
     PipelineManager,
     count_words,
+    is_teitok_upload,
     normalize_upload,
+    read_alto_upload,
     sanitize_doc_id,
 )
 from .jobs import Job, _jobs, create_job
@@ -86,7 +89,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ATRIUM nlp-enrich API",
     version=read_tool_version(_SERVICE_DIR.parent),
-    description="Text lines → NLP-enriched TEITOK XML + keywords.",
+    description="Text lines (a table, a .txt, or a converted TEITOK file) → NLP-enriched "
+    "TEITOK XML + keywords.",
     lifespan=lifespan,
 )
 attach_inflight_middleware(app, _state)
@@ -158,7 +162,34 @@ async def _read_document_json(part: UploadFile | None) -> bytes | None:
     return data
 
 
-def _run_pipeline_sync(rows, doc_id, kw_method, num_keywords, lang, document_json=None):
+async def _read_layout(filename: str, data: bytes, alto: UploadFile | None) -> Layout | None:
+    """The layout source of an upload (issue #38, F): the file itself when it is a TEITOK
+    document (flexiconv's conversion: text *and* layout), else an optional ``alto`` part for
+    a table. No GPL code runs here: conversion to TEITOK stays in the CLI."""
+    alto_data = await alto.read() if alto is not None else b""
+    if is_teitok_upload(filename, data):
+        if alto_data:
+            raise HTTPException(
+                422, "A TEITOK file carries its own layout; do not send an alto part with it."
+            ) from None
+        return Layout(kind="teitok", data=data)
+    if not alto_data:
+        return None
+    if os.path.splitext(filename or "")[1].lower() not in (".csv", ".xlsx"):
+        raise HTTPException(
+            422, "An alto part goes with a .csv or .xlsx table of that page's lines."
+        ) from None
+    if len(alto_data) > MAX_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(413, f"alto exceeds {MAX_UPLOAD_MB} MB.") from None
+    try:
+        return read_alto_upload(alto.filename or "upload.alto.xml", alto_data)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+def _run_pipeline_sync(
+    rows, doc_id, kw_method, num_keywords, lang, document_json=None, layout=None
+):
     """Blocking pipeline call with graceful backend degradation configured."""
     return _manager.enrich(
         rows,
@@ -167,22 +198,30 @@ def _run_pipeline_sync(rows, doc_id, kw_method, num_keywords, lang, document_jso
         num_keywords=num_keywords,
         lang=lang,
         document_json=document_json,
+        layout=layout,
     ), kw_method
 
 
 def _build_envelope(result, requested_method) -> Dict[str, Any]:
+    teitok_xml = PipelineManager.collect_teitok(result)
     envelope = {
         "doc_id": result.doc_id,
         "pages": result.pages,
         "stages": result.stages,
-        "teitok_xml": PipelineManager.collect_teitok(result),
+        "teitok_xml": teitok_xml,
         "keywords": PipelineManager.collect_keywords(result),
         "ne_summary": PipelineManager.collect_ne_summary(result),
         "paradata": PipelineManager.collect_merged_paradata(result),
         "method_requested": requested_method,
         "method_used": result.kw_method_used,
         "llm": None,
+        # issue #38, F: where the pages and boxes came from, and the contract verdict the
+        # stage-4 gate reached (a run that failed it never gets here: exit 5 -> 500)
+        "layout_source": result.layout_source,
     }
+    envelope["teitok_schema_valid"], envelope["teitok_schema_errors"] = (
+        _schema_verdict(teitok_xml) if teitok_xml else (None, [])
+    )
     # (atrium-project#10, J3) Present only when the client opted into the accretion flow,
     # so the envelope of every existing caller is byte-for-byte what it was. `null` here
     # is meaningful rather than absent-by-default: it says the record was requested and
@@ -193,12 +232,20 @@ def _build_envelope(result, requested_method) -> Dict[str, Any]:
 
 
 async def _run_enrichment(
-    rows, doc_id, kw_method, num_keywords, lang, fmt, document_json=None
+    rows, doc_id, kw_method, num_keywords, lang, fmt, document_json=None, layout=None
 ) -> tuple[Any, str, Any]:
     loop = asyncio.get_event_loop()
     try:
         result, requested = await loop.run_in_executor(
-            None, _run_pipeline_sync, rows, doc_id, kw_method, num_keywords, lang, document_json
+            None,
+            _run_pipeline_sync,
+            rows,
+            doc_id,
+            kw_method,
+            num_keywords,
+            lang,
+            document_json,
+            layout,
         )
     except KeywordPreflightError as exc:
         raise HTTPException(503, str(exc)) from exc
@@ -216,7 +263,9 @@ async def _run_enrichment(
         raise
 
 
-async def _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt, document_json=None):
+async def _enrich_common(
+    rows, doc_id, kw_method, num_keywords, lang, fmt, document_json=None, layout=None
+):
     _validate_params(kw_method, lang, num_keywords)
     if not rows:
         raise HTTPException(422, "No usable text rows found in input.") from None
@@ -230,7 +279,9 @@ async def _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt, docum
     async with _semaphore:
         try:
             data, out_fmt, result = await asyncio.wait_for(
-                _run_enrichment(rows, doc_id, kw_method, num_keywords, lang, fmt, document_json),
+                _run_enrichment(
+                    rows, doc_id, kw_method, num_keywords, lang, fmt, document_json, layout
+                ),
                 timeout=API_JOB_TIMEOUT,
             )
         except asyncio.TimeoutError as exc:
@@ -249,7 +300,7 @@ async def _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt, docum
 
 
 async def _run_job_background(
-    job: Job, rows, doc_id, kw_method, num_keywords, lang, document_json=None
+    job: Job, rows, doc_id, kw_method, num_keywords, lang, document_json=None, layout=None
 ):
     try:
         job.status = "running"
@@ -263,6 +314,7 @@ async def _run_job_background(
                     lang,
                     fmt="json",
                     document_json=document_json,
+                    layout=layout,
                 ),
                 timeout=API_JOB_TIMEOUT,
             )
@@ -368,34 +420,54 @@ _DOCUMENT_JSON_HELP = (
     "Optional baseline ATRIUM Document JSON (accretion model, docs/document_schema.md / "
     "issue #13). When given, the response's `document_json` carries the record back with "
     "only nlp-enrich's contribution merged in — its `entities[]` rows (`teitok_ref` = the "
-    "entity's TEITOK `<name id>`; `pages[].teitok_surface` is only set for ALTO input, "
-    "which this endpoint does not take) — while every other tool's block (page_categories, lines, "
+    "entity's TEITOK `<name id>`; `pages[].teitok_surface` is only set for pages with a "
+    "layout: an `alto` part, or a TEITOK file with page images) — while every other tool's "
+    "block (page_categories, lines, "
     "translations, enrichment, ...) passes through untouched. A baseline that does not "
     "validate against atrium_document.schema.json is still accepted (rule 6); the "
     "pipeline warns and accretes onto it anyway."
 )
 
+#: The optional layout part of /enrich and /jobs (issue #38, F).
+_ALTO_HELP = (
+    "Optional ALTO XML of the pages a .csv/.xlsx `file` lists the lines of (e.g. "
+    "alto-postprocess's DOC_LINE_CATEG table and its source ALTO): the TEITOK then carries "
+    "bboxes, text blocks and a facsimile. Not with a TEITOK `file`, which brings its own "
+    "layout. PAGE XML and hOCR: convert with api_flexiconv.sh and upload the TEITOK."
+)
+
+#: What `file` may be, for /enrich and /jobs.
+_FILE_HELP = (
+    "The text: a .csv/.xlsx table (`text`, optional `page_num`/`line_num`), a .txt (one "
+    "line per row; a form feed starts a new page), or a TEITOK .xml -- e.g. flexiconv's "
+    "conversion of a PDF, DOCX or PAGE XML (api_flexiconv.sh) -- whose text is annotated "
+    "and whose pages, lines and boxes become the output's layout."
+)
+
 
 @app.post("/enrich")
 async def enrich(
-    file: UploadFile = File(...),  # noqa: B008
+    file: UploadFile = File(..., description=_FILE_HELP),  # noqa: B008
     kw_method: str = Form(DEFAULT_KW_METHOD),
     num_keywords: int = Form(20),
     lang: str = Form("cs"),
     format: str = Form("json"),
     document_json: UploadFile = File(None, description=_DOCUMENT_JSON_HELP),  # noqa: B008
+    alto: UploadFile = File(None, description=_ALTO_HELP),  # noqa: B008
 ):
     data = await file.read()
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, f"Upload exceeds {MAX_UPLOAD_MB} MB.") from None
+    filename = file.filename or "upload.csv"
+    layout = await _read_layout(filename, data, alto)
     try:
-        rows = normalize_upload(file.filename or "upload.csv", data)
+        rows = normalize_upload(filename, data)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     doc_id = file.filename or "document"
     fmt = format if format in ("json", "zip") else "json"
     baseline = await _read_document_json(document_json)
-    return await _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt, baseline)
+    return await _enrich_common(rows, doc_id, kw_method, num_keywords, lang, fmt, baseline, layout)
 
 
 @app.post("/enrich_text")
@@ -427,22 +499,34 @@ async def enrich_text(payload: Dict[str, Any]):
 @app.post("/rescale")
 async def rescale(
     file: UploadFile = File(...),  # noqa: B008
-    width: int = Form(...),
-    height: int = Form(...),
+    width: int | None = Form(None),
+    height: int | None = Form(None),
+    scale: float | None = Form(None),
     format: str = Form("json"),
     fix_names: bool = Form(True),
 ):
-    """Rescale a single-page TEITOK to a target page-image size.
+    """Rescale a TEITOK document's coordinates to page images of another size.
 
-    Pure XML coordinate transform (no pipeline): scales every ``bbox`` and the
-    ``<surface>`` ``lrx``/``lry`` extents from the document's own coordinate
-    space to ``width`` × ``height`` so annotations sit correctly on top of an
-    image of that size. By default it also repairs the malformed
-    ``<name>…</n>`` named-entity closings to ``</name>`` (set ``fix_names=false``
-    to disable). ``format=json`` (default) returns the rewritten XML plus scale
-    metadata; ``format=xml`` streams the rescaled ``.teitok.xml`` file.
+    Pure XML coordinate transform (no pipeline). Either ``width`` × ``height``
+    (every page image has that size) or ``scale`` (every page image is ``scale``
+    times its ``<surface>``; the form for documents whose pages differ in size).
+    Page by page, every ``bbox`` is scaled by the ``<surface>`` of the page it is
+    on and clamped to it; each ``<surface>`` gets its own new ``lrx``/``lry``; a
+    ``<change type="rescaled">`` records the transform. By default it also
+    repairs the malformed ``<name>…</n>`` named-entity closings to ``</name>``
+    (set ``fix_names=false`` to disable). ``format=json`` (default) returns the
+    rewritten XML plus scale metadata (``pages``: source and target size of
+    every page; ``clamped``: coordinates moved onto the page); ``format=xml``
+    streams the rescaled ``.teitok.xml`` file.
     """
-    if not (1 <= width <= MAX_RESCALE_DIM and 1 <= height <= MAX_RESCALE_DIM):
+    if scale is not None:
+        if width is not None or height is not None:
+            raise HTTPException(422, "Give either width and height, or scale.") from None
+        if not (0 < scale <= 100):
+            raise HTTPException(422, "scale must be a number in (0, 100].") from None
+    elif width is None or height is None:
+        raise HTTPException(422, "Give width and height, or scale.") from None
+    elif not (1 <= width <= MAX_RESCALE_DIM and 1 <= height <= MAX_RESCALE_DIM):
         raise HTTPException(
             422, f"width and height must be integers between 1 and {MAX_RESCALE_DIM}."
         ) from None
@@ -460,7 +544,7 @@ async def rescale(
         ) from None
 
     try:
-        result = rescale_teitok(xml_text, width, height, fix_name_tags=fix_names)
+        result = rescale_teitok(xml_text, width, height, fix_name_tags=fix_names, scale=scale)
     except RescaleError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -488,18 +572,22 @@ async def rescale(
 
 @app.post("/jobs")
 async def submit_job(
-    file: UploadFile = File(...),  # noqa: B008
+    file: UploadFile = File(..., description=_FILE_HELP),  # noqa: B008
     kw_method: str = Form(DEFAULT_KW_METHOD),
     num_keywords: int = Form(20),
     lang: str = Form("cs"),
     document_json: UploadFile = File(None, description=_DOCUMENT_JSON_HELP),  # noqa: B008
+    alto: UploadFile = File(None, description=_ALTO_HELP),  # noqa: B008
 ):
     _validate_params(kw_method, lang, num_keywords)
     data = await file.read()
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, f"Upload exceeds {MAX_UPLOAD_MB} MB.") from None
+    filename = file.filename or "upload.csv"
+    # Read here, not in the background task, like document_json below.
+    layout = await _read_layout(filename, data, alto)
     try:
-        rows = normalize_upload(file.filename or "upload.csv", data)
+        rows = normalize_upload(filename, data)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     doc_id = file.filename or "document"
@@ -526,7 +614,9 @@ async def submit_job(
     # or no shutdown involved. _state.track() fixes both: serve_lifecycle's drain
     # waits for this job before letting the process exit, so a rolling restart no
     # longer kills it mid-run.
-    _state.track(_run_job_background(job, rows, doc_id, kw_method, num_keywords, lang, baseline))
+    _state.track(
+        _run_job_background(job, rows, doc_id, kw_method, num_keywords, lang, baseline, layout)
+    )
     return {"job_id": job.job_id, "status": "queued"}
 
 

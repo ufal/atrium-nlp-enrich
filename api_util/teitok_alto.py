@@ -25,6 +25,16 @@ flexiconv, teitok-tools, xmltokenizer). ``appInfo`` stamps it as ``teitok-2``, a
   ``<surface lrx lry>`` always describes the coordinate space the bboxes use.
 * **Language**: ``@lang`` on ``<TEI>`` and ``profileDesc/langUsage`` come from the ALTO
   ``LANG`` attributes (majority), else from the UDPipe model name, else they are omitted.
+* **Pages** are layout-first (issue #38): a token is on the page of the layout string it
+  aligned to, else on the page of its line in stage 1's rows file (``page_rows.py``; for a
+  document without a layout the rows *are* its layout -- ``<pb>`` and ``<lb>`` without
+  coordinates), else on the page of the token before it. ``<pb/>`` may come inside ``<s>``
+  and ``<name>`` when a sentence or an entity runs over a page break (the anchor
+  xmltokenizer and flexiconv allow there); pages only move forward; ``pb@n`` is the page
+  label; ``pb@facs``/``@corresp``/``@bbox="0 0 W H"`` only for a page with a ``<surface>``.
+  UDPipe chunk starts (``# chunk_start``, formerly ``# page_break = true``) are never pages.
+* **Split-off punctuation** that shares a layout string with a word has no bbox of its own
+  (flexiconv's ALTO and hOCR import do the same); the word keeps the string's box.
 * **Layout source**: ``alto_path`` is an ALTO file, or a TEITOK file converted by flexiconv
   (``api_flexiconv.sh``, ``FLEXICONV_ANNOTATE=true``). The latter is read by
   ``api_util/teitok_layout.py`` into the same structures: its ``<pb facs>``, ``<lb bbox>``,
@@ -32,6 +42,7 @@ flexiconv, teitok-tools, xmltokenizer). ``appInfo`` stamps it as ``teitok-2``, a
   the header names flexiconv and the original document.
 """
 
+import bisect
 import collections
 import datetime
 import difflib
@@ -43,6 +54,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+from api_util import page_rows as _page_rows
 from api_util.bbox_scale import dpi_scale, scale_bbox_coords
 from api_util.ner_types import CNEC_TO_CONLL, TAGSET_ATTRIBUTE, coarse_type, tagset
 from atrium_document import canonical_doc_id
@@ -520,6 +532,7 @@ def _align_tokens_to_alto(tokens, alto_strings):
         # block and line; the box comes from the matched strings that have one.
         boxed = [alto_strings[a] for a in a_indices if alto_strings[a].get("left") is not None]
         bboxes[t_idx] = {
+            "strings": frozenset(a_indices),
             "left": min(s["left"] for s in boxed) if boxed else None,
             "top": min(s["top"] for s in boxed) if boxed else None,
             "right": max(s["right"] for s in boxed) if boxed else None,
@@ -530,6 +543,128 @@ def _align_tokens_to_alto(tokens, alto_strings):
             "line_bbox": first_a["line_bbox"],
         }
     return bboxes
+
+
+#: Below this share of tokens aligned to a layout source, the writer warns: text and layout
+#: probably come from different readers (e.g. alto-postprocess ``text-lines`` and flexiconv).
+MIN_ALIGNMENT = 0.9
+
+
+def _monotone_keep(values):
+    """Positions of a longest non-decreasing subsequence of ``values``."""
+    tails, tails_pos, prev = [], [], [-1] * len(values)
+    for i, v in enumerate(values):
+        k = bisect.bisect_right(tails, v)
+        if k == len(tails):
+            tails.append(v)
+            tails_pos.append(i)
+        else:
+            tails[k] = v
+            tails_pos[k] = i
+        prev[i] = tails_pos[k - 1] if k else -1
+    keep, i = set(), tails_pos[-1] if tails_pos else -1
+    while i != -1:
+        keep.add(i)
+        i = prev[i]
+    return keep
+
+
+def _row_box(place):
+    """A coordinate-free box for a unit placed by the rows file (a table-only document):
+    its page and line, no coordinates -- the *rows layout*."""
+    return {
+        "left": None,
+        "top": None,
+        "right": None,
+        "bottom": None,
+        "page_idx": place.page,
+        "block_id": None,
+        "line_id": f"__row{place.row}",
+        "line_bbox": "",
+    }
+
+
+def _resolve_pages(sentences, units, boxes, layout_pages, has_layout, rows, doc_id):
+    """Give every surface unit its page, ``_page`` -- layout first (issue #38, A):
+
+    1. the page of the layout string it aligned to;
+    2. else its line in the rows file (stage 1's ``<doc>.rows.tsv``): without a layout, the
+       rows *are* the layout (page and line, no coordinates); with one, a row page counts
+       only when the layout has that page, and never beyond the next aligned token's page;
+    3. else the page of the unit before it -- or, for a document with neither a layout nor
+       rows, the old per-page convention (``# sent_id = 1`` restarting), as NameTag's page
+       files and the summary read it (``page_rows.legacy_sentence_pages``).
+
+    Pages only move forward. Aligned pages that break that order are outliers (the longest
+    non-decreasing run of aligned pages is kept): such a unit loses its box, which belongs to
+    another page. Returns the number of outliers."""
+    places = _page_rows.place_units(sentences, rows, doc_id)[0] if rows else [None] * len(units)
+    aligned = [i for i, b in enumerate(boxes) if b is not None and b.get("page_idx") is not None]
+    keep = {aligned[j] for j in _monotone_keep([boxes[i]["page_idx"] for i in aligned])}
+    outliers = len(aligned) - len(keep)
+    next_kept = [None] * len(units)
+    upcoming = None
+    for i in range(len(units) - 1, -1, -1):
+        if i in keep:
+            upcoming = boxes[i]["page_idx"]
+        next_kept[i] = upcoming
+    legacy = []
+    if not rows and not has_layout:
+        for sent, sent_page in zip(
+            sentences, _page_rows.legacy_sentence_pages(sentences), strict=True
+        ):
+            legacy += [sent_page] * len(sent["surface"])
+    page = 0
+    for i, unit in enumerate(units):
+        box, place = boxes[i], places[i]
+        if box is not None and box.get("page_idx") is not None and i not in keep:
+            box = None
+        if box is None and place is not None and not has_layout:
+            box = _row_box(place)
+        if box is not None and box.get("page_idx") is not None:
+            candidate = box["page_idx"]
+        elif place is not None and (not has_layout or place.page in layout_pages):
+            candidate = place.page
+            if next_kept[i] is not None:
+                candidate = min(candidate, next_kept[i])
+        elif legacy:
+            candidate = legacy[i]
+        else:
+            candidate = page or 1
+        page = max(page, candidate)
+        unit["_bbox"] = box
+        unit["_page"] = page
+        for word in unit["words"]:
+            word["_bbox"] = box
+            word["_page_idx"] = page
+    return outliers
+
+
+def _unbox_split_punctuation(units):
+    """Split-off punctuation that shares a layout string with a word gets no bbox (U1): the
+    word keeps the string's box, as flexiconv does for ALTO and hOCR (``alto.py``,
+    ``hocr.py``). The punctuation keeps its page and line."""
+    for i, unit in enumerate(units):
+        box = unit.get("_bbox")
+        if not has_coords(box) or not box.get("strings"):
+            continue
+        if not all(w.get("upos") == "PUNCT" for w in unit["words"]):
+            continue
+        for j in (i - 1, i + 1):
+            if not 0 <= j < len(units):
+                continue
+            other = units[j].get("_bbox")
+            if (
+                other
+                and other.get("strings")
+                and not all(w.get("upos") == "PUNCT" for w in units[j]["words"])
+                and box["strings"] & other["strings"]
+            ):
+                unboxed = dict(box, left=None, top=None, right=None, bottom=None)
+                unit["_bbox"] = unboxed
+                for word in unit["words"]:
+                    word["_bbox"] = unboxed
+                break
 
 
 def _bio_to_code(ner_tag):
@@ -644,6 +779,7 @@ def parse_and_align_conllu(
     dpi=None,
     alto_dpi=None,
     bbox_origin="page",
+    rows=None,
 ):
     """Parse a NER-merged CoNLL-U file and align its tokens to ALTO bboxes.
 
@@ -660,6 +796,12 @@ def parse_and_align_conllu(
     "words": [...], "mwt": True}`` built from a CoNLL-U range line). ALTO alignment runs
     on surface forms, because that is the text the page shows. Words inherit their
     surface token's ``_bbox`` and point back to it through ``_surface``.
+
+    ``rows`` (``page_rows.Row`` list, stage 1's ``<doc>.rows.tsv``) says which line and page
+    each token came from. Every surface token and word gets ``_page`` (see
+    ``_resolve_pages``); a document without a layout source takes lines and pages from the
+    rows (words carry it as ``_page_idx``). ``page_order`` lists every page the document has (layout pages, row pages, token
+    pages), ``page_labels`` the ``pb@n`` of pages whose label is not their number.
     """
     alto_strings, alto_pages, alto_graphics, alto_blocks, alto_meta = _parse_alto(alto_path)
 
@@ -696,10 +838,10 @@ def parse_and_align_conllu(
     open_mwt = None
     sent_id = sent_text = None
     conllu_meta = {}
-    pending_page_break = False
+    pending_chunk_start = False
 
     def _flush():
-        nonlocal current_tok, current_units, pending_page_break, open_mwt
+        nonlocal current_tok, current_units, pending_chunk_start, open_mwt
         if current_tok:
             sentences.append(
                 {
@@ -707,12 +849,13 @@ def parse_and_align_conllu(
                     "text": sent_text,
                     "tokens": current_tok,
                     "surface": [u for u in current_units if u["words"]],
-                    "page_break": pending_page_break,
+                    # a UDPipe chunk starts here: a line boundary, never a page (#38, A)
+                    "chunk_start": pending_chunk_start,
                 }
             )
             current_tok = []
             current_units = []
-            pending_page_break = False
+            pending_chunk_start = False
         open_mwt = None
 
     try:
@@ -725,8 +868,8 @@ def parse_and_align_conllu(
                     conllu_meta["udpipe_model"] = line.split("=", 1)[1].strip()
                 if line.startswith("# udpipe_model_licence ="):
                     conllu_meta["udpipe_model_licence"] = line.split("=", 1)[1].strip()
-                if line.strip() == "# page_break = true":
-                    pending_page_break = True
+                if line.strip().startswith(_page_rows.CHUNK_MARKERS):
+                    pending_chunk_start = True
                     continue
                 if line.startswith("# sent_id"):
                     sent_id = line.split("=", 1)[1].strip() if "=" in line else None
@@ -751,6 +894,7 @@ def parse_and_align_conllu(
                         "words": [],
                         "mwt": True,
                         "range": (_as_int(start), _as_int(end)),
+                        "misc": cols[9],
                     }
                     current_units.append(open_mwt)
                     continue
@@ -784,6 +928,7 @@ def parse_and_align_conllu(
                         "space_after": word["space_after"],
                         "words": [word],
                         "mwt": False,
+                        "misc": cols[9],
                     }
                     word["_surface"] = unit
                     current_units.append(unit)
@@ -804,20 +949,41 @@ def parse_and_align_conllu(
 
     all_units = [unit for sent in sentences for unit in sent["surface"]]
     all_bboxes = _align_tokens_to_alto(all_units, alto_strings)
-    for unit, bbox in zip(all_units, all_bboxes, strict=True):
-        unit["_bbox"] = bbox
-        for word in unit["words"]:
-            word["_bbox"] = bbox
+    has_layout = bool(alto_strings)
+    layout_pages = {pg["idx"] for pg in alto_pages} | {s["page_idx"] for s in alto_strings}
+    layout_pages |= set(range(1, int(alto_meta.get("page_count") or 0) + 1))
+    outliers = _resolve_pages(
+        sentences, all_units, all_bboxes, layout_pages, has_layout, rows, _doc_id
+    )
+    _unbox_split_punctuation(all_units)
 
     _assign_ids(sentences)
 
+    matched = sum(1 for b in all_bboxes if b is not None)
     if alto_meta.get("layout_source") == "teitok":
-        placed = sum(1 for b in all_bboxes if b is not None)
-        boxed = sum(1 for b in all_bboxes if has_coords(b))
-        print(f"  [layout] placed {placed}/{len(all_units)} tokens, {boxed} with a bbox")
-    else:
-        matched = sum(1 for b in all_bboxes if b is not None)
+        boxed = sum(1 for u in all_units if has_coords(u.get("_bbox")))
+        print(f"  [layout] placed {matched}/{len(all_units)} tokens, {boxed} with a bbox")
+    elif has_layout:
         print(f"  [ALTO] matched {matched}/{len(all_units)} tokens to ALTO bboxes")
+    if outliers:
+        print(
+            f"  [TEITOK] {_doc_id}: {outliers} token(s) aligned to a page out of reading "
+            f"order; their boxes were dropped",
+            file=sys.stderr,
+        )
+    if has_layout and all_units and matched / len(all_units) < MIN_ALIGNMENT:
+        print(
+            f"  [TEITOK] {_doc_id}: only {matched}/{len(all_units)} tokens align to the layout "
+            f"source; are the text and the layout read from the same document version?",
+            file=sys.stderr,
+        )
+
+    page_order = set(layout_pages) | {u["_page"] for u in all_units}
+    if not has_layout:
+        page_order |= {r.page for r in rows or []}
+    page_labels = {}
+    page_labels.update(_page_rows.page_labels(rows))
+    page_labels.update(alto_meta.get("page_labels") or {})
 
     return {
         "doc_id": _doc_id,
@@ -831,6 +997,9 @@ def parse_and_align_conllu(
         "scale_map": scale_map,
         "lang": _majority_lang(alto_strings) or _norm_lang(conllu_meta.get("udpipe_model")),
         "bbox_origin": bbox_origin,
+        "page_order": sorted(page_order) or [1],
+        "page_labels": page_labels,
+        "alignment": {"matched": matched, "total": len(all_units), "outliers": outliers},
     }
 
 
@@ -926,7 +1095,9 @@ def _name_open_xml(grp):
     )
 
 
-def _header_xml(parsed, alto_path, conllu_path, model_udpipe, model_nametag, lang, has_names):
+def _header_xml(
+    parsed, alto_path, conllu_path, model_udpipe, model_nametag, lang, has_names, source_file=None
+):
     doc_id = escape(parsed["doc_id"])
     conllu_meta = parsed["conllu_meta"]
     alto_meta = parsed["alto_meta"]
@@ -936,8 +1107,11 @@ def _header_xml(parsed, alto_path, conllu_path, model_udpipe, model_nametag, lan
     if converted:
         # the original document flexiconv converted; the TEITOK file only relayed it
         orgfile = alto_meta.get("orgfile") or Path(alto_path).name
+    elif has_alto:
+        orgfile = Path(alto_path).name
     else:
-        orgfile = Path(alto_path).name if has_alto else Path(conllu_path).name
+        # the table or text stage 1 read (the rows file names it), not the CoNLL-U
+        orgfile = Path(source_file).name if source_file else Path(conllu_path).name
 
     h = ["  <teiHeader>", "    <fileDesc>"]
     h.append(f"      <titleStmt><title>{doc_id}</title></titleStmt>")
@@ -1007,6 +1181,11 @@ def _header_xml(parsed, alto_path, conllu_path, model_udpipe, model_nametag, lan
             f'      <change when="{today}" who="altoconvert" type="converted">'
             f"Converted from ALTO file {escape(orgfile)}</change>"
         )
+    elif source_file:
+        h.append(
+            f'      <change when="{today}" who="atrium-nlp-enrich" type="converted">'
+            f"Converted from text file {escape(orgfile)} (annotated as CoNLL-U)</change>"
+        )
     else:
         h.append(
             f'      <change when="{today}" who="atrium-nlp-enrich" type="converted">'
@@ -1035,37 +1214,49 @@ def _header_xml(parsed, alto_path, conllu_path, model_udpipe, model_nametag, lan
     return h
 
 
-def _sentence_xml(sent, line_break, coords):
-    """``<s>`` with inline, text-faithful token spacing (see the module docstring)."""
-    head_ids = {w["id"]: w["_xml_id"] for w in sent["tokens"]}
-    events = []
-    for grp in sent["names"]:
-        if grp["kind"] == "name":
-            events.append(("open", grp, None))
-        for unit in grp["units"]:
-            events.append(("tok", unit, line_break(unit)))
-        if grp["kind"] == "name":
-            events.append(("close", grp, None))
+def _sentence_xml(sent, prefix_for, coords):
+    """``<s>`` with inline, text-faithful token spacing (see the module docstring).
 
-    tok_positions = [i for i, ev in enumerate(events) if ev[0] == "tok"]
+    ``prefix_for(unit)`` is called right before a token is rendered and returns the markup
+    that precedes it: the ``<pb/>`` of a page the sentence runs onto and the ``<lb/>`` of a
+    new line. It also switches ``coords`` to the page, so the token's box is scaled for the
+    page it is on. When an entity's first token starts a line or page, that markup goes
+    before ``<name>``; later in the entity it stays inside it."""
+    head_ids = {w["id"]: w["_xml_id"] for w in sent["tokens"]}
     parts = []
-    for pos, (kind, item, lb) in enumerate(events):
-        if kind == "open":
-            parts.append(_name_open_xml(item))
-        elif kind == "close":
+    gap = None  # position in `parts` of the whitespace after the previous token
+
+    def place_gap(breaks):
+        nonlocal gap
+        if gap is not None:
+            parts[gap] = "\n          " if breaks else " "
+        gap = None
+
+    def render(unit, prefix):
+        nonlocal gap
+        place_gap(bool(prefix))
+        parts.extend(prefix)
+        parts.append(_tok_xml(unit, head_ids, coords))
+        if unit["space_after"]:
+            parts.append(" ")
+            gap = len(parts) - 1
+
+    for grp in sent["names"]:
+        units = grp["units"]
+        if grp["kind"] == "name":
+            prefix = prefix_for(units[0])
+            place_gap(bool(prefix))
+            parts.extend(prefix)
+            parts.append(_name_open_xml(grp))
+            render(units[0], [])
+            for unit in units[1:]:
+                render(unit, prefix_for(unit))
             parts.append("</name>")
         else:
-            if lb:
-                parts.append(lb)
-            parts.append(_tok_xml(item, head_ids, coords))
-            if item["space_after"]:
-                later = [p for p in tok_positions if p > pos]
-                if not later:
-                    parts.append("\n        ")
-                elif events[later[0]][2]:
-                    parts.append("\n          ")  # the next token starts a new line
-                else:
-                    parts.append(" ")
+            for unit in units:
+                render(unit, prefix_for(unit))
+    if gap is not None:
+        parts[gap] = "\n        "
 
     text_attr = f' text="{_attr(sent["text"])}"' if sent.get("text") else ""
     return f'        <s id="{sent["_xml_id"]}"{text_attr}>\n          {"".join(parts)}</s>\n'
@@ -1082,7 +1273,19 @@ def write_teitok_merged(
     dpi=None,
     alto_dpi=None,
     bbox_origin="page",
+    rows=None,
+    source_file=None,
 ):
+    """Write TEITOK format 2 for one document (see the module docstring).
+
+    Pages are *layout-first* (issue #38, A): a token is on the page of the layout string it
+    aligned to, else on the page of its line in ``rows`` (stage 1's rows file), else on the
+    page of the token before it. ``<pb/>`` comes where the page changes -- between sentences,
+    or inside an ``<s>`` (and ``<name>``) that runs over a page break, as xmltokenizer and
+    flexiconv allow. Pages only move forward, every page of the layout gets its ``<pb/>``,
+    and ``pb@facs``/``@corresp``/``@bbox`` are written only for pages that have a
+    ``<surface>``. ``source_file`` (the table or text the rows came from) is the ``orgfile``
+    of a document without a layout source."""
     bbox_origin = (bbox_origin or "page").strip().lower()
     if bbox_origin not in BBOX_ORIGINS:
         raise ValueError(f"bbox_origin must be one of {BBOX_ORIGINS}, got {bbox_origin!r}")
@@ -1095,6 +1298,7 @@ def write_teitok_merged(
         dpi=dpi,
         alto_dpi=alto_dpi,
         bbox_origin=bbox_origin,
+        rows=rows,
     )
     if parsed is None:
         return False
@@ -1105,6 +1309,8 @@ def write_teitok_merged(
     alto_graphics = parsed["alto_graphics"]
     alto_blocks = parsed["alto_blocks"]
     scale_map = parsed["scale_map"]
+    page_order = parsed["page_order"]
+    page_labels = parsed["page_labels"]
     lang = parsed["lang"] or _norm_lang(model_udpipe)
     has_names = any(g["kind"] == "name" for s in sentences for g in s["names"])
     default_scale = (1.0, 1.0, None, None, 0, 0, ".png")
@@ -1118,7 +1324,7 @@ def write_teitok_merged(
     lang_attr = f' lang="{lang}"' if lang else ""
     lines.append(f'<TEI xmlnsoff="http://www.tei-c.org/ns/1.0"{lang_attr}>')
     lines += _header_xml(
-        parsed, alto_path, conllu_path, model_udpipe, model_nametag, lang, has_names
+        parsed, alto_path, conllu_path, model_udpipe, model_nametag, lang, has_names, source_file
     )
 
     # Page image names: {doc_id}-{N}.<ext> for ALTO; a converted layout source keeps the
@@ -1126,6 +1332,7 @@ def write_teitok_merged(
     page_facs = {
         pg["idx"]: escape(pg["facs"], {'"': "&quot;"}) for pg in alto_pages if pg.get("facs")
     }
+    surfaces = {pg["idx"] for pg in alto_pages}
 
     def facs_url(page, ext):
         return page_facs.get(page) or f"{doc_id_safe}-{page}{ext}"
@@ -1145,64 +1352,92 @@ def write_teitok_merged(
     lines.append("  <text>")
     lines.append("    <body>")
     body = []
-    state = {"page": 0, "block": None, "line": None}
+    state = {"page": 0, "block": None, "block_page": None, "line": None}
     blocks_on_page = collections.Counter()
     lines_on_page = collections.Counter()
+    queued_figures = []
+
+    def pb_xml(page):
+        scale = scale_map.get(page, default_scale)
+        attrs = [f'n="{_attr(page_labels.get(page) or str(page))}"', f'id="pb-{page}"']
+        if page in surfaces:  # P4: no invented page image for a page without a surface
+            attrs.append(f'facs="{facs_url(page, scale[6])}"')
+            attrs.append(f'corresp="#facs-{page}"')
+            if scale[2] is not None and scale[3] is not None:
+                attrs.append(f'bbox="0 0 {scale[2]} {scale[3]}"')  # U2: the page's extent
+        return f"<pb {' '.join(attrs)}/>"
+
+    def open_pages(upto):
+        """Markup of every page after the current one up to ``upto`` -- pages of the layout
+        without text included, so every ``<surface>`` has its ``<pb/>`` -- as ``(pbs,
+        figures)``; the coordinate scale ends on page ``upto``."""
+        pages = [p for p in page_order if state["page"] < p <= upto]
+        if not pages or pages[-1] != upto:
+            pages.append(upto)
+        pbs, figures = [], []
+        for page in pages:
+            coords.set_page(scale_map.get(page, default_scale))
+            pbs.append(pb_xml(page))
+            for k, g in enumerate((g for g in alto_graphics if g["page_idx"] == page), 1):
+                figures.append(
+                    f'<figure type="{escape(g["type"])}" id="fig-{page}.{k}" '
+                    f'bbox="{coords.fmt(*g["bbox"])}"/>'
+                )
+        state["page"] = upto
+        state["line"] = None
+        return pbs, figures
 
     def close_block():
         if state["block"] is not None:
             body.append("      </div>\n")
-            state["block"] = None
+            state["block"] = state["block_page"] = None
 
-    def line_break(unit):
-        """``<lb/>`` markup when ``unit`` starts a new ALTO line, else ``""``."""
+    def flush_figures():
+        # <div> holds only <s>: figures of a page opened inside a sentence wait for the body
+        close_block()
+        body.extend(f"      {fig}\n" for fig in queued_figures)
+        queued_figures.clear()
+
+    def prefix_for(unit):
+        """``<pb/>`` of pages the sentence runs onto, then ``<lb/>`` of a new line."""
+        out = []
+        if unit["_page"] > state["page"]:
+            pbs, figures = open_pages(unit["_page"])
+            out += pbs
+            queued_figures.extend(figures)
         b = unit.get("_bbox")
-        if not (b and b.get("line_id")) or b["line_id"] == state["line"]:
-            return ""
-        state["line"] = b["line_id"]
-        page = state["page"]
-        lines_on_page[page] += 1
-        lb_bbox = coords.fmt_str(b.get("line_bbox", ""))
-        bbox_attr = f' bbox="{lb_bbox}"' if lb_bbox else ""
-        return f'<lb id="lb-{page}.{lines_on_page[page]}"{bbox_attr}/>'
+        if b and b.get("line_id") and b["line_id"] != state["line"]:
+            state["line"] = b["line_id"]
+            page = state["page"]
+            lines_on_page[page] += 1
+            lb_bbox = coords.fmt_str(b.get("line_bbox", ""))
+            bbox_attr = f' bbox="{lb_bbox}"' if lb_bbox else ""
+            out.append(f'<lb id="lb-{page}.{lines_on_page[page]}"{bbox_attr}/>')
+        return out
 
     for sent in sentences:
-        first_bbox = next((u["_bbox"] for u in sent["surface"] if u.get("_bbox")), None)
-        page_trigger = (sent.get("id") == "1") or sent.get("page_break", False)
-        if first_bbox and first_bbox.get("page_idx") and first_bbox["page_idx"] != state["page"]:
-            page_trigger = True
-            new_page = first_bbox["page_idx"]
-        else:
-            new_page = state["page"] + 1 if page_trigger else state["page"]
-        if state["page"] == 0 and not page_trigger:
-            page_trigger, new_page = True, 1
-
-        if page_trigger:
+        if not sent["surface"]:
+            continue
+        if queued_figures:
+            flush_figures()
+        first_page = sent["surface"][0]["_page"]
+        if first_page > state["page"]:
             close_block()
-            state["page"] = new_page
-            state["line"] = None
-            page = new_page
-            scale = scale_map.get(page, default_scale)
-            coords.set_page(scale)
-            corresp = f' corresp="#facs-{page}"' if page in scale_map else ""
-            body.append(
-                f'      <pb n="{page}" id="pb-{page}" facs="{facs_url(page, scale[6])}"'
-                f"{corresp}/>\n"
-            )
-            figures = [g for g in alto_graphics if g["page_idx"] == page]
-            for k, g in enumerate(figures, start=1):
-                body.append(
-                    f'      <figure type="{escape(g["type"])}" id="fig-{page}.{k}" '
-                    f'bbox="{coords.fmt(*g["bbox"])}"/>\n'
-                )
+            pbs, figures = open_pages(first_page)
+            body.extend(f"      {m}\n" for m in pbs + figures)
 
         page = state["page"]
+        first_bbox = next(
+            (u["_bbox"] for u in sent["surface"] if u.get("_bbox") and u["_page"] == page),
+            None,
+        )
         block_key = first_bbox.get("block_id") if first_bbox else None
         if block_key is None:
-            block_key = state["block"] or f"__text{page}"
+            # no block of its own: stay in the current block while it is on this page
+            block_key = state["block"] if state["block_page"] == page else f"__text{page}"
         if block_key != state["block"]:
             close_block()
-            state["block"] = block_key
+            state["block"], state["block_page"] = block_key, page
             blocks_on_page[page] += 1
             block = alto_blocks.get(block_key)
             attrs = [f'type="{"TextBlock" if block else "text"}"']
@@ -1219,9 +1454,12 @@ def write_teitok_merged(
                     attrs.append(f'bbox="{block_bbox}"')
             body.append(f"      <div {' '.join(attrs)}>\n")
 
-        body.append(_sentence_xml(sent, line_break, coords))
+        body.append(_sentence_xml(sent, prefix_for, coords))
 
-    close_block()
+    flush_figures()
+    if page_order and page_order[-1] > state["page"]:  # pages after the last text
+        pbs, figures = open_pages(page_order[-1])
+        body.extend(f"      {m}\n" for m in pbs + figures)
     try:
         with open(teitok_path, "w", encoding="utf-8") as out:
             out.write("\n".join(lines) + "\n")

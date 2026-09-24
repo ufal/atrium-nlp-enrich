@@ -61,6 +61,7 @@ def _tok(root, form):
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_output_is_teitok_format_2(tmp_path, kind):
+    pytest.importorskip("lxml", reason="the output-contract validator needs lxml")
     out = _write(tmp_path, kind)
     assert validate_document(out) == []
     assert validate_document(out, profile="core") == []
@@ -333,25 +334,32 @@ def test_manifest_stage_ignores_converted_documents_by_default(tmp_path):
 # ── the runner ───────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("knob", ["FLEXICONV_ANNOTATE", "REGENERATE_TEITOK"])
-def test_one_run_switches_survive_sourcing_the_config(knob):
+@pytest.mark.parametrize(
+    "knob, default, one_run",
+    [
+        ("FLEXICONV_ANNOTATE", "false", "true"),
+        ("REGENERATE_TEITOK", "false", "true"),
+        ("BBOX_ORIGIN", "page", "printspace"),
+    ],
+)
+def test_one_run_switches_survive_sourcing_the_config(knob, default, one_run):
     """Every stage starts with `source config_api.txt`; a bare `KNOB=false` there would
     overwrite the value the runner (or `KNOB=true bash api_4_stats.sh`) set. The first
     refresh of the samples with REGENERATE_TEITOK=true silently kept the old files."""
     text = (REPO_ROOT / "config_api.txt").read_text(encoding="utf-8")
-    assert f'{knob}="${{{knob}:-false}}"' in text
-    env = dict(os.environ, **{knob: "true"})
+    assert f'{knob}="${{{knob}:-{default}}}"' in text
+    env = dict(os.environ, **{knob: one_run})
     out = subprocess.run(
         ["bash", "-c", f'source config_api.txt; echo "${knob}"'],
         capture_output=True, text=True, cwd=REPO_ROOT, env=env, check=True,
     )  # fmt: skip
-    assert out.stdout.strip() == "true"
+    assert out.stdout.strip() == one_run
     env.pop(knob)
     out = subprocess.run(
         ["bash", "-c", f'source config_api.txt; echo "${knob}"'],
         capture_output=True, text=True, cwd=REPO_ROOT, env=env, check=True,
     )  # fmt: skip
-    assert out.stdout.strip() == "false"
+    assert out.stdout.strip() == default
 
 
 def test_runner_with_flexiconv_converts_first_and_annotates(tmp_path, monkeypatch):
@@ -370,3 +378,32 @@ def test_runner_with_flexiconv_converts_first_and_annotates(tmp_path, monkeypatc
     assert rp.main(["--config", str(cfg), "--stages", "manifest"]) == 0
     assert [Path(cmd[1]).name for cmd, _ in calls] == ["api_1_manifest.sh"]
     assert "FLEXICONV_ANNOTATE" not in calls[0][1]
+
+
+def test_runner_with_flexiconv_honours_start_from(tmp_path, monkeypatch):
+    """The conversion precedes every stage: resuming from a later stage must not re-run it."""
+    cfg = tmp_path / "config_api.txt"
+    cfg.write_text(f'OUTPUT_DIR="{tmp_path}/out"\nFAIL_ON_EMPTY=false\n', encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(rp, "_run_subprocess", lambda cmd, env, cwd: calls.append(cmd) or 0)
+    monkeypatch.setattr(rp, "_space_stages", lambda last: 0.0)
+    argv = ["--config", str(cfg), "--with-flexiconv", "--stages", "manifest", "udp"]
+    assert rp.main(argv + ["--start-from", "udp"]) == 0
+    assert [Path(cmd[1]).name for cmd in calls] == ["api_2_udp.sh"]
+
+
+def test_runner_stops_when_the_conversion_fails(tmp_path, monkeypatch):
+    """api_flexiconv.sh exits 3 without flexiconv and 1 when a document failed; either way
+    the manifest must not run on an incomplete collection (issue #38, E)."""
+    cfg = tmp_path / "config_api.txt"
+    cfg.write_text(f'OUTPUT_DIR="{tmp_path}/out"\nFAIL_ON_EMPTY=false\n', encoding="utf-8")
+    calls = []
+
+    def fake_run(cmd, env, cwd):
+        calls.append(cmd)
+        return 3 if Path(cmd[1]).name == "api_flexiconv.sh" else 0
+
+    monkeypatch.setattr(rp, "_run_subprocess", fake_run)
+    monkeypatch.setattr(rp, "_space_stages", lambda last: 0.0)
+    assert rp.main(["--config", str(cfg), "--with-flexiconv", "--stages", "manifest"]) == 3
+    assert [Path(cmd[1]).name for cmd in calls] == ["api_flexiconv.sh"]

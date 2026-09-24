@@ -2,7 +2,8 @@
 
 Single-file entry point for the ATRIUM NLP enrichment pipeline (issue
 [#8](https://github.com/ufal/atrium-nlp-enrich/issues/8)): upload ordered text
-lines, get back enriched **TEITOK XML + keywords + paradata**. The four core
+lines — a table, a `.txt`, or a TEITOK file converted by flexiconv — get back enriched
+**TEITOK XML + keywords + paradata**. The four core
 stages (`manifest → udp → nt → stats`) always run; **LLM enrichment is excluded
 from every API entry point**.
 
@@ -26,30 +27,57 @@ python service/test_api.py -f data_samples/DOC_LINE_CATEG/CTX000000001.csv
 
 ## Endpoints
 
-| Method | Path           | Purpose                                                                                                                                                                      |
-|--------|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| GET    | `/`            | minimal landing page (see `/docs` for OpenAPI UI)                                                                                                                            |
-| GET    | `/info`        | service id, endpoints, stage plan, pinned models, keyword methods + default, limits                                                                                          |
-| GET    | `/health`      | liveness — 200 always, even mid-shutdown. `?deep=true` adds config validity via `run_pipeline.py --dry-run` + UDPipe/NameTag reachability (503 on failure or while draining) |
-| GET    | `/ready`       | readiness — 503 until warmup finishes, 200 while serving, 503 the instant `SIGTERM` arrives. The Kubernetes `readinessProbe`/`startupProbe` target                           |
-| POST   | `/enrich`      | **single-file entry point** — upload CSV/XLSX/TXT                                                                                                                            |
-| POST   | `/enrich_text` | same pipeline for inline JSON                                                                                                                                                |
-| POST   | `/rescale`     | rescale a single-page TEITOK's bboxes to a target image size                                                                                                                 |
+| Method | Path                | Purpose                                                                                                                                                                      |
+|--------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| GET    | `/`                 | minimal landing page (see `/docs` for OpenAPI UI)                                                                                                                            |
+| GET    | `/info`             | service id, endpoints, stage plan, pinned models, keyword methods + default, limits                                                                                          |
+| GET    | `/health`           | liveness — 200 always, even mid-shutdown. `?deep=true` adds config validity via `run_pipeline.py --dry-run` + UDPipe/NameTag reachability (503 on failure or while draining) |
+| GET    | `/ready`            | readiness — 503 until warmup finishes, 200 while serving, 503 the instant `SIGTERM` arrives. The Kubernetes `readinessProbe`/`startupProbe` target                           |
+| POST   | `/enrich`           | **single-file entry point** — upload CSV/XLSX/TXT, or a converted TEITOK `.xml`; optionally the ALTO of a table's pages                                                      |
+| POST   | `/enrich_text`      | same pipeline for inline JSON                                                                                                                                                |
+| POST   | `/jobs`             | the `/enrich` form as a background job: returns `{"job_id", "status": "queued"}` at once                                                                                     |
+| GET    | `/jobs/{id}`        | the job's `status` (`queued`, `running`, `done`, `failed`) and `error`                                                                                                       |
+| GET    | `/jobs/{id}/result` | the `/enrich` JSON envelope of a finished job (409 while it runs)                                                                                                            |
+| DELETE | `/jobs/{id}`        | forget a job (finished jobs are also forgotten an hour after they end); job ids are local to the replica                                                                     |
+| POST   | `/rescale`          | rescale a TEITOK's bboxes to page images of another size, page by page                                                                                                       |
 
 ### `POST /enrich` (multipart form)
 
-| Field           | Default    | Notes                                                     |
-|-----------------|------------|-----------------------------------------------------------|
-| `file`          | *required* | `.csv` (needs a `text` column), `.xlsx`, or `.txt`        |
-| `kw_method`     | `keybert`  | `keybert` \| `yake` \| `legacy` \| `none`                 |
-| `num_keywords`  | `20`       | 1–100                                                     |
-| `lang`          | `cs`       | Czech-pinned in v1                                        |
-| `format`        | `json`     | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`   |
-| `document_json` | *optional* | baseline ATRIUM Document JSON to accrete onto — see below |
+| Field           | Default    | Notes                                                                                                                                                                                                                           |
+|-----------------|------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `file`          | *required* | `.csv` (needs a `text` column; optional `page_num`, `line_num`), `.xlsx`, `.txt` (a form feed starts a new page), or a TEITOK `.xml` (`*.teitok.xml`, or any `.xml` starting with `<TEI`) — see [Layout inputs](#layout-inputs) |
+| `alto`          | *optional* | ALTO XML of the pages a `.csv`/`.xlsx` lists the lines of — see [Layout inputs](#layout-inputs)                                                                                                                                 |
+| `kw_method`     | `keybert`  | `keybert` \| `yake` \| `legacy` \| `none`                                                                                                                                                                                       |
+| `num_keywords`  | `20`       | 1–100                                                                                                                                                                                                                           |
+| `lang`          | `cs`       | Czech-pinned in v1                                                                                                                                                                                                              |
+| `format`        | `json`     | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`                                                                                                                                                                         |
+| `document_json` | *optional* | baseline ATRIUM Document JSON to accrete onto — see below                                                                                                                                                                       |
 
 `keybert` is the best/default backend. If its preflight fails at runtime the
 service **degrades once to `yake`** and reports `method_requested` vs
 `method_used` rather than failing the enrichment.
+
+### Layout inputs
+
+The TEITOK the service returns has the layout of what it was given (issue
+[#38](https://github.com/ufal/atrium-nlp-enrich/issues/38)); `layout_source` in the envelope says which:
+
+| Upload                                 | `layout_source` | The TEITOK                                                                                         |
+|----------------------------------------|-----------------|----------------------------------------------------------------------------------------------------|
+| `.csv`/`.xlsx`/`.txt`                  | `rows`          | one `<pb>` per page and one `<lb>` per line of the input; no boxes, no facsimile, no page images   |
+| `.csv`/`.xlsx` + `alto`                | `alto`          | as the CLI with `INPUT_ALTO_DIR`: word, line and block boxes, `<facsimile>`, `<figure>`s           |
+| a TEITOK `.xml` converted by flexiconv | `teitok`        | as the CLI with `FLEXICONV_ANNOTATE=true`: its pages, lines and word boxes, its page images' names |
+
+* A **TEITOK upload** is text and layout at once: its rows (`teitok_read`) go through the
+  pipeline as the document's table, and the file itself becomes that document's layout — the
+  same claim the CLI's stage 1 makes. Convert PDF, DOCX, PAGE XML, hOCR, … to TEITOK with
+  `api_flexiconv.sh` (CLI) first: flexiconv is GPL-3.0 and is **not** in the service image. A file
+  that is not well-formed, or breaks TEITOK-core rules (duplicate ids, references that point
+  nowhere), is refused with 422 and the diagnostics.
+* An **`alto` part** goes with a `.csv`/`.xlsx` (e.g. alto-postprocess's `DOC_LINE_CATEG` table and
+  the ALTO it was made from); with a `.txt` or a TEITOK file it is refused (422). A PAGE XML or
+  hOCR file in its place is refused with the hint to convert it with `api_flexiconv.sh`.
+* The `doc_id` is the file name without `.teitok.xml`, `.alto.xml` or the table extension.
 
 ### `POST /enrich_text` (JSON)
 
@@ -61,17 +89,18 @@ service **degrades once to `yake`** and reports `method_requested` vs
 
 ### The `document_json` accretion part
 
-Rule 1 of the document-JSON contract (`docs/document_schema.md`, issue
-[#13](https://github.com/ufal/atrium-project/issues/13)): a service **accepts and returns an
-optional `document_json` part**. `/enrich` and `/jobs` take it as an upload part;
+Rule 1 of the document-JSON contract (the hub's `docs/document_schema.md`, issue
+[atrium-llm-enrich#13](https://github.com/ufal/atrium-llm-enrich/issues/13)): a service **accepts
+and returns an optional `document_json` part**. `/enrich` and `/jobs` take it as an upload part;
 `/enrich_text` takes it as an embedded object.
 
 When supplied, the response's `document_json` carries the record back with only
 nlp-enrich's contribution merged in — its `entities[]` rows, whose `teitok_ref` is the
 entity's `<name id>` (`n-1`, …) in the returned TEITOK — while every other tool's block
 (`page_categories`, `lines`, `translations`, `enrichment`, …) passes through **untouched**.
-(`pages[].teitok_surface`, the `<surface id>` `facs-P` of a page, is written only by ALTO
-runs of the CLI: the service takes no ALTO, so its TEITOK has no `<facsimile>`.) This is the same accretion the CLI performs via
+(`pages[].teitok_surface`, the `<surface id>` `facs-P` of a page, is written for pages that
+have a surface: with an `alto` part, or a TEITOK upload whose pages name an image or a size.)
+This is the same accretion the CLI performs via
 `run_pipeline.py --document-json/--document-json-out`; the service simply threads the flags
 through to it, so there is one implementation, not two.
 
@@ -97,9 +126,16 @@ through to it, so there is one implementation, not two.
   "paradata": { "...merged pipeline-run record incl. license union..." },
   "method_requested": "keybert", "method_used": "keybert",
   "llm": null,
+  "layout_source": "rows",
+  "teitok_schema_valid": true, "teitok_schema_errors": [],
   "document_json": { "...only when a baseline was supplied..." }
 }
 ```
+
+`layout_source` is `rows`, `alto` or `teitok` ([Layout inputs](#layout-inputs)).
+`teitok_schema_valid`/`teitok_schema_errors` are the output-contract verdict on `teitok_xml`
+(`validate_teitok_xml.py`'s default `contract` profile); a run whose TEITOK fails the contract
+never gets here — stage 4 stops with exit code 5, answered as 500.
 
 `format=zip` instead streams the full workspace `OUTPUT_DIR`
 (`TEITOK/`, `UDP_NE/`, `KW_PER_DOC_*/`, summary CSVs, `paradata/`, and
@@ -108,26 +144,30 @@ through to it, so there is one implementation, not two.
 ### `POST /rescale` (multipart form)
 
 A standalone coordinate transform — **not** part of the NLP pipeline (no
-subprocess, no models, no workspace). Given a single-page TEITOK document and a
-target page-image size, it rescales every facsimile coordinate (the
-`bbox="x1 y1 x2 y2"` pixel boxes and the `<surface>` `lrx`/`lry` extents) from the
-document's own coordinate space to the requested size, so annotations line up exactly on
-top of an image of that size. This works for both coordinate origins the writer offers
+subprocess, no models, no workspace). Given a TEITOK document and the size of its page
+images, it rescales every facsimile coordinate (the `bbox="x1 y1 x2 y2"` pixel boxes,
+`pb@bbox` and the `<surface>` `lrx`/`lry` extents) from the document's own coordinate space,
+page by page, so annotations line up exactly on top of images of that size. Each box is
+scaled by the `<surface>` of the page it is on (the one its `<pb corresp>` names, or the k-th
+surface for the k-th `<pb>`) and clamped to that page; `clamped` counts the coordinates that
+had to move. A `<change type="rescaled">` in `<revisionDesc>` records the transform. This works for both coordinate origins the writer offers
 (`BBOX_ORIGIN=page`, the default, and `printspace`): in both, `<surface>` declares the
 extent the boxes are measured in.
 
-| Field       | Default    | Notes                                                            |
-|-------------|------------|------------------------------------------------------------------|
-| `file`      | *required* | a single-page `.teitok.xml` (or `.xml`)                          |
-| `width`     | *required* | target image width in pixels (1–`MAX_RESCALE_DIM`)               |
-| `height`    | *required* | target image height in pixels (1–`MAX_RESCALE_DIM`)              |
-| `format`    | `json`     | `json` envelope, or `xml` to download the rescaled `.teitok.xml` |
-| `fix_names` | `true`     | repair malformed `<name>…</n>` closings to `</name>`             |
+| Field       | Default    | Notes                                                                                                                             |
+|-------------|------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `file`      | *required* | a `.teitok.xml` (or `.xml`)                                                                                                       |
+| `width`     | —          | target image width in pixels (1–`MAX_RESCALE_DIM`), with `height`                                                                 |
+| `height`    | —          | target image height in pixels (1–`MAX_RESCALE_DIM`), with `width`                                                                 |
+| `scale`     | —          | instead of `width`/`height`: every page image is this fraction of its `<surface>` (0–100); required when the pages differ in size |
+| `format`    | `json`     | `json` envelope, or `xml` to download the rescaled `.teitok.xml`                                                                  |
+| `fix_names` | `true`     | repair malformed `<name>…</n>` closings to `</name>`                                                                              |
 
-The **source** coordinate space is read from the document itself: the first
-`<surface>` that declares `lrx`/`lry` (the authoritative page extent); if none
-is present it falls back to the maximum extent of all `bbox` boxes
-(`source_kind: "bbox-extent"`, approximate). The transform is a surgical,
+The **source** coordinate space is read from the document itself: each page's
+`<surface>` `lrx`/`lry` (the authoritative page extent); `width`/`height` are refused (422)
+for a document whose surfaces differ in size — they would distort some pages — so give
+`scale` there. Without any sized `<surface>` it falls back to the maximum extent of all `bbox`
+boxes (`source_kind: "bbox-extent"`, approximate). The transform is a surgical,
 text-level rewrite that only touches the numeric values, so it is robust to the
 non-well-formed quirk of older TEITOK exports (named entities open `<name>` but close
 `</n>`; the current writer closes `</name>`) that makes a strict XML parse fail.
@@ -143,6 +183,8 @@ curl -s -F "file=@CTX000000001.teitok.xml" -F "width=827" -F "height=1170" \
      http://localhost:8000/rescale            # JSON envelope
 curl -s -F "file=@CTX000000001.teitok.xml" -F "width=827" -F "height=1170" \
      -F "format=xml" -OJ http://localhost:8000/rescale   # download rescaled XML
+curl -s -F "file=@mixed_pages.teitok.xml" -F "scale=0.5" \
+     http://localhost:8000/rescale            # pages of different sizes
 ```
 
 `format=json` response:
@@ -154,10 +196,19 @@ curl -s -F "file=@CTX000000001.teitok.xml" -F "width=827" -F "height=1170" \
   "source_kind": "surface",
   "target": { "width": 827, "height": 1170 },
   "scale": { "sx": 0.5, "sy": 0.500214 },
+  "pages": [
+    { "surface": "facs-1", "source": { "width": 1654, "height": 2339 }, "target": { "width": 827, "height": 1170 } },
+    { "surface": "facs-2", "source": { "width": 1654, "height": 2339 }, "target": { "width": 827, "height": 1170 } }
+  ],
   "boxes_rescaled": 37,
-  "name_tags_fixed": 12
+  "clamped": 0,
+  "name_tags_fixed": 0,
+  "schema_valid": true, "schema_errors": []
 }
 ```
+
+`source`, `target` and `scale` describe the first page; `pages` lists every page with a sized
+`<surface>`.
 
 ## How it works
 
@@ -170,13 +221,17 @@ to a canonical `text[,page_num,line_num]` CSV so stage 1 always runs on the same
 path and no input type bypasses a mandatory step.
 
 The runner's exit codes map to HTTP: `0`→200; `3` (keyword preflight)→retry with
-`yake`, else 503; `1` (empty run)/`2` (missing stage)/other→502; oversize→413;
-queue full→429.
+`yake`, else 503; `4` (keyword backend failed at runtime)→503; `5` (the TEITOK failed its
+output contract — a writer defect, "please report it")→500; `1` (empty run)/`2` (missing
+stage)/other→502; oversize→413; queue full→429; an unusable upload→422.
 
 UDPipe/NameTag models stay operator-pinned in `config_api.txt` and are surfaced
-read-only via `/info`. ALTO/page-image inputs are unusable for text-only API
-input, so TEITOK is produced **without** bounding boxes (a warning, not an
-error).
+read-only via `/info`. The layout comes with the upload ([Layout inputs](#layout-inputs)):
+an uploaded TEITOK file is written to `<workspace>/layout/flexiconv/<doc_id>.teitok.xml`
+(`TEITOK_FLEXICONV_DIR`, `FLEXICONV_ANNOTATE=true`), an `alto` part to
+`<workspace>/layout/alto/<doc_id>.alto.xml` (`INPUT_ALTO_DIR`); both are outside `in/`, which
+stage 1 reads as tables. Page images are never uploaded, so a surface keeps the size its
+layout declares.
 
 ## Configuration (environment)
 
@@ -247,8 +302,11 @@ monkeypatches the pipeline subprocess to drop fixture outputs into the
 workspace, then exercises the full HTTP contract via FastAPI `TestClient`,
 plus input normalization, `doc_id` sanitization, and exit-code→HTTP mapping.
 `tests/test_rescale.py` covers the `/rescale` transform and endpoint (including
-the non-well-formed `<name>…</n>` TEITOK quirk).
+the non-well-formed `<name>…</n>` TEITOK quirk and documents whose pages differ in size).
+`tests/test_service_layout_inputs.py` runs the real stage-1 and stage-4 scripts in the
+service's workspace (UDPipe/NameTag stood in for) with a TEITOK upload, a table with and
+without its ALTO, and the refused combinations.
 
 ```bash
-pytest -m "not slow" tests/test_api_service.py tests/test_rescale.py
+pytest -m "not slow" tests/test_api_service.py tests/test_rescale.py tests/test_service_layout_inputs.py
 ```

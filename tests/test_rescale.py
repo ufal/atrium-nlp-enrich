@@ -262,3 +262,77 @@ def test_schema_verdict_passes_for_a_conformant_document(test_client):
     body = r.json()
     assert body["schema_valid"] is True, body["schema_errors"]
     assert body["schema_errors"] == []
+
+
+# ── page by page (issue #38, C) ────────────────────────────────────────────────
+# Two pages of different size: every box scales by the surface of its own page (they all
+# used to take page 1's), every surface keeps its own proportions, boxes stay on the page.
+TWO_PAGES = """<TEI xmlnsoff="http://www.tei-c.org/ns/1.0"><teiHeader><revisionDesc>
+    <change when="2026-09-24" who="udpipe">parsed</change>
+    </revisionDesc></teiHeader>
+  <facsimile>
+    <surface id="facs-1" lrx="1000" lry="2000"><graphic url="d-1.png"/></surface>
+    <surface id="facs-2" lrx="2000" lry="1000"><graphic url="d-2.png"/></surface>
+  </facsimile>
+  <text><body>
+    <pb n="1" id="pb-1" facs="d-1.png" corresp="#facs-1" bbox="0 0 1000 2000"/>
+    <tok id="w-1" bbox="100 200 300 400">A</tok>
+    <pb n="2" id="pb-2" facs="d-2.png" corresp="#facs-2" bbox="0 0 2000 1000"/>
+    <tok id="w-2" bbox="100 200 300 400">B</tok>
+  </body></text>
+</TEI>"""
+
+
+def test_each_page_scales_by_its_own_surface():
+    res = rescale_teitok(TWO_PAGES, scale=0.5)
+    out = res["teitok_xml"]
+    assert 'lrx="500" lry="1000"' in out and 'lrx="1000" lry="500"' in out
+    assert 'bbox="0 0 500 1000"' in out and 'bbox="0 0 1000 500"' in out  # pb extents
+    assert out.count('bbox="50 100 150 200"') == 2
+    assert [p["target"] for p in res["pages"]] == [
+        {"width": 500, "height": 1000},
+        {"width": 1000, "height": 500},
+    ]
+    assert '<change when="' in out and 'type="rescaled"' in out
+
+
+def test_width_and_height_would_distort_pages_of_different_size():
+    with pytest.raises(RescaleError, match="differ in size"):
+        rescale_teitok(TWO_PAGES, 500, 1000)
+    with pytest.raises(RescaleError):
+        rescale_teitok(TWO_PAGES, 500, 1000, scale=0.5)
+    with pytest.raises(RescaleError):
+        rescale_teitok(TWO_PAGES)
+
+
+def test_page_to_one_size_uses_each_page(tmp_path):
+    same = TWO_PAGES.replace('lrx="2000" lry="1000"', 'lrx="1000" lry="2000"').replace(
+        'bbox="0 0 2000 1000"', 'bbox="0 0 1000 2000"'
+    )
+    out = rescale_teitok(same, 500, 1000)["teitok_xml"]
+    assert out.count('lrx="500" lry="1000"') == 2
+
+
+def test_boxes_are_clamped_to_their_page():
+    off_page = TWO_PAGES.replace(
+        'id="w-2" bbox="100 200 300 400"', 'id="w-2" bbox="100 200 2500 1400"'
+    )
+    res = rescale_teitok(off_page, scale=1)
+    assert 'bbox="100 200 2000 1000"' in res["teitok_xml"]
+    assert res["clamped"] == 2
+
+
+def test_endpoint_scale_form(test_client):
+    r = test_client.post(
+        "/rescale",
+        files={"file": ("d.teitok.xml", TWO_PAGES.encode("utf-8"), "application/xml")},
+        data={"scale": "0.5"},
+    )
+    assert r.status_code == 200, r.text
+    assert len(r.json()["pages"]) == 2
+    r = test_client.post(
+        "/rescale",
+        files={"file": ("d.teitok.xml", TWO_PAGES.encode("utf-8"), "application/xml")},
+        data={"width": "500", "height": "1000"},
+    )
+    assert r.status_code == 422 and "scale" in r.json()["detail"]

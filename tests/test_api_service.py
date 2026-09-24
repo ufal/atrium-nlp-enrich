@@ -315,6 +315,7 @@ def _make_stub(monkeypatch, returncode=0, doc_id="document"):
             # Mirrors EnrichmentResult: unset means the caller did not opt into the
             # document-JSON accretion flow, so the envelope omits the key (#10 J3).
             self.document_json_out = None
+            self.layout_source = "rows"  # no layout uploaded (issue #38, F)
 
     def _stub_enrich(*a, **k):
         if returncode == 3:
