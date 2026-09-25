@@ -132,9 +132,15 @@ def _build_page_scale_map(
     also divides by the PrintSpace size. Pages without a PrintSpace fall back to "page".
     Tier 1 = companion image, tier 2 = ``dpi`` (via ``bbox_scale.dpi_scale``), tier 3 =
     raw ALTO units.
+
+    Two silent fall-backs are reported on stderr, once per document, because they break
+    the overlay on the page image without breaking the file (issue #38, pitfalls R1/R2): an
+    image folder with no ``{doc_id}-{N}.<ext>`` for a page (its boxes stay unscaled and its
+    ``facs`` name is a guess), and tier 3 with a ``MeasurementUnit`` other than pixels.
     """
     printspace = bbox_origin == "printspace"
     scale_map = {}
+    missing_images, unreadable_images, raw_unit_pages = [], [], []
     for pg in alto_pages:
         idx = pg["idx"]
         try:
@@ -158,6 +164,10 @@ def _build_page_scale_map(
         if img_path:
             img_dims = _read_image_dimensions(img_path)
             img_ext = img_path.suffix  # Dynamically capture extension
+            if not img_dims:
+                unreadable_images.append(img_path.name)
+        elif image_dir:
+            missing_images.append(idx)
 
         # Tier 1: Companion image present
         if img_dims and ref_w > 0 and ref_h > 0:
@@ -177,6 +187,8 @@ def _build_page_scale_map(
 
         # Tier 3: Fallback
         else:
+            if (measurement_unit or "pixel").lower() != "pixel":
+                raw_unit_pages.append(idx)
             scale_map[idx] = (
                 1.0,
                 1.0,
@@ -186,6 +198,29 @@ def _build_page_scale_map(
                 dy,
                 img_ext,
             )
+    if missing_images:
+        shown = ", ".join(str(i) for i in missing_images[:5])
+        if len(missing_images) > 5:
+            shown += f" (+{len(missing_images) - 5} more)"
+        print(
+            f"  [Warn] {doc_id}: no page image in {image_dir} for page(s) {shown} (looked for "
+            f"{doc_id}-<N> with {', '.join(sorted({e.lower() for e in _IMAGE_EXTS}))}); those "
+            "pages keep unscaled layout coordinates and a guessed .png facs name",
+            file=sys.stderr,
+        )
+    if unreadable_images:
+        print(
+            f"  [Warn] {doc_id}: cannot read the pixel size of {', '.join(unreadable_images[:5])}"
+            " (PNG, JPEG and TIFF are read); those pages keep unscaled layout coordinates",
+            file=sys.stderr,
+        )
+    if raw_unit_pages:
+        print(
+            f"  [Warn] {doc_id}: ALTO MeasurementUnit is {measurement_unit} and there is no page "
+            "image or IMAGE_DPI, so bboxes stay in ALTO units, not image pixels (set "
+            "INPUT_PAGES_DIR or IMAGE_DPI)",
+            file=sys.stderr,
+        )
     return scale_map
 
 

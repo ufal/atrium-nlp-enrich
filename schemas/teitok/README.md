@@ -3,6 +3,14 @@
 This directory vendors the XSD schema that `.teitok.xml` files must satisfy
 before the pipeline packages them for the LINDAT dataset release.
 
+It is the *contract* only. What the format is built from (TEI P5, TEITOK's conventions, the
+annotation vocabularies), how each element is composed from the pipeline's inputs, which tools
+write or read it, and the pitfalls a valid file can still hit are in the main README:
+[The format and the standards it builds on](../../README.md#the-format-and-the-standards-it-builds-on),
+[How a TEITOK document is composed](../../README.md#how-a-teitok-document-is-composed),
+[Tools that generate or read TEITOK](../../README.md#tools-that-generate-or-read-teitok),
+[Pitfalls](../../README.md#pitfalls).
+
 ## Files
 
 | File         | Purpose                                                                                                            |

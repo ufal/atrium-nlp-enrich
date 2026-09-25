@@ -228,6 +228,73 @@ class TestSpatialAlignment:
         tok = next(root.iter("tok"))
         assert tok.get("bbox").startswith("50 50")
 
+    # Silent fall-backs made visible (issue #38, pitfalls R1/R2): the file stays valid, but
+    # its boxes no longer sit on the page image, so the writer says why on stderr.
+
+    def test_missing_page_image_is_reported(self, tmp_path, capsys):
+        conllu_file = _write_conllu(tmp_path, _ALTO_CONLLU, "test.conllu")
+        alto_file = Path(tmp_path) / "test.alto.xml"
+        alto_file.write_text(_ALTO_MARGIN_XML, encoding="utf-8")
+        pages = Path(tmp_path) / "pages"
+        pages.mkdir()
+        (pages / "test_page1.jpg").write_bytes(b"\xff\xd8")  # named another way
+        out = Path(tmp_path) / "test.teitok.xml"
+
+        write_teitok_merged(
+            str(conllu_file),
+            str(out),
+            alto_path=str(alto_file),
+            image_dir=str(pages),
+            doc_id="test",
+        )
+        err = capsys.readouterr().err
+        assert "test: no page image" in err and "test-<N>" in err and ".jpg" in err
+        root = ET.parse(str(out)).getroot()
+        assert next(root.iter("tok")).get("bbox") == "250 150 750 200"  # unscaled, as before
+        assert next(root.iter("graphic")).get("url") == "test-1.png"  # the guessed name
+
+    def test_unreadable_page_image_is_reported(self, tmp_path, capsys):
+        conllu_file = _write_conllu(tmp_path, _ALTO_CONLLU, "test.conllu")
+        alto_file = Path(tmp_path) / "test.alto.xml"
+        alto_file.write_text(_ALTO_MARGIN_XML, encoding="utf-8")
+        (Path(tmp_path) / "test-1.png").write_bytes(b"not a png header")
+        out = Path(tmp_path) / "test.teitok.xml"
+
+        write_teitok_merged(
+            str(conllu_file),
+            str(out),
+            alto_path=str(alto_file),
+            image_dir=str(tmp_path),
+            doc_id="test",
+        )
+        assert "cannot read the pixel size of test-1.png" in capsys.readouterr().err
+
+    def test_non_pixel_units_without_a_scale_are_reported(self, tmp_path, capsys):
+        conllu_file = _write_conllu(tmp_path, _ALTO_CONLLU, "test.conllu")
+        alto_file = Path(tmp_path) / "test.alto.xml"
+        alto_file.write_text(_ALTO_UNIT_XML.format(unit="mm10"), encoding="utf-8")
+        out = Path(tmp_path) / "test.teitok.xml"
+
+        write_teitok_merged(str(conllu_file), str(out), alto_path=str(alto_file))
+        err = capsys.readouterr().err
+        assert "MeasurementUnit is mm10" in err and "IMAGE_DPI" in err
+        assert next(ET.parse(str(out)).getroot().iter("tok")).get("bbox") == "100 100 600 150"
+
+    @pytest.mark.parametrize(
+        ("unit", "dpi"),
+        [("pixel", None), ("mm10", 300)],
+        ids=["pixels-need-no-scale", "dpi-scales-mm10"],
+    )
+    def test_scaled_or_pixel_layouts_stay_silent(self, tmp_path, capsys, unit, dpi):
+        conllu_file = _write_conllu(tmp_path, _ALTO_CONLLU, "test.conllu")
+        alto_file = Path(tmp_path) / "test.alto.xml"
+        alto_file.write_text(_ALTO_UNIT_XML.format(unit=unit), encoding="utf-8")
+        out = Path(tmp_path) / "test.teitok.xml"
+
+        write_teitok_merged(str(conllu_file), str(out), alto_path=str(alto_file), dpi=dpi)
+        err = capsys.readouterr().err
+        assert "MeasurementUnit is" not in err and "no page image" not in err
+
 
 def _eligible_tokens(conllu_path):
     tokens = []

@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines. 6 open issues (#6, #7, #10, #18, #19, #38); #8/#9/#11/#28/#35 closed. `test` HEAD `787b683` (2026-09-24; code as at `3654e73`) · **v0.21.0** (tagged at `ecdac10`, image published); round-4 change set (#38) implemented, not yet committed. TEITOK/flexi* work (#10/#38, formerly #9/#28) is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines. 6 open issues (#6, #7, #10, #18, #19, #38); #8/#9/#11/#28/#35 closed. `test` = `master` = `8003051` (2026-09-24, round 4 of the TEITOK work, CI green) · **v0.21.0** (tagged at `ecdac10`, image published); round 4 unreleased (suggested v0.22.0). TEITOK/flexi* work (#10/#38, formerly #9/#28) is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). #6's saga (April→September) is condensed below; `digests/6.digest.md` is the authoritative 13-phase record. Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -359,7 +359,7 @@ layout lose their pages before UDPipe, and their TEITOK has one `<pb>`. That is 
 tier-1 page image came in the second commit, which is why `teitok-schema.yml` was red on `8a1ded3` and green on
 `ecdac10`, runs 35974285161/35974294357). **v0.21.0** is tagged at `ecdac10` and its image published, so `:latest`
 now writes TEITOK format 2. The hub E2E has not run since (its last run was on 2026-09-23), so the first E2E on
-format 2 is still to come.
+format 2 is still to come. _(It ran later the same day, after the push: run 35990199050, green — see the next entry.)_
 * **Issues.** #9 and #28 closed; their exports left `issues/` in `3654e73`, and their digest+plan pairs are removed as
 for #35 (leftovers carried to #38 and the umbrella plan §7). **#38 "Annotate flexiconv-converted documents
 (FLEXICONV_ANNOTATE)"** opened as #10's action D: [`digests/38.digest.md`](digests/38.digest.md) ·
@@ -385,7 +385,7 @@ egress policy, so the TEITOK author's code stays the reference). Format 2 confor
 removed; the hub's misfiled `13.*` pair rewritten for the CAA paper.
 * **Dev logs refreshed:** new #38 pair; #10 pair; umbrella plan (progress, round-4 re-check U1–U4, findings R4-1…R4-10,
 decisions 5–7, Stage 7, roadmap). The work itself is Stage 7 of the umbrella plan.
-* **Stage 7 implemented (same day, delivered as files; not yet on `test`).** Pages come from the layout: stage 1 writes
+* **Stage 7 implemented (same day; delivered as files, then pushed as `8003051`).** Pages come from the layout: stage 1 writes
 `<doc>.rows.tsv`, stage 2 keeps it next to the CoNLL-U, `api_util/page_rows.py` places tokens by UDPipe's line-end
 marks; chunk starts are `# chunk_start = K`; the writer puts `<pb/>` inside `<s>`/`<name>` where a page changes (released
 CTX000000002 now has `pb-4` before `lb-4.1` "Soubor"), `pb@facs` only with a surface, `pb@n` labels, `pb@bbox`, no box on
@@ -397,7 +397,30 @@ NE re-split by page). Fast suite 1123 passed. Migration note in `CONTRIBUTING.md
 Same round in llm-enrich (re-vendor, filter, `xml_to_md`), alto-postprocess (`read_tei`) and the hub (`assert_teitok`,
 docs). The user applied the #9/#28 pair removal on `test` (`787b683`).
 
+
+## 2026-09-24 (later): round 4 on `test`; round 5 — format docs, writer warnings, dev logs
+
+* **Pushed.** Round 4 is `8003051` on `test` and `master` (all CI green; TEITOK Schema Contract 35989955130). The same
+change set landed in llm-enrich (`951db5e`), alto-postprocess (`fb72526`) and the hub (`eec0682`, which `v1` now
+points at). The hub's E2E pipeline smoke ran on it: run 35990199050, green, the first run on format 2 with the strict
+`assert_teitok` (CTX000000003, 1/1 references resolved); the digital-born smoke (35990199010) is green too. Not
+released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
+* **Round 5 (research + docs; one small code change).**
+  * `api_util/teitok_alto.py`: `_build_page_scale_map` warns on stderr, once per document, when `INPUT_PAGES_DIR` has
+    no image for a page, when an image's pixel size cannot be read, and when non-pixel ALTO units stay unscaled. Output
+    unchanged (samples byte-identical); new tests in `tests/test_teitok_preservation.py`; fast suite 1128 passed.
+  * `README.md` § "TEITOK XML": the standards the format builds on, how a file is composed from the line table,
+    UDPipe, NameTag and the layout, the tools that write or read TEITOK (with licences), and 14 pitfalls — each a
+    valid file that is wrong for its purpose (page-image names, ALTO units, print-space origin, stale files, page
+    numbering by ALTO order, …). `schemas/teitok/README.md` links them; `CONTRIBUTING.md` Unreleased row updated.
+  * Findings recorded in the umbrella plan (§3, round 5): alto-postprocess's ALTO splitter reads ALTO v3 only; the
+    writer numbers pages by their order in the ALTO file while alto-postprocess keys pages by `PHYSICAL_IMG_NR`; only
+    ALTO (and flexiconv's PAGE XML/hOCR conversions) bring boxes into TEITOK.
+  * Dev logs: #6 (releases since 09-06, milestone), #7 (mapping ready in `ner_types.py`), #10 and #38 (pushed, E2E
+    green, two #38 boxes can be ticked), #11 (cross-reference to #19), **#19 ready to close**, #18 (`annotation/` on
+    `test`, the 08-01 tool comparison), the umbrella plan. Milestones relabelled on 2026-09-08 are now in every pair.
+
 ---
-_Timeline index refreshed 2026-09-24 (round 4) against `test` HEAD `3654e73`, the `CONTRIBUTING.md` changelog, commit
+_Timeline index refreshed 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);
 this file is a derived reading aid in `agent_dev_logs/`._

@@ -25,7 +25,10 @@ lemmas & part-of-sentence tags, and keywords (KER) per page/document.
 ## Table of contents
 
 - [TEITOK XML — Unified Output Format](#teitok-xml--unified-output-format)
+  - [The format and the standards it builds on](#the-format-and-the-standards-it-builds-on)
+  - [How a TEITOK document is composed](#how-a-teitok-document-is-composed)
   - [Importing into a TEITOK project](#importing-into-a-teitok-project)
+  - [Tools that generate or read TEITOK](#tools-that-generate-or-read-teitok) · [Pitfalls](#pitfalls)
 - [ ⚙️ Setup](#-setup)
 - [Workflow Stages](#workflow-stages)
   - [Step 1: Prepare CSVs with texts from Page-Specific ALTOs](#-step-1-prepare-csvs-with-texts-from-page-specific-altos)
@@ -90,6 +93,31 @@ over keeping CoNLL-U, TSV, and image files in separate silos:
   and graphical elements (`<figure>`) preserve the physical layout of the original document.
 - 🔗 **Interoperability** — TEI/XML is a widely adopted standard in digital humanities; the files
   can be ingested by other TEI-aware tools (e.g. eXist-db, Oxygen XML Editor) without conversion.
+
+### The format and the standards it builds on
+
+TEITOK XML is not a schema of its own; it layers three sets of conventions, and this repository
+pins one profile of them:
+
+- **TEI P5** ([Guidelines](https://tei-c.org/guidelines/p5/)) gives the document skeleton:
+  `teiHeader` (file, encoding and revision description), `facsimile`/`surface`/`graphic` for the
+  page images, `text`/`body`/`div` for text blocks, `pb`/`lb` for page and line beginnings, `s`
+  for sentences, `name` for named entities and `figure` for graphical regions.
+- **TEITOK** (the corpus platform, [teitok.org](https://www.teitok.org/)) adds the tokenized
+  layer it searches and displays: every token is a `<tok>` element inline in the running text, a
+  multi-word token keeps its surface form with one `<dtok>` per syntactic word, the annotation
+  lives in token attributes, and any element can carry `@bbox="x1 y1 x2 y2"` in the pixels of its
+  page image. TEITOK files carry no TEI namespace (`xmlnsoff` keeps the URI without declaring it)
+  and use plain `@id`s.
+- **Annotation vocabularies** are those of the tools that produced them: Universal Dependencies
+  (CoNLL-U) for `upos`, `feats`, `deprel` and `head`; the UDPipe model's own tag set for `xpos`;
+  the NameTag model's entity labels (OntoNotes 5 by default, CNEC 2.0, or the archaeological types
+  of #7) in `@onto`/`@cnec`/`@archaeo`, mapped to four coarse types in `@type` (`PER`, `ORG`,
+  `LOC`, `MISC`) by [api_util/ner_types.py](api_util/ner_types.py) 📎; a label no table knows
+  becomes `type="MISC"` with the raw label in `@label`.
+- **Format 2** is this repository's profile: [schemas/teitok/teitok.xsd](schemas/teitok/teitok.xsd) 📎
+  plus the contract checks below, stamped `version="teitok-2"` in `appInfo`. The hub's document
+  record ([atrium_document.schema.json](atrium_document.schema.json) 📎) points into it by id.
 
 ### TEITOK XML structure at a glance
 
@@ -174,6 +202,33 @@ TEITOK-conformant.
 > delete `UDP_NE/<doc>/<doc>.csv` and run stage 4 with `REGENERATE_TEITOK=true`. In-place document
 > records keep entities under their old pages: re-seed them from the record before nlp-enrich.
 
+### How a TEITOK document is composed
+
+Nothing in the pipeline edits TEITOK in place. Stage 4 builds each file in one pass from the
+formats the earlier stages leave on disk, so every element can be traced to one of them:
+
+| Source (stage)                                                                                                                                                       | Format on disk                                                                                                                           | Becomes in the TEITOK file                                                                                                                                                                                                                                        |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Line table: alto-postprocess `DOC_LINE_CATEG/<doc>.csv`, or any CSV/XLSX with the same columns, or the rows of a flexiconv conversion (stage 1, `api_1_manifest.sh`) | `file`, `page_num`, `line_num`, `text` → `TEMP_TXT_DIR/<doc>.txt` (one line per row) and `<doc>.rows.tsv` (page, line, page label, text) | the text itself; the pages (`<pb n>` = the table's `page_label`, when it has that column) and lines of every token; without a layout, also the `<pb>`/`<lb>` structure                                                                                            |
+| UDPipe 2 (stage 2, `api_2_udp.sh`)                                                                                                                                   | `UDP/<doc>.conllu` (+ the rows file kept beside it; `# chunk_start` marks UDPipe's ~900-word request chunks, which are not pages)        | `<s id text>` per sentence; `<tok>` per token with `lemma`, `upos`, `xpos`, `feats`, `head`, `deprel`, `ord`; `<dtok>` for the words of a multi-word token; `SpaceAfter=No` as no whitespace (and `join="right"`)                                                 |
+| NameTag 3 (stage 3, `api_3_nt.sh`)                                                                                                                                   | IOB TSV per page, `NE/<doc>/<doc>-P.tsv`, merged by stage 4 into `UDP_NE/<doc>/<doc>.conllu`                                             | `<name id type sameAs>` around the entity's tokens, the raw label in `@onto`/`@cnec`/`@archaeo`                                                                                                                                                                   |
+| Layout (stage 4, `api_4_stats.sh`): the ALTO file in `INPUT_ALTO_DIR`; else a flexiconv conversion in `TEITOK_FLEXICONV_DIR` (`FLEXICONV_ANNOTATE=true`); else none  | ALTO `Page`/`PrintSpace`/`TextBlock`/`TextLine`/`String` (+ `Illustration`, `GraphicalElement`); or TEITOK `pb`/`lb`/`tok@bbox`          | `<facsimile>` with one `<surface lrx lry>` and `<graphic url>` per page; `<pb n id facs corresp bbox>`; `<div type="TextBlock" bbox>`; `<lb bbox>`; `<figure type bbox>`; `@bbox` on every token aligned to an OCR string (tokens are matched to strings by text) |
+| Page images (`INPUT_PAGES_DIR`), or `IMAGE_DPI`                                                                                                                      | PNG, JPEG or TIFF named `<doc_id>-<N>.<ext>`                                                                                             | the scale from layout units to image pixels, `<surface lrx lry>` and the `graphic@url`/`pb@facs` names                                                                                                                                                            |
+| Provenance                                                                                                                                                           | ALTO `Description`, the models in `config_api.txt`, the run date                                                                         | `teiHeader`: `note[@n="orgfile"]`, `appInfo` (writer + format, UDPipe/NameTag models, OCR software), `revisionDesc/change` (`converted`, `tagged`/`parsed`, `ner`)                                                                                                |
+| Document record (`--document-json`)                                                                                                                                  | `atrium_document` JSON                                                                                                                   | nothing: the record points into the file (`entities[].teitok_ref` = `n-N`, `pages[].teitok_surface` = `facs-P`)                                                                                                                                                   |
+
+The line table can come from any input alto-postprocess reads: ALTO, the other OCR formats (PAGE
+XML, hOCR, ABBYY FineReader XML, DjVuXML, Tesseract TSV, OCR JSON), PDF, office and text files (its
+[input formats reference](https://github.com/ufal/atrium-alto-postprocess/blob/master/docs/text_inputs.md#formats-and-their-standards)).
+For every input but ALTO the table carries text and pages only. The boxes then come from a flexiconv
+conversion of the same document (PAGE XML, hOCR), or there are none.
+
+The writer is [api_util/teitok_alto.py](api_util/teitok_alto.py) 📎 (`write_teitok_merged`, called by
+`summarize_nt_udp.py`); the gate is [api_util/validate_teitok_xml.py](api_util/validate_teitok_xml.py) 📎
+(`contract` profile). Keywords, TEATER topics, page categories and line quality are not written
+into TEITOK: they live in the document record (the three-format decision recorded on
+ufal/atrium-project#24, 2026-08-01).
+
 ### Importing into a TEITOK project
 
 The files follow TEITOK's conventions, but a TEITOK project has a few of its own
@@ -204,6 +259,61 @@ checked by hand on the committed samples, 2026-09-24):
 
 The two ❌ are upstream defects, recorded in issue #38 for an upstream report; `@ord` gives each word's
 sentence-local number for a reader that needs it.
+
+### Tools that generate or read TEITOK
+
+| Tool                                                            | Role here                                                                                                                                    | Licence                         | Notes                                                                                                                                                                                  |
+|-----------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| this pipeline's writer (`api_util/teitok_alto.py`)              | **generates** format 2 from the line table, CoNLL-U, NameTag output and a layout                                                             | MIT                             | the only writer in ATRIUM                                                                                                                                                              |
+| [flexiconv](https://github.com/ufal/flexiconv) (pinned v0.3.10) | **converts** PDF, DOCX, ODT, RTF, HTML, Markdown, TXT, EPUB, PAGE XML, hOCR, ALTO, TEI … into TEITOK (`api_flexiconv.sh`); reads TEITOK back | GPL-3.0-or-later                | no `<s>`, no annotation; boxes only from layout formats (PAGE XML, hOCR, ALTO; PDF only in its `pdf=bbox` mode, which needs Poppler's `pdftotext`); CLI only, never in a service image |
+| [flexipipe](https://github.com/ufal/flexipipe)                  | a UD pipeline (UDPipe and other backends) that can write and read TEITOK; not used                                                           | MIT                             | its Python TEITOK loader misreads `@head` (table above)                                                                                                                                |
+| [xmltokenizer](https://github.com/ufal/xmltokenizer)            | tokenizes existing TEI/XML inline, keeping every element and character; not used (our text comes from OCR lines, not from existing markup)   | MIT                             | the library flexipipe uses for TEI input                                                                                                                                               |
+| [teitok-tools](https://github.com/ufal/teitok-tools)            | the TEITOK platform's scripts, e.g. `udpipe2teitok.pl` (UDPipe-parsed TEITOK from raw text); used only to check conventions                  | none declared in the repository | what a project expects is under [Importing into a TEITOK project](#importing-into-a-teitok-project)                                                                                    |
+| [flexicorp](https://github.com/ufal/flexicorp)                  | corpus query interface over TEITOK XML, CQP/CWB, Manatee, BlackLab …; a possible consumer                                                    | none declared in the repository | —                                                                                                                                                                                      |
+| atrium-llm-enrich `api_util/teitok_read.py`, `xml_to_md.py`     | **reads** TEITOK as line-level input and renders it to annotated Markdown for the LLM                                                        | MIT                             | `teitok_read.py` and `flexiconv_convert.py` are vendored from here, pinned by hash                                                                                                     |
+| atrium-alto-postprocess `text_formats.read_tei`                 | **reads** TEITOK (and TEI) as a text input: every `<pb/>` a page, `<lb/>` lines                                                              | MIT                             | —                                                                                                                                                                                      |
+| atrium-project `tools/e2e/e2e_assert.py --teitok-dir`           | **checks** that a document record's references resolve to the right elements and pages                                                       | none declared in the repository | strict for `teitok-2` files                                                                                                                                                            |
+
+### Pitfalls
+
+Each of these leaves a *valid* file that is wrong for its purpose — showing the text over the
+page image — so the gate cannot catch them:
+
+1. **Page-image names.** Images must be `<doc_id>-<N>.<png|jpg|jpeg|tif|tiff>` in
+   `INPUT_PAGES_DIR` (a converted file's own `pb@facs` names also work). A page without one keeps
+   its boxes in layout units and gets a guessed `<doc_id>-<N>.png` name; the writer warns
+   (`[Warn] <doc>: no page image …`).
+2. **ALTO units.** ALTO in `mm10` or `inch1200` needs `INPUT_PAGES_DIR` or `IMAGE_DPI`; without
+   either the boxes stay in ALTO units (warned: `MeasurementUnit is mm10 …`).
+3. **Origin.** `BBOX_ORIGIN=printspace` is only for page images cropped to the print space.
+4. **Rescaling.** `/rescale` and `fix_teitok_bboxes.py` must target the size of the image the
+   viewer shows, page by page.
+5. **Stale files.** A resumed run keeps existing `.teitok.xml` files (`REGENERATE_TEITOK=false`),
+   and files written before `8003051` (the page fix, after v0.21.0) carry the same `teitok-2`
+   stamp: tell them apart by `<change type="converted" when="…">`, or regenerate everything.
+6. **Two readers.** When the text comes from one reader (e.g. alto-postprocess's table) and the
+   layout from another (flexiconv), tokens get boxes only as far as the two agree; below 90 %
+   aligned tokens the writer warns, and unaligned tokens have no box.
+7. **flexiconv PDFs** carry no boxes and no page images by default, so no facsimile.
+8. **Licence.** flexiconv is GPL-3.0-or-later: it runs as a CLI step; the REST service accepts its
+   `.teitok.xml` output but never runs it.
+9. **Vendored readers.** After changing `api_util/teitok_read.py` or `api_util/flexiconv_convert.py`,
+   re-vendor them into atrium-llm-enrich (its `tests/test_vendored_teitok_parity.py` pins them).
+10. **Upstream readers** lose `<dtok>` words (flexiconv) or misplace heads (flexipipe) — see the
+    table in [Importing into a TEITOK project](#importing-into-a-teitok-project).
+11. **No TEI namespace.** Tools that expect `http://www.tei-c.org/ns/1.0` need it added
+    (`xmlnsoff` → `xmlns`) on their copy.
+12. **New NE models.** Add their labels to `api_util/ner_types.py`; otherwise every entity is
+    `type="MISC"`.
+13. **Record references.** `lines[].teitok_ref` is not written yet; the hub E2E checks references
+    strictly only for `teitok-2` files.
+14. **Page numbers.** The writer numbers pages by their order in the ALTO file (`pb-1`, `facs-1`,
+    the page-image name `<doc_id>-1`, the record's `pages[].teitok_surface`), and `pb@n` is the
+    table's `page_label`, else that number. alto-postprocess's ALTO methods number pages by
+    `PHYSICAL_IMG_NR`, and its `DOC_LINE_CATEG` table has no `page_label`. When an ALTO file's
+    `PHYSICAL_IMG_NR`s are not 1, 2, 3 … in order, the TEITOK file shows the ordinals, and the
+    record gets this repo's `pages[]` rows under the ordinals beside alto-postprocess's rows under
+    the ALTO numbers. Name page images by the ordinal.
 
 ---
 
@@ -551,6 +661,13 @@ the reference extent to it: `sx = image width / Page WIDTH` (`/ PrintSpace WIDTH
 * **User-set DPI (Tier 2):** If no image is available, scale is derived directly from the ALTO `<MeasurementUnit>`
 (`inch1200`, `mm10`, or `pixel`) mapped against the `IMAGE_DPI` and `ALTO_DPI` settings.
 * **Native Processing (Fallback):** If no image and no DPI is provided, the scale factor is `1.0`.
+
+Two of these fall-backs are easy to miss, because the file stays valid, so the writer reports them
+on stderr (once per document): a page with no `<doc_id>-<N>.<png|jpg|jpeg|tif|tiff>` in the image
+folder (`[Warn] <doc>: no page image in … for page(s) …` — its boxes stay unscaled and its `facs`
+name is a guess, e.g. page 2 in the worked example above), and tier 3 with an ALTO
+`MeasurementUnit` other than `pixel` (`MeasurementUnit is mm10 …` — the boxes are then in
+1/10 mm, not pixels; set `INPUT_PAGES_DIR` or `IMAGE_DPI`).
 
 In every tier `<surface lrx lry>` is the extent of the space the bboxes are measured in, so
 `POST /rescale` and `fix_teitok_bboxes.py` can rescale a document to any other image size.
@@ -931,6 +1048,10 @@ what the source contains:
 
 So YAKE/KeyBERT keywords and LLM enrichment work on it. The lemma-based `legacy` keyword method
 does not, because there are no lemmas.
+
+A PDF converted with flexiconv's default reader (`pdf=smart`) has no word boxes and no page
+images, so its TEITOK has no facsimile; flexiconv's `pdf=bbox` reader gives word boxes but needs
+Poppler's `pdftotext` (not wired into `api_flexiconv.sh`). See also [Pitfalls](#pitfalls) 6–8.
 
 ### How to use it in this pipeline
 
