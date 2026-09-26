@@ -10,6 +10,14 @@
 > [#9](https://github.com/ufal/atrium-nlp-enrich/issues/9) · [#28](https://github.com/ufal/atrium-nlp-enrich/issues/28).
 > Findings marked ▶ were reproduced by running the code (scratch environment, repos untouched)._
 
+> **2026-09-26 — AMČR baseline ([atrium-project#67](https://github.com/ufal/atrium-project/issues/67)).** Decided by
+> motyc (AMČR) in #67 and on #10/#38 (and llm-enrich#10), adopted by ÚFAL: #10 and #38 close; **the flexiconv route
+> stays off the AMČR production chain** (GPL-3.0, CLI only); the line-table input AMČR sends is `/enrich` with a table
+> plus its ALTO, with Trash and Empty lines left out. Two stages are added for the pilot — **Stage 8**, TEITOK layout
+> from the record's `lines[].bbox` + `pages[].canvas` for born-digital documents, and **Stage 9**, the nlp-enrich
+> `keywords` block (#67 R5) — both in §5. Decision 2's xmltokenizer path and the roadmap's flexipipe/xmltokenizer and
+> JSON→TEITOK items are marked off the production chain or moved.
+
 ## 0. Progress (updated 2026-09-24, round 4)
 
 Stages 1–6 are on `test` and **released in v0.21.0** (tag at `ecdac10`, 2026-09-24; the tag's Docker
@@ -190,7 +198,8 @@ tokens, and flexipipe is not a safe *reader* of format 2 until its id handling i
 1. **Bbox origin: page origin by default** (upstream). `BBOX_ORIGIN=page|printspace`; under `printspace`,
    `<surface lrx/lry>` = PrintSpace size and tier-1 scales against PrintSpace. Coordinates never negative.
 2. **flexiconv output: reader fallback now** (`<lb/>` lines for layout formats, block text otherwise);
-   text-faithful annotation via xmltokenizer + UDPipe/NameTag later, opt-in, as a new issue.
+   text-faithful annotation via xmltokenizer + UDPipe/NameTag later, opt-in, as a new issue. _(2026-09-26: the flexiconv
+   route is off the AMČR production chain; the xmltokenizer follow-up is ⏸️ after the pilot, if at all.)_
 3. **Ids: TEITOK-native** — `tok` `w-N` (document-global), `dtok` `w-N.K`, `s` `s-N`, `name` `n-N` (+`sameAs`),
    `surface` `facs-N`, `pb` `pb-N`, `lb` `lb-P.L`, `div` `b-P.K`, `figure` `fig-P.K`, plus `ord`. `teitok_ref` /
    `teitok_surface` carry these local ids (`n-5`, `s-3`, `facs-1`); the `atrium_document` schema types them as plain
@@ -300,6 +309,42 @@ import into a TEITOK project as `xmlfiles/<id>.xml`; flexiconv section rewrite),
 `para_config.txt`, `CONTRIBUTING.md`, `schemas/teitok/README.md`, `.github/workflows/teitok-schema.yml`;
 llm-enrich: `README.md`, `CONTRIBUTING.md`, `para_config.txt`; hub: Stage 5.
 
+### Stage 8 — TEITOK layout from the record (born-digital documents; AMČR pilot, 2026-09-26)
+
+*Why:* a born-digital document has no ALTO, and flexiconv is off the production chain, so today it gets text-only
+TEITOK (no `<surface>`, no boxes; `teitok_alto.py:1300-1323`). Its record, written by llm-enrich's `digital-convert`,
+already carries `lines[].bbox` and `pages[].canvas`. Requested by motyc on llm-enrich#10 (§12 W5 there).
+- **A third layout source.** `api_util/doc_identity.py` `layout_source()` (`:95-105`) looks for `{doc}.alto.xml`,
+  then a flexiconv file; add the record — used when the request (or `--document-json`) carries a record with
+  positioned `lines[]` and no ALTO or TEITOK is given. `layout_source` reports `record`.
+- **An adapter, not a second writer:** `_parse_record_layout(record)` returns the same page/line/box structure
+  `_parse_alto()` (`teitok_alto.py:352`) returns, so alignment (`_align_tokens_to_alto`), page resolution and the
+  writer run unchanged. Units: `pages[].canvas.unit` → the writer's coordinate system (`_unit_per_inch`, `:231`);
+  `BBOX_ORIGIN=page`; no page images, so no `facs` is invented (decision C of #38).
+- **Rows:** the line table's `page_num`/`line_num` match `lines[].page`/`line`; a table without a record keeps the
+  coordinate-free layout (decision 5).
+- **Tests:** fixture records from llm-enrich's `tests/fixtures/digital/make_fixtures.py` (`two_column.pdf`,
+  `rich.docx`) → TEITOK with `<surface>` and token boxes; `validate_teitok_xml.py` default profile passes;
+  `entities[].bbox` is the union of the entity's token boxes, as for ALTO.
+- *Done when* (David's): **a born-digital PDF gets a TEITOK file with boxes.** A DOCX, which has no geometry, gets
+  pages but no boxes — stated in the README.
+
+### Stage 9 — the `keywords` block in the record ([atrium-project#67](https://github.com/ufal/atrium-project/issues/67) R5)
+
+*Why:* AMČR wants the **statistical** keywords — KeyBERT by default, YAKE selectable — with their method and score, in
+the record, *next to* the **controlled** keywords llm-enrich writes (`enrichment.items[].extracted_keywords_*`).
+Today they reach only the API response and the CSV (`service/api.py:205-217`, `enrichment.py:711-733`); the hook
+writes `entities` and `pages.teitok_surface` only (`api_util/document_hook.py:343,361`); the schema has no such
+block and `BLOCK_OWNERS` no owner.
+- **Hub (one additive schema round with `source.sha512`, #67 plan §G):** a top-level `keywords` block —
+  `{method, method_version, params, items: [{keyword, score}]}` — owned by `nlp-enrich` in `BLOCK_OWNERS`, with a
+  `POST_FREEZE_CHANGES` register entry and a changelog section; re-vendored here.
+- **Here:** the hook writes it from the run's keyword output; the API default (`api.py:51`, KeyBERT) and the CLI
+  default (`run_pipeline.py:623`, YAKE) are aligned on **KeyBERT**; `DEFAULT_KW_METHOD`/`-m yake` keep YAKE
+  selectable; the legacy KER method, if run, is recorded as such.
+- *Done when (proposed; #67 gives none):* a record from `/enrich` carries `keywords` with method and scores, valid
+  under the schema, and the hub E2E asserts it.
+
 ## 6. Verification (offline)
 
 1. Stage 1 — `pytest tests/test_docs.py`; no foreign plan left in `plans/10.plan.md`.
@@ -320,6 +365,8 @@ llm-enrich: `README.md`, `CONTRIBUTING.md`, `para_config.txt`; hub: Stage 5.
    one document; `/enrich` accepts a `.teitok.xml` and reports `layout_source`; `--with-flexiconv` without flexiconv fails.
 
 ## 7. Roadmap (updated 2026-09-24, round 4)
+
+_2026-09-26 (AMČR, #67): v0.22.0 is tagged (the "user" row's first item); the flexipipe/xmltokenizer alternative is off the production chain; the JSON → TEITOK back-projection moves to llm-enrich's "Deferred record extensions" issue; Stages 8 and 9 above are the pilot's items._
 
 | When                                  | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Owner        |
 |---------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|

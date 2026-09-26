@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines. 6 open issues (#6, #7, #10, #18, #19, #38); #8/#9/#11/#28/#35 closed. `test` = `master` = `8003051` (2026-09-24, round 4 of the TEITOK work, CI green) · **v0.21.0** (tagged at `ecdac10`, image published); round 4 unreleased (suggested v0.22.0). TEITOK/flexi* work (#10/#38, formerly #9/#28) is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines. 5 open issues (#6, #7, #10, #18, #38); #8/#9/#11/#19/#28/#35 closed. AMČR baseline (atrium-project#67, 2026-09-26): #10, #38 close · #6, #7, #18 defer; the flexiconv route stays off the AMČR production chain. `test` = `40c48f0` (2026-09-26: the `doc-schema-v1` freeze files) · **v0.22.0** (2026-09-25). TEITOK/flexi* work (#10/#38, formerly #9/#28) is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). #6's saga (April→September) is condensed below; `digests/6.digest.md` is the authoritative 13-phase record. Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -420,7 +420,33 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
     green, two #38 boxes can be ticked), #11 (cross-reference to #19), **#19 ready to close**, #18 (`annotation/` on
     `test`, the 08-01 tool comparison), the umbrella plan. Milestones relabelled on 2026-09-08 are now in every pair.
 
+## 2026-09-26: AMČR baseline (atrium-project#67) — every digest+plan pair refreshed
+
+* **What arrived (motyc, 2026-09-26):** [atrium-project#67](https://github.com/ufal/atrium-project/issues/67), AMČR's
+  bucket for every open issue — close #10 and #38 (delivered, and kept off the production chain), #19 already closed
+  (*"we stay with the OntoNotes model"*), defer #6, #7, #18 — plus #10 16:25 (close with or without the report) and #38
+  16:26 (`/enrich` with a table and its ALTO is the line-table input AMČR will send, Trash and Empty lines left out).
+  #67 also asks for a nlp-enrich **`keywords` block** (R5) and **nlp-enrich without its `llm` stage and vocabulary
+  code** (R7). **Adopted by ÚFAL as binding.**
+* **Also on the threads:** #38 — K4TEL 2026-09-25 05:34 (round 4 on `test`, writer warnings, README § TEITOK XML),
+  11:43 (re-vendor `d300d24`; Pitfall 14 for Tesseract ALTO) and 2026-09-26 08:05 (*verification complete*: the live
+  flexiconv → UDPipe → NameTag → TEITOK run and service parity — #38's G done); #10 — K4TEL 2026-09-25 05:35. #19 —
+  K4TEL's 2026-09-25 close-out (the `NER_onto_VS_cnec.zip` evidence; OntoNotes labels as `@onto` in TEITOK format 2);
+  closed 2026-09-26, its log removed (`40c48f0`).
+* **Dev logs:**
+  * `10.*`, `38.*` 🔒 **close-out** — #10's report gate optional; #38's G marked done; AMČR's line-table contract
+    recorded (the NER path does no category filtering itself, so Trash/Empty filtering is AMČR's).
+  * `6.*`, `7.*`, `18.*` ⏸️ **defer** — with the #67 R7 re-framing: #6's LLM half becomes llm-enrich's and its
+    vocabulary one hub artifact (§7's mirror superseded); #7's and #18's LLM pre-annotation go through llm-enrich's
+    engine.
+  * `plans/teitok_conformance_plan.md` — **Stage 8** (TEITOK layout from the record's `lines[].bbox` +
+    `pages[].canvas`, for born-digital documents; llm-enrich#10 §12 W5) and **Stage 9** (the `keywords` block, #67 R5);
+    Decision 2's xmltokenizer path and the roadmap's flexipipe/xmltokenizer item marked off the production chain.
+* **Pairs to remove** (issues closed): `11.*` (06-28), `19.*` (2026-09-26).
+
+  **Not pushed: files delivered in chat.**
+
 ---
-_Timeline index refreshed 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
+_Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);
 this file is a derived reading aid in `agent_dev_logs/`._
