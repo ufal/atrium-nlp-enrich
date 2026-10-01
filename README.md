@@ -2,25 +2,28 @@
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.8+-blue.svg" title="Python Version"></a>
   <a href="https://lindat.mff.cuni.cz/services/udpipe/api-reference.php"><img src="https://img.shields.io/badge/API-UDPipe%202-0055A4.svg" title="UDPipe 2 API (Lindat)"></a>
   <a href="https://lindat.mff.cuni.cz/services/nametag/api-reference.php"><img src="https://img.shields.io/badge/API-NameTag%203-0055A4.svg" title="NameTag 3 API (Lindat)"></a>
-  <a href="https://github.com/ufal/ker"><img src="https://img.shields.io/badge/dep-KER-lightgrey.svg" title="KER Keyword Extraction"></a>
   <a href="https://opensource.org/license/mit/"><img src="https://img.shields.io/github/license/ufal/atrium-nlp-enrich" title="MIT License"></a>
   <a href="https://atrium-research.eu/"><img src="https://img.shields.io/badge/funded%20by-ATRIUM-8A2BE2.svg" title="ATRIUM Project"></a>
 </p>
 
 ---
 
-# 📦 ALTO XML Files Postprocessing Pipeline - NLP Enrichment of text
+# 📦 NLP Enrichment of text: UDPipe, NameTag and TEITOK
 
 This project provides a workflow for processing text stored in CSV (XLSX) with NLP services. It takes ordered text
 and extracts high-level linguistic features like Named Entities (NER) with tags and CONLL-U files with
-lemmas & part-of-sentence tags, and keywords (KER) per page/document.
+lemmas & part-of-speech tags, and writes them, with the page layout, as one TEITOK XML file per document.
 
 ---
 
 > [!CAUTION]
-> This repository is a follow-up to main ALTO XML postprocessing [GitHub repository](https://github.com/ufal/atrium-alto-postprocess),
-> a part of ATRIUM project dedicated to ALTO-2-TXT workflow and collection of statistics and from text content
-> of the documents (text and bounding boxes ordered by LayoutReader) recorder in CSV (XLSX) tables as a `text` column [^2].
+> This repository is a follow-up to the OCR-postprocessing [GitHub repository](https://github.com/ufal/atrium-ocr-postprocess),
+> a part of ATRIUM project dedicated to the ALTO-2-TXT workflow and the collection of statistics from the text content
+> of the documents (text and bounding boxes ordered by LayoutReader) recorded in CSV (XLSX) tables as a `text` column [^2].
+>
+> **Keyword extraction is no longer part of this repository** (since v1.0.0). It moved to
+> [atrium-keyword-extract](https://github.com/ufal/atrium-keyword-extract) (statistical keywords, `POST /extract_keywords`).
+> The LLM semantic-enrichment code left with the `atrium-llm-enrich` split (see [Where things went](#where-things-went)).
 
 ## Table of contents
 
@@ -40,10 +43,7 @@ lemmas & part-of-sentence tags, and keywords (KER) per page/document.
       - [III. NameTag Processing (NER tags)](#3-nametag-processing-ner-tags)
       - [IV. Generate Statistics](#4-generate-statistics)
 - [Output Structure](#output-structure)
-- [EXTRA: Extract Keywords (KER / YAKE / KeyBERT)](#extra-extract-keywords-ker--yake--keybert)
 - [EXTRA: Converting Other Input Formats with flexiconv](#extra-converting-other-input-formats-with-flexiconv)
-- [EXTRA: LLM Semantic Enrichment (Vocabulary Mapping)](#extra-llm-semantic-enrichment-vocabulary-mapping)
-  - [Reviewing the vocabulary](#reviewing-the-vocabulary) · runbooks: [vocabulary](data_samples/vocab/RUNBOOK.md) · [prompt & output](prompts/RUNBOOK.md)
 - [EXTRA: REST API Service](#extra-rest-api-service)
 - [Paradata Logs](#paradata-logs)
   - [`<OUTPUT_DIR>/paradata/` — structured run logs 📂](#output_dirparadata--structured-run-logs-)
@@ -51,6 +51,7 @@ lemmas & part-of-sentence tags, and keywords (KER) per page/document.
   - [`TEMP/` — intermediate working files 📂](#temp--intermediate-working-files-)
   - [Document record schema 📑](#document-record-schema-)
   - [One-command pipeline run (`run_pipeline.py`)](#one-command-pipeline-run-run_pipelinepy)
+- [Where things went](#where-things-went)
 - [Acknowledgements](#acknowledgements-)
 
 ## TEITOK XML — Unified Output Format
@@ -212,17 +213,17 @@ it touches only the header and `pb/@ana`):
 
 | Source (stage)                                                                                                                                                       | Format on disk                                                                                                                           | Becomes in the TEITOK file                                                                                                                                                                                                                                        |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Line table: alto-postprocess `DOC_LINE_CATEG/<doc>.csv`, or any CSV/XLSX with the same columns, or the rows of a flexiconv conversion (stage 1, `api_1_manifest.sh`) | `file`, `page_num`, `line_num`, `text` → `TEMP_TXT_DIR/<doc>.txt` (one line per row) and `<doc>.rows.tsv` (page, line, page label, text) | the text itself; the pages (`<pb n>` = the table's `page_label`, when it has that column) and lines of every token; without a layout, also the `<pb>`/`<lb>` structure                                                                                            |
+| Line table: ocr-postprocess `DOC_LINE_CATEG/<doc>.csv`, or any CSV/XLSX with the same columns, or the rows of a flexiconv conversion (stage 1, `api_1_manifest.sh`) | `file`, `page_num`, `line_num`, `text` → `TEMP_TXT_DIR/<doc>.txt` (one line per row) and `<doc>.rows.tsv` (page, line, page label, text) | the text itself; the pages (`<pb n>` = the table's `page_label`, when it has that column) and lines of every token; without a layout, also the `<pb>`/`<lb>` structure                                                                                            |
 | UDPipe 2 (stage 2, `api_2_udp.sh`)                                                                                                                                   | `UDP/<doc>.conllu` (+ the rows file kept beside it; `# chunk_start` marks UDPipe's ~900-word request chunks, which are not pages)        | `<s id text>` per sentence; `<tok>` per token with `lemma`, `upos`, `xpos`, `feats`, `head`, `deprel`, `ord`; `<dtok>` for the words of a multi-word token; `SpaceAfter=No` as no whitespace (and `join="right"`)                                                 |
 | NameTag 3 (stage 3, `api_3_nt.sh`)                                                                                                                                   | IOB TSV per page, `NE/<doc>/<doc>-P.tsv`, merged by stage 4 into `UDP_NE/<doc>/<doc>.conllu`                                             | `<name id type sameAs>` around the entity's tokens, the raw label in `@onto`/`@cnec`/`@archaeo`                                                                                                                                                                   |
 | Layout (stage 4, `api_4_stats.sh`): the ALTO file in `INPUT_ALTO_DIR`; else a flexiconv conversion in `TEITOK_FLEXICONV_DIR` (`FLEXICONV_ANNOTATE=true`); else none  | ALTO `Page`/`PrintSpace`/`TextBlock`/`TextLine`/`String` (+ `Illustration`, `GraphicalElement`); or TEITOK `pb`/`lb`/`tok@bbox`          | `<facsimile>` with one `<surface lrx lry>` and `<graphic url>` per page; `<pb n id facs corresp bbox>`; `<div type="TextBlock" bbox>`; `<lb bbox>`; `<figure type bbox>`; `@bbox` on every token aligned to an OCR string (tokens are matched to strings by text) |
 | Page images (`INPUT_PAGES_DIR`), or `IMAGE_DPI`                                                                                                                      | PNG, JPEG or TIFF named `<doc_id>-<N>.<ext>`                                                                                             | the scale from layout units to image pixels, `<surface lrx lry>` and the `graphic@url`/`pb@facs` names                                                                                                                                                            |
 | Provenance                                                                                                                                                           | ALTO `Description`, the models in `config_api.txt`, the run date                                                                         | `teiHeader`: `note[@n="orgfile"]`, `appInfo` (writer + format, UDPipe/NameTag models, OCR software), `revisionDesc/change` (`converted`, `tagged`/`parsed`, `ner`)                                                                                                |
-| Document record (`--document-json`)                                                                                                                                  | `atrium_document` JSON                                                                                                                   | nothing by default: the record points into the file (`entities[].teitok_ref` = `n-N`, `pages[].teitok_surface` = `facs-P`); the opt-in projection adds page categories and keywords to the header |
+| Document record (`--document-json`)                                                                                                                                  | `atrium_document` JSON                                                                                                                   | nothing by default: the record points into the file (`entities[].teitok_ref` = `n-N`, `pages[].teitok_surface` = `facs-P`); the opt-in projection adds page categories and the record's controlled keywords to the header |
 
-The line table can come from any input alto-postprocess reads: ALTO, the other OCR formats (PAGE
+The line table can come from any input ocr-postprocess reads: ALTO, the other OCR formats (PAGE
 XML, hOCR, ABBYY FineReader XML, DjVuXML, Tesseract TSV, OCR JSON), PDF, office and text files (its
-[input formats reference](https://github.com/ufal/atrium-alto-postprocess/blob/master/docs/text_inputs.md#formats-and-their-standards)).
+[input formats reference](https://github.com/ufal/atrium-ocr-postprocess/blob/master/docs/text_inputs.md#formats-and-their-standards)).
 For every input but ALTO the table carries text and pages only. The boxes then come from a flexiconv
 conversion of the same document (PAGE XML, hOCR), or there are none.
 
@@ -232,48 +233,50 @@ The writer is [api_util/teitok_alto.py](api_util/teitok_alto.py) 📎 (`write_te
 into TEITOK by default: they live in the document record (the three-format decision recorded on
 ufal/atrium-project#24, 2026-08-01; the AMČR storage contract keeps page classification and line
 quality "only in the record"). The opt-in projection below writes page categories, TEATER
-categories and keywords, never line quality.
+categories and the controlled keywords a record already carries, never line quality, and since
+v1.0.0 it no longer computes keywords of its own.
 
 ### Record projection onto TEITOK (opt-in)
 
 For TEITOK users who want the record's page-level facts in the file itself (ufal/flexiconv#1:
-keywords per page and the page category; the LINDAT dataset), atrium-project#70 item 2 adds a
+the page category and keywords; the LINDAT dataset), atrium-project#70 item 2 adds a
 projection, **off by default**. [api_util/teitok_project.py](api_util/teitok_project.py) 📎
 writes, in the header and `pb/@ana` only:
 
 | From                                                          | Into the TEITOK file                                                                                                                                                                                                                                            |
 |---------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | page category (`pages[].category`, else `page_categories[P]`) | `<pb ana="#pcat-DRAW"/>`, and `encodingDesc/classDecl/taxonomy[@id="tax-page-category"]/category[@id="pcat-DRAW"]` with `@corresp` = the `atrium_vocab` concept URI and the definition in `catDesc`                                                             |
-| TEATER/AMČR category (llm-enrich `enrichment.items[]`)        | `profileDesc/textClass/keywords[@scheme="#tax-amcr-teater"][@resp="#app-llm-enrich"]/term[@type="teater-category"]`: `@ref` = the concept URIs of `teater_category_ids`, `@cert` = the highest confidence, `@corresp` = its pages; the meta sentinel is skipped |
+| TEATER/AMČR category (`enrichment.items[]`, as written by llm-enrich)  | `profileDesc/textClass/keywords[@scheme="#tax-amcr-teater"][@resp="#app-llm-enrich"]/term[@type="teater-category"]`: `@ref` = the concept URIs of `teater_category_ids`, `@cert` = the highest confidence, `@corresp` = its pages; the meta sentinel is skipped |
 | controlled keywords, cs and en                                | `keywords[@resp="#app-llm-enrich"][@lang]/term[@type="extracted-keyword"][@corresp]`                                                                                                                                                                            |
-| statistical keywords (this run's `keywords.py` method)        | `keywords[@resp="#app-kw"][@scheme="#kw-<method>"]/term[@type="statistical-keyword"][@n=rank][@score]` for the document, and one more such list per page with `@corresp="#pb-K"` (top N clamped to 5-20)                                                        |
-| provenance                                                    | `appInfo/application` with `@id` `app-pc`, `app-llm-enrich` or `app-kw` after the writer's own, and `revisionDesc/change[@type="enriched"]`                                                                                                                     |
+| provenance                                                    | `appInfo/application` with `@id` `app-pc` or `app-llm-enrich` after the writer's own, and `revisionDesc/change[@type="enriched"]`                                                                                                                     |
 
 Pages resolve through `pages[].teitok_surface`, then `page_index`, then a numeric page key (`pb-K`),
-then the `<pb n>` label; an llm-enrich item's page (its `## Page` label) through the record's page of
+then the `<pb n>` label; an enrichment item's page (its `## Page` label) through the record's page of
 that label, then `<pb n>`, then as a number. A page that resolves to nothing is reported, not fatal.
 Nothing inside `<s>`, `<tok>` or `<name>` changes, so `teitok_read`, `teitok_layout`, flexiconv's
-reader and alto-postprocess read the same text, and the writer's own header lines stay as they were.
+reader and ocr-postprocess read the same text, and the writer's own header lines stay as they were.
 The projection is idempotent (it replaces its own earlier output), refuses another document's
 TEITOK (the `<title>` must be the record's `doc_id` or the id of its `source.filename`), and
-validates its output with the `contract` profile before writing. Per-page keywords are computed from
-the TEITOK file's own tokens, page by page, with the same backend as the document's.
+validates its output with the `contract` profile before writing. (Up to v0.23.0 it could also compute
+statistical keywords per page from the TEITOK file's tokens; that went with the keyword code to
+atrium-keyword-extract. `--kw-method` and `--kw-csv` of the module still accept a ready
+`<doc>_keywords.csv`, but the in-pipeline stage no longer passes one.)
 
 ```bash
-# in the pipeline: a `project` stage after `keywords` (reachable with --start-from project)
-python3 run_pipeline.py --kw --kw-method yake --teitok-enrichment \
+# in the pipeline: a `project` stage after `stats` (reachable with --start-from project)
+python3 run_pipeline.py --teitok-enrichment \
     --document-json CTX.document.json --document-json-out CTX.document.json
-TEITOK_ENRICHMENT=true python3 run_pipeline.py --kw      # or switch it on in config_api.txt
+TEITOK_ENRICHMENT=true python3 run_pipeline.py      # or switch it on in config_api.txt
 
-# after llm-enrich, on a finished record
+# on a finished record
 python3 -m api_util.teitok_project --teitok TEITOK/CTX.teitok.xml --record CTX.document.json --in-place
 curl -F file=@TEITOK/CTX.teitok.xml -F document_json=@CTX.document.json http://localhost:8000/project_record
 ```
 
 The service takes `teitok_enrichment=true` on `/enrich`, `/enrich_text` and `/jobs`. A TEITOK
 regeneration (`REGENERATE_TEITOK`, a stage-4 re-run) writes the file anew without the projection;
-project again after it. Line-level anchoring (a keyword on its `<lb>`) is not done: llm-enrich's
-line numbers and the writer's `lb` numbering are not the same count.
+project again after it. Line-level anchoring (a keyword on its `<lb>`) is not done: an enrichment
+stage's line numbers and the writer's `lb` numbering are not the same count.
 
 ### Importing into a TEITOK project
 
@@ -316,8 +319,8 @@ sentence-local number for a reader that needs it.
 | [xmltokenizer](https://github.com/ufal/xmltokenizer)            | tokenizes existing TEI/XML inline, keeping every element and character; not used (our text comes from OCR lines, not from existing markup)   | MIT                             | the library flexipipe uses for TEI input                                                                                                                                               |
 | [teitok-tools](https://github.com/ufal/teitok-tools)            | the TEITOK platform's scripts, e.g. `udpipe2teitok.pl` (UDPipe-parsed TEITOK from raw text); used only to check conventions                  | none declared in the repository | what a project expects is under [Importing into a TEITOK project](#importing-into-a-teitok-project)                                                                                    |
 | [flexicorp](https://github.com/ufal/flexicorp)                  | corpus query interface over TEITOK XML, CQP/CWB, Manatee, BlackLab …; a possible consumer                                                    | none declared in the repository | —                                                                                                                                                                                      |
-| atrium-llm-enrich `api_util/teitok_read.py`, `xml_to_md.py`     | **reads** TEITOK as line-level input and renders it to annotated Markdown for the LLM                                                        | MIT                             | `teitok_read.py` and `flexiconv_convert.py` are vendored from here, pinned by hash                                                                                                     |
-| atrium-alto-postprocess `text_formats.read_tei`                 | **reads** TEITOK (and TEI) as a text input: every `<pb/>` a page, `<lb/>` lines                                                              | MIT                             | —                                                                                                                                                                                      |
+| atrium-keyword-extract `api_util/teitok_read.py`                | **reads** TEITOK as line-level input for keyword extraction                                                                                  | MIT                             | `teitok_read.py` is vendored from here, pinned by hash (atrium-digital-convert vendors the same readers)                                                                              |
+| atrium-ocr-postprocess `text_formats.read_tei`                  | **reads** TEITOK (and TEI) as a text input: every `<pb/>` a page, `<lb/>` lines                                                              | MIT                             | —                                                                                                                                                                                      |
 | atrium-project `tools/e2e/e2e_assert.py --teitok-dir`           | **checks** that a document record's references resolve to the right elements and pages                                                       | none declared in the repository | strict for `teitok-2` files                                                                                                                                                            |
 
 ### Pitfalls
@@ -337,14 +340,14 @@ page image — so the gate cannot catch them:
 5. **Stale files.** A resumed run keeps existing `.teitok.xml` files (`REGENERATE_TEITOK=false`),
    and files written before `8003051` (the page fix, after v0.21.0) carry the same `teitok-2`
    stamp: tell them apart by `<change type="converted" when="…">`, or regenerate everything.
-6. **Two readers.** When the text comes from one reader (e.g. alto-postprocess's table) and the
+6. **Two readers.** When the text comes from one reader (e.g. ocr-postprocess's table) and the
    layout from another (flexiconv), tokens get boxes only as far as the two agree; below 90 %
    aligned tokens the writer warns, and unaligned tokens have no box.
 7. **flexiconv PDFs** carry no boxes and no page images by default, so no facsimile.
 8. **Licence.** flexiconv is GPL-3.0-or-later: it runs as a CLI step; the REST service accepts its
    `.teitok.xml` output but never runs it.
 9. **Vendored readers.** After changing `api_util/teitok_read.py` or `api_util/flexiconv_convert.py`,
-   re-vendor them into atrium-llm-enrich (its `tests/test_vendored_teitok_parity.py` pins them).
+   re-vendor them into atrium-keyword-extract and atrium-digital-convert (their `tests/test_vendored_teitok_parity.py` pin them).
 10. **Upstream readers** lose `<dtok>` words (flexiconv) or misplace heads (flexipipe) — see the
     table in [Importing into a TEITOK project](#importing-into-a-teitok-project).
 11. **No TEI namespace.** Tools that expect `http://www.tei-c.org/ns/1.0` need it added
@@ -355,10 +358,10 @@ page image — so the gate cannot catch them:
     strictly only for `teitok-2` files.
 14. **Page numbers.** The writer numbers pages by their order in the ALTO file (`pb-1`, `facs-1`,
     the page-image name `<doc_id>-1`, the record's `pages[].teitok_surface`), and `pb@n` is the
-    table's `page_label`, else that number. alto-postprocess's ALTO methods number pages by
+    table's `page_label`, else that number. ocr-postprocess's ALTO methods number pages by
     `PHYSICAL_IMG_NR`, and its `DOC_LINE_CATEG` table has no `page_label`. When an ALTO file's
     `PHYSICAL_IMG_NR`s are not 1, 2, 3 … in order, the TEITOK file shows the ordinals, and the
-    record gets this repo's `pages[]` rows under the ordinals beside alto-postprocess's rows under
+    record gets this repo's `pages[]` rows under the ordinals beside ocr-postprocess's rows under
     the ALTO numbers. Name page images by the ordinal.
 
 ---
@@ -371,27 +374,6 @@ Before you begin, set up your environment.
 2. Install the required Python packages:
 ```bash
 pip install -r requirements.txt
-```
-
-For keyword extraction, install the backend(s) you intend to use:
-```bash
-# YAKE — unsupervised statistical extraction, CPU-only
-pip install yake
-
-# KeyBERT — embedding-based extraction, GPU-accelerated when available
-pip install keybert sentence-transformers
-pip install torch          # optional — enables CUDA GPU acceleration
-```
-
-The original **legacy KER** backend requires no additional packages.
-For the LLM Semantic Enrichment pipeline, install the inference backend you intend to use:
-```bash
-# Transformers backend — single GPU, models ≤ 31 B (BnB 4-bit / AWQ / GGUF)
-pip install -r requirements_llm.txt
-
-# vLLM backend — multi-GPU, large models (≥ 70 B), Automatic Prefix Caching
-# Replaces lmformatenforcer; uses xgrammar for native guided JSON decoding
-pip install vllm
 ```
 
 *(Optional) To run the REST API service, install additional requirements:*
@@ -833,7 +815,7 @@ the Czech CNEC 2.0 model (`<name type="PER" cnec="pf">`), `@archaeo` for the arc
 > NLP tokens and OCR coordinates, drastically improving upon older greedy matching methods that would
 > break on minor character variations. Alignment statistics (matched vs. total tokens) are printed to
 > the console per document; below 90 % a warning asks whether text and layout come from the same
-> document version (e.g. alto-postprocess's text with a flexiconv layout). A token that aligned to
+> document version (e.g. ocr-postprocess's text with a flexiconv layout). A token that aligned to
 > a page out of reading order loses its box (the longest in-order run of aligned pages is kept).
 
 ```bash
@@ -932,139 +914,6 @@ the entire `TEMP/` directory including [manifest.tsv](data_samples/manifest.tsv)
 
 ---
 
-## EXTRA: Extract Keywords (KER / YAKE / KeyBERT)
-
-> [!NOTE]
-> This is an optional step in NLP enrichment of your data. It can give a fast
-> thematic overview of the whole collection and works best when UDPipe lemmas
-> (output of Step 2) are available. Three extraction backends are provided;
-> choose the one that best fits your environment and quality requirements.
-
-Extract keywords 🔎 from your documents by running `keywords.py` on a directory of CoNLL-U files produced by Step 2.
-
-### Configuration Priority
-
-The keyword extraction script uses a three-tier configuration hierarchy (from highest to lowest priority):
-
-1. **Command-line flags** (e.g., `-m yake`, `-w 3`) always override everything else.
-2. **`kw_config.txt`** (the `[DEFAULTS]` section) is read automatically if placed next to the script.
-3. **Hardcoded fallbacks** are used if no config file or flags are provided.
-
-This means if you configure your settings in `kw_config.txt`, you can simply run:
-
-```bash
-python3 keywords.py
-```
-
-### Backends
-
-| Flag value         | Method                                        | Dependencies                                | Score semantics                       | Best for                                  |
-|--------------------|-----------------------------------------------|---------------------------------------------|---------------------------------------|-------------------------------------------|
-| `legacy`           | Original KER — NOUN/PROPN/ADJ lemma frequency | none (stdlib only)                          | raw occurrence count                  | reproducing original ATRIUM results       |
-| `yake` *(default)* | YAKE — unsupervised statistical, CPU-only     | `pip install yake`                          | normalised inverse YAKE score, [0, 1] | fast CPU runs, no model download          |
-| `keybert`          | KeyBERT — embedding-based, GPU-accelerated    | `pip install keybert sentence-transformers` | cosine similarity, [0, 1]             | highest semantic quality, GPU recommended |
-
-You can override any `kw_config.txt` setting via the command line:
-
-```bash
-python3 keywords.py -i <input_dir> -m <method> -l <lang> -w <integer> \
-                    -n <integer> -d <output_dir> -o <output_file>.csv
-```
-
-All available flags:
-
-| Flag | Long form           | Default in `kw_config.txt`              | Description                                                                               |
-|------|---------------------|-----------------------------------------|-------------------------------------------------------------------------------------------|
-| `-i` | `--input_dir`       | `data_samples/UDP`                      | CoNLL-U directory to process                                                              |
-| `-m` | `--method`          | `yake`                                  | Backend: `legacy`, `yake`, or `keybert`                                                   |
-| `-l` | `--lang`            | `cs`                                    | Language code for YAKE stopwords (`cs`, `en`, `de`, …). Ignored by `legacy` and `keybert` |
-| `-w` | `--max_words`       | `3`                                     | Maximum words per keyword phrase (n-gram upper bound)                                     |
-| `-n` | `--num_keywords`    | `20`                                    | Number of keywords to extract per document                                                |
-| `-d` | `--per_doc_out_dir` | `data_samples/KW_PER_DOC`               | Output directory for per-document CSV files                                               |
-| `-o` | `--output_file`     | `keywords_summary.csv`                  | Master keywords CSV                                                                       |
-|      | `--keybert-model`   | `paraphrase-multilingual-MiniLM-L12-v2` | Sentence-Transformer model name (KeyBERT only)                                            |
-|      | `--no-mmr`          | *(False)*                               | Disable Maximal Marginal Relevance diversification (KeyBERT only)                         |
-|      | `--diversity`       | `0.5`                                   | MMR diversity parameter, 0 = max relevance → 1 = max diversity (KeyBERT only)             |
-|      | `--workers`         | `0` *(Auto / CPU count)*                | Parallel worker processes. Auto-forced to 1 for KeyBERT + GPU                             |
-
-Examples:
-
-**YAKE** — Czech, up to 3-word phrases, 20 keywords per document (default)
-
-```bash
-python3 keywords.py -i OUTPUT_DIR/UDP -m yake -l cs -w 3 -n 20 \
-        -o keywords_summary.csv -d KW_PER_DOC
-```
-
-**KeyBERT** — multilingual model, GPU-accelerated
-
-```bash
-python3 keywords.py -i OUTPUT_DIR/UDP -m keybert -w 3 -n 20 \
-        --keybert-model paraphrase-multilingual-MiniLM-L12-v2 \
-        -o keywords_summary.csv -d KW_PER_DOC
-```
-
-**Legacy KER** — (English/Czech) original ATRIUM lemma-frequency approach, no extra dependencies
-
-```bash
-python3 keywords.py -i OUTPUT_DIR/UDP -m legacy -n 20 \
-        -o keywords_summary.csv -d KW_PER_DOC
-```
-
-> [!WARNING]
-> For **KeyBERT with a GPU**, the script automatically forces `--workers 1` to
-> prevent competing CUDA context initialisation across subprocesses.  On CPU,
-> any worker count is safe.
-
-### Inputs and outputs
-
-* **Input:** Directory of per-document CoNLL-U files from Step 2.
-* **Output 1:** Master table with keywords per document (e.g., `keywords_summary.csv`).
-* **Output 2:** Per-document CSV files (e.g., `KW_PER_DOC/`).
-
-```
-KW_PER_DOC/
-├── <docname1>_keywords.csv
-├── <docname2>_keywords.csv
-└── ...
-```
-
-Each per-document file contains two columns — **keyword** and **score** — sorted
-by score in descending order.  The master summary uses the same column structure
-as the original pipeline (`document_id`, `kw-1`, `score-1`, `kw-2`, `score-2`, …).
-
-### Score interpretation by backend
-
-**`legacy`** — raw lemma count; higher = more frequent in the document. Examples in directory: [KW_PER_DOC_L](data_samples/KW_PER_DOC_L) 📂 and summary file
-[kw_summary_l.csv](data_samples/keywords_summary_l.csv) 📎.
-
-| Score range | Interpretation                                           |
-|-------------|----------------------------------------------------------|
-| 1–5         | Common functional nouns, low informativeness             |
-| 5–20        | Topic-representative vocabulary                          |
-| > 20        | Dominant terms, likely named entities or domain headings |
-
-**`yake`** — normalised inverse YAKE score, [0, 1] per document. Examples in directory: [KW_PER_DOC_Y](data_samples/KW_PER_DOC_Y) 📂 and summary file
-[kw_summary_y.csv](data_samples/keywords_summary_y.csv) 📎.
-
-| Score range | Semantic category | Interpretation                               |
-|-------------|-------------------|----------------------------------------------|
-| 0.0–0.2     | Noise floor       | Common words, low local relevance            |
-| 0.2–0.6     | Context layer     | General vocabulary defining the broad topic  |
-| 0.6–0.9     | Topic layer       | Specific nouns and verbs central to the text |
-| 0.9–1.0     | Entity layer      | Rare terms, neologisms, named entities       |
-
-**`keybert`** — cosine similarity to document centroid, [0, 1]. Examples in directory: [KW_PER_DOC_KB](data_samples/KW_PER_DOC_KB) 📂 and summary file
-[kw_summary_kb.csv](data_samples/keywords_summary_kb.csv) 📎.
-
-| Score range | Interpretation                   |
-|-------------|----------------------------------|
-| < 0.3       | Weakly related phrases           |
-| 0.3–0.6     | Contextually relevant terms      |
-| > 0.6       | Highly representative keyphrases |
-
----
-
 ## EXTRA: Converting Other Input Formats with flexiconv
 
 > [!NOTE]
@@ -1078,13 +927,13 @@ as the original pipeline (`document_id`, `kw-1`, `score-1`, `kw-2`, `score-2`, �
 **[flexiconv](https://github.com/ufal/flexiconv)** [^9](https://github.com/ufal/flexiconv) is a format converter
 by the TEITOK author (UFAL) that translates OCR, layout and document formats into **TEITOK
 XML**. Its output can be loaded straight into a TEITOK project, and the readers of this repository
-(`keywords.py`, `llm_run.py`, via [api_util/teitok_read.py](api_util/teitok_read.py) 📎) accept it.
+(the TEITOK readers, e.g. [api_util/teitok_read.py](api_util/teitok_read.py) 📎, which atrium-keyword-extract vendors) accept it.
 
 ```
   Your input format           flexiconv                     Output
   ─────────────────    ──────────────────────   ──────────────────────────────────
   PAGE XML, hOCR    ─┐                           .teitok.xml   ──► TEITOK platform
-  txt, md, html     ─┤──► api_flexiconv.sh ────► (flexiconv    ──► keywords.py, llm_run.py
+  txt, md, html     ─┤──► api_flexiconv.sh ────► (flexiconv    ──► the TEITOK readers
   docx, odt, pdf    ─┘                            profile)
 ```
 
@@ -1097,8 +946,8 @@ what the source contains:
 | PAGE XML, hOCR, ALTO (`.xml`, `.hocr`) | `<tok bbox>` words with `<lb/>` lines and `<facsimile>` zones, no `<s>` | one row per line                   |
 | txt, md, html, docx, odt, rtf, pdf, …  | `<p>`, `<head>`, `<item>` text, not tokenized                           | one row per paragraph/heading/item |
 
-So YAKE/KeyBERT keywords and LLM enrichment work on it. The lemma-based `legacy` keyword method
-does not, because there are no lemmas.
+So the downstream readers (keyword extraction in atrium-keyword-extract, LLM enrichment in
+atrium-digital-convert) can work on it; a lemma-based method cannot, because there are no lemmas.
 
 A PDF converted with flexiconv's default reader (`pdf=smart`) has no word boxes and no page
 images, so its TEITOK has no facsimile; flexiconv's `pdf=bbox` reader gives word boxes but needs
@@ -1138,8 +987,8 @@ does not end green with documents missing. The output directory is then checked 
 `validate_teitok_xml.py --profile core`, the rules any TEITOK document must meet. This is not
 this writer's XSD, and `api_4_stats.sh` leaves this directory out of its own gate.
 
-4. **Use the result** with the readers: `python3 keywords.py -i "$TEITOK_FLEXICONV_DIR" -m yake`,
-or `INPUT_DIR` in `llm_config.txt`.
+4. **Use the result** with the readers of the stages that follow (atrium-keyword-extract reads
+a `.teitok.xml` directly), or annotate it here with `FLEXICONV_ANNOTATE`.
 
 For a single file, the CLI directly: `flexiconv -t teitok input.page.xml output.teitok.xml`
 (`flexiconv --list-formats` lists every input format).
@@ -1184,9 +1033,9 @@ document (`orgfile`). A page image the converted file names is looked up in `INP
 that name. When found, it sets the surface size; the coordinates are already image pixels and stay
 as they are.
 
-**In the full ATRIUM pipeline**, alto-postprocess's `--method text-lines` reads the same documents
+**In the full ATRIUM pipeline**, ocr-postprocess's `--method text-lines` reads the same documents
 into `DOC_LINE_CATEG/`, which is this repo's `INPUT_TABLES_DIR`. With `INPUT_DOCS_DIR` pointing at
-the originals, the text comes from alto-postprocess, where its lines are categorised, and the
+the originals, the text comes from ocr-postprocess, where its lines are categorised, and the
 layout comes from flexiconv.
 
 ### Checking a real collection (issue #10)
@@ -1215,17 +1064,16 @@ Fill in the notes by looking at a few of the files:
 Reference run (2026-09-23, flexiconv v0.3.10, its own `examples/` plus one Czech txt), all through
 `api_flexiconv.sh`, all passing `--profile core`, nothing installed during the run:
 
-| Input                                 | Rows | Tokens | Elements with bbox | `keywords.py -m yake` |
-|---------------------------------------|------|--------|--------------------|-----------------------|
-| PAGE XML `aletheiaexamplepage.xml`    | 96   | 532    | 593                | ✅                     |
-| hOCR `output_page_1.hocr`             | 3    | 13     | 15                 | ✅                     |
-| ALTO `sample.alto.xml`                | 1    | 5      | 8                  | ✅                     |
-| docx `16453-1.docx`                   | 21   | 464    | —                  | ✅                     |
-| md `FORMATS_AND_MAPPINGS.md`          | 209  | 1463   | —                  | ✅                     |
-| txt (2 paragraphs)                    | 2    | 10     | —                  | ✅                     |
+| Input                                 | Rows | Tokens | Elements with bbox |
+|---------------------------------------|------|--------|--------------------|
+| PAGE XML `aletheiaexamplepage.xml`    | 96   | 532    | 593                |
+| hOCR `output_page_1.hocr`             | 3    | 13     | 15                 |
+| ALTO `sample.alto.xml`                | 1    | 5      | 8                  |
+| docx `16453-1.docx`                   | 21   | 464    | —                  |
+| md `FORMATS_AND_MAPPINGS.md`          | 209  | 1463   | —                  |
+| txt (2 paragraphs)                    | 2    | 10     | —                  |
 
-Before the 2026-09 reader fallback every one of them read as **0 rows**. Keywords of English documents
-need `keywords.py -l en` (the default language is Czech). For docx/odt/epub, flexiconv also writes the
+Before the 2026-09 reader fallback every one of them read as **0 rows**. For docx/odt/epub, flexiconv also writes the
 embedded images into a `<output>_files/` directory next to the TEITOK file.
 
 Real flexiconv v0.3.10 output for txt, md, PAGE XML, hOCR and ALTO is committed in
@@ -1240,483 +1088,11 @@ Real flexiconv v0.3.10 output for txt, md, PAGE XML, hOCR and ALTO is committed 
 
 ---
 
-## EXTRA: LLM Semantic Enrichment (Vocabulary Mapping)
-
-> [!NOTE]
-> This is an advanced, optional step. It runs a local Large Language Model to
-> semantically analyse each text line and map it to the controlled TEATER/AMCR
-> archaeological vocabulary. Two inference backends are supported:
-> **`transformers`** (HuggingFace + BnB 4-bit, single GPU, models ≤ 31 B) and
-> **`vllm`** (multi-GPU, Automatic Prefix Caching, native guided JSON decoding,
-> models ≥ 70 B or any multi-GPU node).
-
-This pipeline goes beyond traditional keyword extraction by using **Constrained Decoding**.
-For the `transformers` backend this is implemented via Pydantic schemas and `lmformatenforcer`.
-For the `vllm` backend, guided decoding is handled natively by **xgrammar** inside vLLM —
-no additional library is required. In both cases the model is mathematically prevented from
-producing any token that would violate the predefined JSON structure or select a vocabulary
-term outside the thematic dictionary, entirely eliminating hallucinated formatting.
-
-### ⚙️ Configuration ([llm_config.txt](llm_config.txt) 📎)
-
-The pipeline reads all runtime parameters from `llm_config.txt` in the repository root.
-The minimum required change is `MODEL_KEY`; every other key has a sensible default.
-
-```text
-# Single-GPU (BACKEND=transformers): qwen-3.6-27b-it | gemma-4-31b-it | qwen3-14b |
-#                                    qwen-3.5-9b-it | qwen3-8b | qwen2.5-14b-awq |
-#                                    qwen2.5-7b | gemma-3-12b-it
-# MoE / GGUF (single GPU):           gemma-4-26b-moe-gguf | qwen-3.6-35b-moe
-# Multi-GPU (BACKEND=vllm):          qwen3-235b-a22b-fp8 | deepseek-v3 | llama4-maverick | llama3.1-70b
-MODEL_KEY=qwen-3.6-27b-it
-
-# Only needed for gated models: gemma-4-*, llama4-maverick, llama3.1-70b
-# HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
-
-INPUT_DIR=data_samples/DOC_LINE_CATEG
-OUTPUT_DIR=data_samples/KW_PER_DOC_LLM
-VOCAB_PATH=data_samples/vocab/union_nested.json
-PARADATA_DIR=paradata
-
-# Attach the surviving vocabulary term's source record id(s) to each enrichment as
-# teater_category_ids (issue #6, M7). Kept behind a switch since it was agreed to be
-# reversible: "list them now and drop it if it will create some issues."
-EMIT_CATEGORY_IDS=true
-
-INCLUDE_NON_TEXT=true
-MIN_CHAR_COUNT=3
-MIN_CHAR_NON_TEXT=8
-MIN_ALPHA_RATIO_NON_TEXT=0.4
-
-# ── System prompt ─────────────────────────────────────────────────────────────
-# The instruction text lives in prompts/system_prompt.txt as [[named blocks]]; these
-# flags choose which of them render. The run banner prints the resulting on/off list,
-# so a log always says what the model was told. See prompts/RUNBOOK.md.
-PROMPT_TEMPLATE=prompts/system_prompt.txt
-PROMPT_TASK_EXTRACT=true
-PROMPT_TASK_SELECT=true
-PROMPT_METATEXT_RULE=true
-PROMPT_OCR_NORMALISATION=true
-PROMPT_EXACT_TERM=true
-PROMPT_EXAMPLES=true
-
-# The one three-way switch: strict | preference | off. Paired with
-# taxonomy_config.json's geo_guardrail.active — vocab_build.py refuses a build where
-# the two disagree.
-PROMPT_GEO_GUARDRAIL=preference
-
-# Term-list layout: facet_sub | facet | flat. Same terms, same truncation; only the
-# headers move.
-PROMPT_VOCAB_GROUPING=facet_sub
-
-# ── Inference parameter overrides ─────────────────────────────────────────────
-# ALL of these are COMMENTED OUT in the shipped file. Backend, GPU count, memory
-# utilisation, batch size and context cap are resolved automatically from the model
-# registry in llm_utils.py; the startup log prints every effective value next to
-# where it came from (← llm_config.txt / model default / global default). Uncomment
-# a line only to deviate from the model's recommended configuration.
-# BACKEND=vllm                 # transformers (single GPU, ≤ 31 B) | vllm (multi-GPU)
-# TENSOR_PARALLEL_SIZE=8       # GPUs to shard across (vLLM only)
-# GPU_MEMORY_UTILIZATION=0.88  # Fraction of each GPU's VRAM for the KV cache
-# VLLM_BATCH_SIZE=8            # Lines per generate() call
-# MAX_MODEL_LEN=16384          # Cap the context window to reduce KV-cache pressure
-# CPU_OFFLOAD_GB=0             # Weights to keep in CPU RAM when VRAM is short
-# GUIDED_DECODING_BACKEND=xgrammar
-# ENABLE_PREFIX_CACHING=false  # Not recommended; reduces throughput
-```
-
-The nine `PROMPT_*` keys are the prompt's whole configuration surface;
-[`prompts/RUNBOOK.md`](prompts/RUNBOOK.md) 📎 documents each block, what it costs, and
-which pairings are unsafe to change alone.
-
-### 🗂 Workflow
-
-**1. Vocabulary Harvesting ([vocab_build.py](vocab_build.py) 📎)**
-
-The vocabulary is built in two stages, and only the first needs the internet:
-
-```
-harvest (network)   →   FLAT artifacts    →   nest (pure)    →   NESTED artifacts
-vocab_sources.py        *_flat.{json,csv}     vocab_manager      *_nested.json
-```
-
-[`vocab_sources.py`](vocab_sources.py) 📎 harvests two controlled vocabularies:
-
-| Source               | How                                                                                                                                              | What comes back                                                                                                                                                                   |
-|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **AMCR** heslář      | OAI-PMH, `api.aiscr.cz/2.2/oai?set=heslo`                                                                                                        | Czech–English pairs **plus** `ident_cely`, `nazev_heslare` (which of the ~50 controlled lists the term belongs to), `popis`, `zkratka`, `razeni`, broader terms and SKOS mappings |
-| **TEATER** thesaurus | the 12 pinned `import_*.json` files in [`ARUP-CAS/aiscr-teater`](https://github.com/ARUP-CAS/aiscr-teater), or live `teater.aiscr.cz/api/export` | 4 134 concepts in 12 branches, trilingual labels, scope notes, and the real broader/narrower hierarchy                                                                            |
-
-[`vocab_manager.py`](vocab_manager.py) 📎 then groups the flat terms into the thematic
-taxonomy defined by [taxonomy_config.json](data_samples/taxonomy_config.json) 📎. Placement
-is tried in precedence order — a per-term correction in
-[taxonomy_overrides.json](data_samples/taxonomy_overrides.json) 📎, AMCR list membership
-(`heslar_map`), TEATER branch (`teater_branch_map`, resolved most-specific-first so a
-depth-2 sub-branch like `muzeum` can be moved without moving its whole parent branch),
-the legacy keyword match, a cross-source rescue, an opt-in LLM fallback, then `Other` —
-and **every placement records the rule that made it** in `*_placement_audit.csv`, so the
-grouping can be reviewed rather than taken on trust.
-
-Two labels can collide (AMCR and TEATER both use `zámek` for "lock" *and* "château").
-`vocab_sources.to_term_pairs()` treats a same-label group as one concept by default —
-the winning record's id survives, every other one is listed on it as `discarded_ids`
-(issue #6, M7) — and only pulls a record into its own bracketed entry
-(`"zámek (sídlo elity)"`) when `taxonomy_overrides.json` explicitly flags it as a
-genuine homonym (M8). Guessing that from a differing English gloss alone would mistake
-ordinary translation variance for a real split far more often than it would catch one.
-
-**Every vocabulary decision is a config edit, not a code change.** The two JSON files
-are the whole surface a domain reviewer needs; nothing below requires touching Python:
-
-| In `taxonomy_config.json` → `_settings` | Decides                                                                                                           |
-|-----------------------------------------|-------------------------------------------------------------------------------------------------------------------|
-| `heslar_map`, `teater_branch_map`       | which facet a whole AMCR list or TEATER branch lands in, or `__exclude__`                                         |
-| `_exclusions`                           | why each exclusion stands, and whether it is `settled` or still open (`open_geo_ethnic` / `open_other`)           |
-| `geo_guardrail`                         | whether the prompt's "never select a country/language/region name" clause is in force, and which rules it reaches |
-| `nested_keep`                           | which harvested keys reach the prompt payload                                                                     |
-| `admin_stop_words`                      | what sorts to the back of a facet, and so what survives prompt truncation                                         |
-| `composite_separators`                  | what splits a composite `X/Y` label                                                                               |
-| `tie_break`, per-facet `priority`       | facet order — load-bearing, since the prompt truncates a *prefix*                                                 |
-
-| In `taxonomy_overrides.json`, per `(source, id)` | Decides                                                                                     |
-|--------------------------------------------------|---------------------------------------------------------------------------------------------|
-| `facet`                                          | one term's facet, including `"__exclude__"` to drop a single term from a list worth keeping |
-| `sub`                                            | one term's sub-header — otherwise a moved term keeps the header of the list it left         |
-| `qualifier_cs`                                   | pull a confirmed homonym out of its dedup group as `"<cs> (<qualifier>)"`                   |
-| `same_as` / `same_as_suppress`                   | add or drop a composite/component equivalence link; neither changes what the prompt offers  |
-
-**The system prompt is a config surface too.** Its instruction text lives in
-[`prompts/system_prompt.txt`](prompts/system_prompt.txt) 📎 as `[[named blocks]]` in
-render order; `llm_config.txt`'s `PROMPT_*` flags choose which of them reach the model,
-and the run banner prints the resulting on/off list so a log always says what the model
-was told. `PROMPT_GEO_GUARDRAIL` is the one three-way switch (`strict` / `preference` /
-`off`) because the geographic rule has three states, and it is paired with
-`taxonomy_config.json`'s `geo_guardrail.active`:
-[`prompts/output_template.json`](prompts/output_template.json) 📎 documents the resulting
-per-document output file.
-
-Reading the prompt needs neither a GPU nor the model stack — `prompt_template.py` imports
-nothing outside the standard library, so these run in a bare checkout:
-
-```bash
-python3 prompt_template.py --blocks                  # which rules are on, and what each costs
-python3 prompt_template.py --preview                 # the instruction text, term list elided
-python3 prompt_template.py --full  > prompt.txt      # the whole prompt, all 4 718 terms
-python3 prompt_template.py --diff PROMPT_GEO_GUARDRAIL=strict \
-                                 PROMPT_GEO_GUARDRAIL=preference
-python3 prompt_template.py --write                   # regenerate the committed sheets
-python3 prompt_template.py --check                   # exit 1 if a sheet is out of date
-```
-
-`--full` renders the untruncated prompt — instructions under the current flags, then every
-term `VOCAB_PATH` offers, grouped exactly as `build_system_prompt()` groups them (both call
-the same two functions, and a test asserts they agree byte for byte). It is what a model
-with room for the whole vocabulary sees; at a tighter window the run drops a tail of terms,
-which [`context_budget.csv`](data_samples/vocab/context_budget.csv) 📎 sizes per window.
-
-The four sheets under [`prompts/`](prompts) 📎 — `prompt_blocks.txt`, `prompt_preview.txt`,
-`prompt_full.txt`, `prompt_guardrail_diff.txt` — are the output of the first four commands,
-committed so a reviewer can read the prompt in a diff without running Python. They are
-**generated, never hand-edited**: `--write` rewrites them, `--check` fails when the
-vocabulary, a flag or the template has moved without them, and
-[.github/workflows/vocab-drift.yml](.github/workflows/vocab-drift.yml) runs that check on
-every PR touching either half.
-
-**`PROMPT_VOCAB_GROUPING` controls the layout of the term list**, not its contents:
-`facet_sub` (shipped — `--- Facet / Subgroup ---`, both curated levels), `facet` (facet
-headers only) or `flat` (no headers). It exists to answer @motyc's question in
-[issue #6](https://github.com/ufal/atrium-nlp-enrich/issues/6#issuecomment-5424905539) —
-whether the facet grouping affects results at all, now that the whole vocabulary fits a
-128k window. All three offer the same terms and truncate identically; `facet` and `flat`
-also preserve term order, while `facet_sub` makes each facet's sub-groups contiguous. So
-`facet` vs `flat` isolates the ~125 header lines and `facet_sub` vs `facet` measures the
-source's second level. The headers are not free: at an 8 192-token window they cost 26
-terms, at 32 768 they cost 126, and at 128k nothing, since everything fits either way.
-
-`validate_settings()` refuses an edit that would not do what it says — an undeclared
-facet, a relabel for a list no map places, a reason for something nobody excludes, an
-unknown override key, a stale `(source, id)`, a pair both linked and suppressed, two
-overrides that would build the same bracketed key — and reports every problem at once
-rather than one per rebuild. `vocab_build.py` additionally renders the prompt the config
-selects and refuses to build a vocabulary that contradicts its geographic guardrail.
-Two runbooks carry the operational detail, and they are the pages to read before
-touching either half:
-[`data_samples/vocab/RUNBOOK.md`](data_samples/vocab/RUNBOOK.md) 📎 — every vocabulary
-script, the eight review sheets, and the full "where a decision gets recorded" table;
-[`prompts/RUNBOOK.md`](prompts/RUNBOOK.md) 📎 — the eleven prompt blocks, the nine flags,
-the guardrail's two halves, and the output contract.
-
-```bash
-# stage 1 + 2, needs network access to aiscr.cz
-python3 vocab_build.py --source both --stats
-
-# stage 2 only: re-nest from the committed flat files after editing the taxonomy.
-# Pure, offline, sub-second — this is the loop for tuning the taxonomy.
-python3 vocab_build.py --from-flat --stats
-python3 vocab_build.py --from-flat --check     # exit 1 if the artifacts would change
-```
-
-If this machine cannot reach `aiscr.cz`, run the **Vocabulary Refresh** workflow
-([.github/workflows/vocab-refresh.yml](.github/workflows/vocab-refresh.yml)) — a hosted
-runner harvests and uploads the artifacts.
-
-> [!NOTE]
-> The nested files are deliberately **not** written with `sort_keys=True`. Theme order is
-> priority-descending and load-bearing: `build_system_prompt()` iterates the file in
-> insertion order and truncates a *prefix* of the resulting term list, so alphabetising
-> the keys would silently change which themes survive a tight context budget. Determinism
-> comes from the explicit priority ordering plus a `(boilerplate, razeni, label)` sort
-> within each theme. Provenance lives in a sidecar `*.meta.json`, not inline — every
-> consumer reads the nested file as `{theme: terms}`, so an inline `_meta` key would be
-> rendered to the model as a phantom theme.
-
-`python3 vocab_manager.py` still works and still performs the legacy AMCR-only sync.
-
-#### Reviewing the vocabulary
-
-Two read-only tools turn the built vocabulary into sheets a domain reviewer can rule on.
-Neither writes to the vocabulary, and neither guesses a semantic verdict — they rank and
-surface candidates; a human decides, and the decision goes back as a config edit. Both run from a
-checkout and are left out of the published images (`.dockerignore`,
-[atrium-project#72](https://github.com/ufal/atrium-project/issues/72)).
-
-[`vocab_review.py`](vocab_review.py) 📎 — **eight sheets, offline and pure**, built from
-the committed `*_flat.json` plus the taxonomy config:
-
-```bash
-python3 vocab_review.py --all            # all eight, into data_samples/vocab/
-python3 vocab_review.py --collisions     # collision_review.csv        same-label groups (M8/M13)
-python3 vocab_review.py --composites     # composite_pairs.csv         "X/Y" vs standalone X, Y
-python3 vocab_review.py --exclusions     # exclusion_impact.csv        what each exclusion costs
-python3 vocab_review.py --subbranches    # teater_subbranch_impact.csv the same, one level finer
-python3 vocab_review.py --reinstate      # reinstatement_preview.csv   usable count + token delta
-python3 vocab_review.py --specificity    # specificity_pairs.csv       term offered under its own parent
-python3 vocab_review.py --budget         # context_budget.csv          what survives each window
-python3 vocab_review.py --census         # facet_census.csv            what is in each facet, and its cost
-```
-
-[`corpus_review.py`](corpus_review.py) 📎 — **three evidence sheets** matching the
-vocabulary against real report text by UDPipe lemma, which is the evidence standard for
-keeping or dropping a branch:
-
-```bash
-python3 corpus_review.py --all           # corpus_term_evidence.csv, corpus_branch_evidence.csv,
-                                         # gold_workbook.csv (+ corpus_review.meta.json)
-```
-
-⚠️ `corpus_review.py` needs the document corpus, and the repository tracks only three
-**synthetic** demo documents — the real reports arrive as the issue
-[#19](https://github.com/ufal/atrium-nlp-enrich/issues/19) attachment and are untracked.
-Every run prints its corpus size before writing, and the tool **refuses** to overwrite
-sheets built from a larger corpus rather than silently replacing real evidence with
-placeholder numbers. On a clean checkout these three are a smoke test, not evidence.
-
-Both sets are covered by a drift test: a taxonomy edit that is not followed by a
-regeneration fails `tests/test_vocab_review.py`, for the same reason the artifacts have
-their own gate. See [`data_samples/vocab/RUNBOOK.md`](data_samples/vocab/RUNBOOK.md) 📎
-for what each sheet answers and how to read it.
-
-**2. LLM Inference Pipeline ([llm_run.py](llm_run.py) 📎)**
-
-Reads the CSV files, filters lines by quality, injects the nested vocabulary and a
-sliding context window into the system prompt, and executes constrained generation.
-Output files are named `<stem>_enriched.json` and written to
-`KW_PER_DOC_LLM_<model_suffix>/`.
-
-> [!TIP]
-> All model-loading logic, constrained-decoding helpers, and prompt templates live in
-> [llm_utils.py](llm_utils.py) 📎 and are shared between both backends.
-
-```bash
-# Transformers backend (default)
-python3 llm_run.py
-
-# Custom config file
-python3 llm_run.py my_config.txt
-```
-
-**For multi-GPU runs (vLLM backend):**
-
-```bash
-# 1. Edit llm_config.txt:
-#    BACKEND=vllm
-#    MODEL_KEY=qwen3-235b-a22b-fp8
-#    TENSOR_PARALLEL_SIZE=2
-#    ENABLE_PREFIX_CACHING=true
-python3 llm_run.py
-```
-
-### 🖥 Model Registry
-
-The built-in registry in `llm_utils.py` covers the full range of supported models.
-All VRAM figures assume BnB 4-bit for the transformers backend and FP8/BF16 for vLLM.
-
-#### Single-GPU — `BACKEND=transformers` (or `BACKEND=vllm`)
-
-| Registry key      | Model                               | Size       | Context | Est. VRAM | Notes                                                     |
-|-------------------|-------------------------------------|------------|---------|-----------|-----------------------------------------------------------|
-| `qwen-3.6-27b-it` | Qwen/Qwen3.6-27B [^24]              | 27 B dense | 262 k   | ~18 GB    | **Default.** Best accuracy/VRAM ratio on a single GPU.    |
-| `gemma-4-31b-it`  | google/gemma-4-31B-it [^22]         | 31 B dense | 256 k   | ~21 GB    | Highest single-GPU accuracy. Gated — `HF_TOKEN` required. |
-| `qwen3-14b`       | OpenPipe/Qwen3-14B-Instruct [^18]   | 14 B dense | 128 k   | ~9 GB     | Good baseline; thinking mode suppressed automatically.    |
-| `qwen-3.5-9b-it`  | Qwen/Qwen3.5-9B [^26]               | 9 B dense  | 262 k   | ~6 GB     | Entry-level (8 GB VRAM).                                  |
-| `qwen3-8b`        | Qwen/Qwen3-8B [^19]                 | 8 B dense  | 128 k   | ~16 GB    | BF16 (no 4-bit); straightforward baseline.                |
-| `qwen2.5-14b-awq` | Qwen/Qwen2.5-14B-Instruct-AWQ [^12] | 14 B AWQ   | 128 k   | ~9 GB     | Pre-quantized; fast on NVIDIA GPUs.                       |
-| `qwen2.5-7b`      | Qwen/Qwen2.5-7B-Instruct [^13]      | 7 B dense  | 32 k    | ~14 GB    | BF16; short context window.                               |
-| `gemma-3-12b-it`  | google/gemma-3-12b-it [^20]         | 12 B dense | 128 k   | ~8 GB     | Good bilingual extraction. Gated.                         |
-
-#### MoE models — GGUF / llama.cpp fallback (any GPU, any VRAM)
-
-| Registry key           | Model                                    | Active params | Context | Notes                                                                     |
-|------------------------|------------------------------------------|---------------|---------|---------------------------------------------------------------------------|
-| `gemma-4-26b-moe-gguf` | bartowski/google_gemma-4-26B-A4B-it-GGUF | 4 B           | 8 k     | BnB 4-bit unsupported (fused experts). Q4_K_M quantization via llama.cpp. |
-
-#### MoE models — `BACKEND=vllm` (single GPU or multi-GPU)
-
-| Registry key          | Model                           | Active params | Context | Notes                                              |
-|-----------------------|---------------------------------|---------------|---------|----------------------------------------------------|
-| `qwen-3.6-35b-moe`    | Qwen/Qwen3.6-35B-A3B [^23]      | 3 B           | 262 k   | 35 B total / 3 B active. Single GPU usually fits.  |
-| `gemma-4-26b-moe`     | google/gemma-4-26B-A4B-it [^25] | 4 B           | 256 k   | 26 B total / 4 B active. Gated.                    |
-| `gemma-4-26b-moe-awq` | google/gemma-4-26B-A4B-it [^25] | 4 B           | 256 k   | AWQ-quantised variant of `gemma-4-26b-moe`. Gated. |
-
-#### Large models — `BACKEND=vllm`, `TENSOR_PARALLEL_SIZE ≥ 2`
-
-| Registry key          | Model                                               | Total / Active            | Context | Rec. TP | Notes                                                                   |
-|-----------------------|-----------------------------------------------------|---------------------------|---------|---------|-------------------------------------------------------------------------|
-| `qwen3-235b-a22b-fp8` | Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 [^27]        | 235 B / 22 B              | 128 k   | **2**   | **Recommended for 144 GB / 200 GB nodes.** Native FP8 (~117 GB loaded). |
-| `qwen3-235b-a22b`     | Qwen/Qwen3-235B-A22B-Instruct-2507 [^27]            | 235 B / 22 B              | 128 k   | 2       | BF16 variant — heavier than FP8.                                        |
-| `deepseek-v3`         | deepseek-ai/DeepSeek-V3 [^28]                       | 671 B MoE / —             | 128 k   | **4**   | FP8 official checkpoint available. 4×80 GB minimum.                     |
-| `llama4-maverick`     | meta-llama/Llama-4-Maverick-17B-128E-Instruct [^29] | 128 experts / 17 B active | 1 M     | 2       | Multimodal. 1 M token context. Gated — `HF_TOKEN` required.             |
-| `llama3.1-70b`        | meta-llama/Meta-Llama-3.1-70B-Instruct [^30]        | 70 B dense / —            | 128 k   | 2       | Also works with `transformers` + 4-bit on 2×40 GB. Gated.               |
-
-> [!TIP]
-> **Automatic Prefix Caching (APC)** — enabled by default for the vLLM backend
-> (`ENABLE_PREFIX_CACHING=true`). The system prompt (which embeds the full TEATER
-> vocabulary) is computed once per run; its KV-cache is reused across every line in
-> every document. This is the primary throughput multiplier: on a 500-line document the
-> vocabulary forward pass happens once instead of 500 times. APC also removes the need
-> to truncate the vocabulary to fit the token budget — the full thematic dictionary is
-> injected when APC is active.
-
-### 📁 Inputs and Outputs
-
-* **Input:** `DOC_LINE_CATEG/*.csv` (contains `file_id`, `page_num`, `line_num`,
-  `categ`, `quality_score`, and raw `text`).
-* **Output:** `KW_PER_DOC_LLM_<model_suffix>/*_enriched.json` — one file per document,
-  containing an array of JSON objects that merge CSV metadata with the LLM's semantic
-  extraction.
-* **Abort sidecar:** `KW_PER_DOC_LLM_<model_suffix>/*_enriched.abort.json` — written
-  alongside the main output **only** when a document is abandoned after 10 consecutive
-  inference errors. Its presence is the canonical signal that the corresponding JSON
-  file contains partial results.
-
-**Example output record:**
-```json
-{
-  "file_id": "CTX195603828",
-  "page": 1,
-  "line": 14,
-  "categ": "Text",
-  "quality_score": 0.98,
-  "original_text": "Výzkum odhalil základy gotického kostela ze 14. století.",
-  "enrichment": {
-    "extracted_keywords_cs": ["základy", "gotický kostel"],
-    "extracted_keywords_en": ["foundations", "gothic church"],
-    "teater_category": "kostel",
-    "teater_category_ids": [
-      { "source": "amcr", "id": "HES-000021" },
-      { "source": "amcr", "id": "HES-000465" },
-      { "source": "teater", "id": "1333" }
-    ],
-    "confidence_score": 0.95
-  }
-}
-```
-
-`teater_category_ids` (present when `EMIT_CATEGORY_IDS=true`, the default) lists every
-source record the selected vocabulary term absorbed during dedup — issue #6, M7. It is
-attached after inference, from the vocabulary's own `discarded_ids`; the prompt and
-schema are unaffected. When the selected term was a bracketed disambiguation (B3, e.g.
-`"zámek (sídlo elity)"`), `teater_category` is stripped back to the bare label
-(`"zámek"`) before it is written, and `teater_category_ids` carries the id that
-disambiguates which sense was meant — a term that legitimately contains parentheses in
-its own source label (e.g. `"GPS (navigační systém)"`) is never touched.
-
-**Abort sidecar format (`*_enriched.abort.json`):**
-```json
-{
-  "aborted": true,
-  "abort_reason": "10 consecutive inference errors",
-  "processed_before_abort": 42,
-  "errors_before_abort": 10,
-  "timestamp_utc": "2026-05-20T09:14:33"
-}
-```
-
-> [!NOTE]
-> None of the per-model output sets below is committed to this repository — each is the
-> real output of a real run against the full report corpus, not a sample bundled with
-> the code (same reason `data_samples/DOC_LINE_CATEG/` itself holds only three synthetic
-> demo documents). The directory names are the `OUTPUT_DIR` a local run with that
-> `MODEL_KEY` produces; the footnote on each is the model card.
-
-Output examples per model (directory names, not links — see the note above):
-- `KW_PER_DOC_LLM_qwen3_14b` by Qwen 3-14B [^18]
-- `KW_PER_DOC_LLM_qwen25_14b_awq` by Qwen 2.5-14B AWQ [^12]
-- `KW_PER_DOC_LLM_gemma_3_12b_it` by Gemma 3-12B-IT [^20]
-- `KW_PER_DOC_LLM_qwen_36_27b_it` by Qwen 3.6-27B-IT [^24]
-- `KW_PER_DOC_LLM_gemma_4_31b_it` by Gemma 4-31B-IT [^22]
-- `KW_PER_DOC_LLM_qwen_35_9b_it` by Qwen 3.5-9B-IT [^26]
-- `KW_PER_DOC_LLM_llama31_70b` by LLaMA 3.1-70B [^30]
-- `KW_PER_DOC_LLM_qwen3_8b` by Qwen 3-8B [^19]
-
-Pending (sample runs in progress):
-- `KW_PER_DOC_LLM_qwen_36_35b_moe` by Qwen 3.6-35B-MoE [^23]
-- `KW_PER_DOC_LLM_gemma_4_26b_a4b_it` by Gemma 4-26B-A4B-IT [^25]
-
-Archived (unsuccessful — evaluation notes in issue #6; would have been under
-`archived_KW_PER_DOC_LLM/`):
-- `KW_PER_DOC_LLM_mistral_nemo_12b` by Mistral Nemo 12B [^14]
-- `KW_PER_DOC_LLM_aya_expanse_8b` by Aya Expanse 8B [^15]
-- `KW_PER_DOC_LLM_bielik_11b_v30` by Bielik 11B v3.0 [^16]
-- `KW_PER_DOC_LLM_llama31_8b` by LLaMA 3.1-8B [^17]
-- `KW_PER_DOC_LLM_ministral_3_14b` by Ministral 3-14B [^21]
-- `KW_PER_DOC_LLM_qwen3_8b` (early run) by Qwen 3-8B [^19]
-- `KW_PER_DOC_LLM_qwen25_7b` by Qwen 2.5-7B [^13]
-
-### 📊 Paradata Integration
-
-Just like the main shell-script pipelines, LLM enrichment natively hooks into
-`atrium_paradata.py` and automatically logs:
-
-* Full snapshot of [llm_config.txt](llm_config.txt) 📎 and quality-filter settings.
-* **Which vocabulary build was used** — read from the `*.meta.json` beside the artifact:
-tool version, term count, the sha256 of both taxonomy files, and each source's record
-count and pinned ref (TEATER's harvest commit). A run is reproducible only if the
-vocabulary it saw is identifiable, and every placement decision is a function of those
-two sha256s.
-* **Both vocabulary sources as licence components.** The AMCR heslář and the TEATER
-thesaurus are CC0, as their rights holder stated on 2026-09-28 (atrium-project#6; records
-written earlier say CC BY-NC 4.0), and declared *conditional* in
-[para_config.txt](para_config.txt) 📎, so they are components of a run's licence only when
-`log_component()` names them — and, being CC0, never make it more restrictive.
-Logged per source actually present in the build — an AMCR-only artifact does not claim
-it used TEATER data.
-* Total processed lines (`json` success events).
-* Per-line tracking of filter skips (`skipped_filter`), inference faults
-(`skipped_error`), and already-completed files (`already_exists`).
-* **Abort events** — when a document is abandoned after 10 consecutive inference errors,
-the paradata entry records the abort reason alongside the count of lines processed
-before the failure. A sidecar `*.abort.json` file is also written next to the
-(partial) output JSON for easy programmatic detection.
-The resulting logs are dropped into the specified `PARADATA_DIR` alongside the other pipeline execution records.
-
----
-
 ## EXTRA: REST API Service
 
 The pipeline now includes a fully-featured **FastAPI REST service** that exposes the core NLP enrichment and rescaling functionalities over HTTP.
 
-* **Single-file enrichment:** Upload CSV, XLSX, or plain text to the `/enrich` endpoint and receive a combined JSON envelope (or ZIP workspace) with TEITOK XML, keywords, paradata, and NER summaries.
+* **Single-file enrichment:** Upload CSV, XLSX, or plain text to the `/enrich` endpoint and receive a combined JSON envelope (or ZIP workspace) with TEITOK XML, paradata, and NER summaries.
 * **Coordinate Rescaling:** Use the `/rescale` endpoint to align XML spatial coordinates to specific target image resolutions directly over the network.
 * **Job Management:** Background processing for larger documents with a asynchronous `/jobs` queue.
 
@@ -1758,7 +1134,6 @@ The declared output types per stage are:
 | `api_2_udp.sh`      | `conllu` (one per document)                                                                       |
 | `api_3_nt.sh`       | `tsv` (one per page — count reflects individual page TSV files)                                   |
 | `api_4_stats.sh`    | `csv` always; `conllu` when `SAVE_CONLLU_NE=true`; `xml` when `SAVE_TEITOK=true`                  |
-| `keywords.py`       | `csv_per_doc` (one per document keyword CSV) and `csv_summary_row` (one summary row per document) |
 
 > [!NOTE]
 > When resuming an interrupted run (steps 2–4 skip already-finished documents
@@ -1859,15 +1234,6 @@ produced during the run into a single `pipeline-run-merged` record.
 # Full core run: api_1 → api_2 → api_3 → api_4
 python3 run_pipeline.py
 
-# Core run plus keyword extraction (CPU-only YAKE backend, default)
-python3 run_pipeline.py --kw
-
-# Keyword extraction with the GPU KeyBERT backend
-python3 run_pipeline.py --kw --kw-method keybert
-
-# Add the optional LLM semantic-enrichment stage (needs requirements_llm.txt)
-python3 run_pipeline.py --kw --llm
-
 # Run only a subset of the core stages (canonical order is always enforced)
 python3 run_pipeline.py --stages udp nt
 
@@ -1881,7 +1247,7 @@ python3 run_pipeline.py --skip-manifest --skip-udp
 python3 run_pipeline.py --clean-state
 
 # Force execution: bypass missing dependency checks and ignore individual stage failures
-python3 run_pipeline.py --kw --kw-method keybert --force
+python3 run_pipeline.py --force
 
 # Validate configuration and resolve the plan without running anything
 python3 run_pipeline.py --dry-run
@@ -1902,7 +1268,7 @@ never collide.
 (paradata files that already existed before the run are never merged).
 4. **Merges** all per-stage records into one
 `<PARADATA_DIR>/<runid>_nlp-enrich_pipeline-run.json` via
-`atrium_paradata.merge_run_paradata`. The merged record accurately tracks document-level statistics across the sequential pipeline (recording true throughput without inflating input counts). The effective license of the merged record is re-derived from the **union** of every component used across the stages, so the most-restrictive rule holds end-to-end (a core run is CC BY-NC-SA 4.0; adding the YAKE backend escalates the share-alike/AGPL constraint, etc.).
+`atrium_paradata.merge_run_paradata`. The merged record accurately tracks document-level statistics across the sequential pipeline (recording true throughput without inflating input counts). The effective license of the merged record is re-derived from the **union** of every component used across the stages, so the most-restrictive rule holds end-to-end (a core run is CC BY-NC-SA 4.0, from the NameTag 3 and UDPipe 2 models; converting with flexiconv adds its GPL-3.0-or-later).
 
 #### Resume / checkpoint recovery
 
@@ -1911,12 +1277,8 @@ runner lets you re-enter the pipeline at any stage instead of redoing completed 
 Recovery operates at two complementary levels.
 
 **Document-level (automatic).** Every stage already skips inputs whose output exists
-(steps 2–4 via `[ -f "$out" ] && continue`; the LLM stage logs `already_exists` and
-moves on), so simply re-running the same command picks up where the previous run
-stopped. When the LLM stage abandons a document after 10 consecutive inference
-errors it writes a `*_enriched.abort.json` sidecar next to the partial output (see
-[LLM Inputs and Outputs](#-inputs-and-outputs)); that marker is the canonical signal
-that a document holds partial results and should be re-run.
+(steps 2–4 via `[ -f "$out" ] && continue`), so simply re-running the same command
+picks up where the previous run stopped.
 
 **Pipeline-level starting points.** To skip whole stages — not just completed
 documents — the runner accepts explicit entry points over the full stage order:
@@ -1927,15 +1289,15 @@ documents — the runner accepts explicit entry points over the full stage order
 | `--skip-<stage>`       | Skip one named stage, run the rest.                                      |
 | `--clean-state`        | Sweep stale `.state_*.json` sidecars from `PARADATA_DIR` before running. |
 
-`<stage>` is one of `manifest`, `udp`, `nt`, `stats`, `keywords`, `llm` (the canonical
-order; `keywords`/`llm` require their `--kw`/`--llm` flags to be part of the run).
+`<stage>` is one of `manifest`, `udp`, `nt`, `stats`, `project` (the canonical
+order; `project` needs `--teitok-enrichment` to be part of the run).
 Each skip flag also has an equivalent `SKIP_<STAGE>=true` knob that can live in
 [config_api.txt](config_api.txt) 📎 (e.g. `SKIP_MANIFEST=true`), so a habitual resume
 profile can be persisted without retyping flags.
 
 ```bash
-# UDPipe + NameTag already finished — resume at statistics, then keywords
-python3 run_pipeline.py --kw --start-from stats
+# UDPipe + NameTag already finished — resume at statistics
+python3 run_pipeline.py --start-from stats
 
 # Re-run only NER and statistics; keep the existing manifest and CoNLL-U
 python3 run_pipeline.py --skip-manifest --skip-udp
@@ -1955,14 +1317,16 @@ in each stage's paradata record (and therefore the merged record). This ties a
 run back to the exact image/commit that produced it.
 
 ```bash
-ATRIUM_RUNNER_IMAGE="ghcr.io/ufal/atrium-nlp-enrich:0.22.0" \
+ATRIUM_RUNNER_IMAGE="ghcr.io/ufal/atrium-nlp-enrich:1.0.0" \
 ATRIUM_RUNNER_REF="$(git rev-parse --short HEAD)" \
-python3 run_pipeline.py --kw
+python3 run_pipeline.py
 ```
 
-The published images are `ghcr.io/ufal/atrium-nlp-enrich:<version>` (the batch runner),
-`ghcr.io/ufal/atrium-nlp-enrich-api:<version>` and `ghcr.io/ufal/atrium-nlp-enrich-llm:<version>`,
-where `<version>` is the release **without** its leading `v` (`0.22.0` for `v0.22.0`) — the
+The published images are `ghcr.io/ufal/atrium-nlp-enrich:<version>` (the batch runner)
+and `ghcr.io/ufal/atrium-nlp-enrich-api:<version>` (the service). `atrium-nlp-enrich-llm`
+was published up to 0.23.0 only; it is not built any more (the keyword and LLM code left, see
+[Where things went](#where-things-went)). `<version>` is the release **without** its leading
+`v` (`1.0.0` for `v1.0.0`) — the
 target is part of the image name, not the tag. `ATRIUM_RUNNER_REF` is the git ref and keeps the `v`.
 
 > [!NOTE]
@@ -1980,7 +1344,7 @@ target is part of the image name, not the tag. `ATRIUM_RUNNER_REF` is the git re
 | `0`  | All requested stages completed; nothing flagged.                                                                                                                                                                          |
 | `1`  | A stage processed **nothing** despite having input and no resume, and `FAIL_ON_EMPTY=true` (the default). Also: `--with-flexiconv` could not convert at least one document.                                               |
 | `2`  | A required stage script was not found.                                                                                                                                                                                    |
-| `3`  | A dependency preflight failed (e.g. `--kw-method keybert` without `keybert`/`sentence-transformers`, `--llm` without the [requirements_llm.txt](requirements_llm.txt) 📎 stack, or `--with-flexiconv` without flexiconv). |
+| `3`  | A dependency preflight failed (`--with-flexiconv` without flexiconv).                                                                                                                      |
 | `5`  | The TEITOK output failed its output contract (`api_4_stats.sh`'s gate: the XSD, unique ids, resolvable references, the page rules). A writer defect: please report it.                                                    |
 | `≠0` | A stage script itself exited non-zero (its code is propagated).                                                                                                                                                           |
 
@@ -1996,12 +1360,27 @@ stages.
 
 > [!NOTE]
 > The runner never re-implements stage logic: it shells out to the exact same
-> [api_1_manifest.sh](api_1_manifest.sh) … [api_4_stats.sh](api_4_stats.sh), [config_api.txt](config_api.txt), and [llm_run.py](llm_run.py) 📎 you can
+> [api_1_manifest.sh](api_1_manifest.sh) … [api_4_stats.sh](api_4_stats.sh), and [config_api.txt](config_api.txt) you can
 > run by hand. Anything documented for those stages (resume behaviour, output
-> flags, model registry, …) applies unchanged under the runner.
+> flags, …) applies unchanged under the runner.
 
 ---
 
+
+## Where things went
+
+Since v1.0.0 this repository is the morphology / named-entity / TEITOK stage only. The October 2026
+split of the ATRIUM tool repositories moved the rest:
+
+| What                                                                 | Now in                                                                                  | Was                                   |
+|----------------------------------------------------------------------|-----------------------------------------------------------------------------------------|---------------------------------------|
+| Keyword extraction: KeyBERT, YAKE, KER; `POST /extract_keywords`     | [atrium-keyword-extract](https://github.com/ufal/atrium-keyword-extract)                | `keywords.py`, `--kw*`, `kw_method`   |
+| Born-digital documents, the LLM controlled-vocabulary stage          | [atrium-digital-convert](https://github.com/ufal/atrium-digital-convert) (the LLM/vocabulary code is moving into keyword-extract next) | `llm_run.py`, `vocab_*.py`, `prompts/` |
+| OCR output postprocessing (ALTO and the other OCR formats)           | [atrium-ocr-postprocess](https://github.com/ufal/atrium-ocr-postprocess)                | `atrium-alto-postprocess`             |
+
+The API lost the `kw_method` and `num_keywords` parameters, the `keywords`, `method_requested`,
+`method_used` and `llm` response fields and the `keyword_methods` block of `/info`: a breaking
+change, hence the major version. Records written before it are read as before.
 
 ## Acknowledgements 🙏
 
@@ -2013,15 +1392,11 @@ stages.
 - **Frameworks used**:
   - Lindat/CLARIAH-CZ **NameTag 3** API [^6] 🏷
   - Lindat/CLARIAH-CZ **UDPipe 2** API [^5] 🏷
-  - local **KER** (original lemma-frequency keyword extraction) [^1] 🏷
-  - **YAKE** (Yet Another Keyword Extractor, CPU statistical keyword extraction) [^10] 🏷
-  - **KeyBERT** (embedding-based keyword extraction, GPU-accelerated) [^11] 🏷
   - UFAL **flexiconv** (format conversion to TEITOK XML) [^9] 🏷
 
 **©️ 2026 UFAL & ATRIUM**
 
-[^1]: https://github.com/ufal/ker
-[^2]: https://github.com/ufal/atrium-alto-postprocess
+[^2]: https://github.com/ufal/atrium-ocr-postprocess
 [^3]: https://ufal.mff.cuni.cz/~strakova/cnec2.0/ne-type-hierarchy.pdf
 [^4]: https://atrium-research.eu/
 [^5]: https://lindat.mff.cuni.cz/services/udpipe/api-reference.php
@@ -2029,9 +1404,7 @@ stages.
 [^7]: https://ufal.mff.cuni.cz/
 [^8]: https://github.com/ufal/atrium-nlp-enrich
 [^9]: https://github.com/ufal/flexiconv
-[^10]: https://github.com/LIAAD/yake
-[^11]: https://github.com/MaartenGr/KeyBERT
-[^12]: https://huggingface.co/Qwen/Qwen2.5-14B-Instruct-AWQ
+
 [^13]: https://huggingface.co/Qwen/Qwen2.5-7B-Instruct
 [^14]: https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407
 [^15]: https://huggingface.co/CohereForAI/aya-expanse-8b

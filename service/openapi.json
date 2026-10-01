@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ATRIUM nlp-enrich API",
-    "description": "Text lines (a table, a .txt, or a converted TEITOK file) → NLP-enriched TEITOK XML + keywords.",
-    "version": "0.23.0",
+    "description": "Text lines (a table, a .txt, or a converted TEITOK file) → NLP-enriched TEITOK XML.",
+    "version": "1.0.0",
     "x-atrium-service": "atrium-nlp-enrich"
   },
   "paths": {
@@ -258,7 +258,7 @@
     "/enrich_text": {
       "post": {
         "summary": "Enrich Text",
-        "description": "The `/enrich` pipeline on inline lines (§4.3, the JSON sibling of the upload endpoint).\n\nSince atrium-project#32 round 2 the body is a typed model: a malformed value (a\nnon-numeric `num_keywords`, an unknown `format`) is a 422 validation error where it\nused to be a 500 or, for `format`, silently JSON.",
+        "description": "The `/enrich` pipeline on inline lines (§4.3, the JSON sibling of the upload endpoint).\n\nSince atrium-project#32 round 2 the body is a typed model: a malformed value (an\nunknown `format`) is a 422 validation error where it\nused to be a 500 or, for `format`, silently JSON.",
         "operationId": "enrich_text",
         "requestBody": {
           "content": {
@@ -435,7 +435,7 @@
     "/project_record": {
       "post": {
         "summary": "Project Record",
-        "description": "Project a finished record onto its TEITOK file (atrium-project#70, flexiconv#1).\n\nPure XML transform (no pipeline), for a record that is complete only after this service ran:\nthe page categories become ``pb/@ana`` plus a ``classDecl`` taxonomy, and llm-enrich's\nTEATER/AMČR categories and controlled keywords become ``profileDesc/textClass/keywords``,\neach pointing at its pages. Only the header and ``pb/@ana`` change. Re-projecting replaces\nan earlier projection. Refused (422) when the TEITOK is not the record's document (its\n``<title>`` is neither ``doc_id`` nor the id of ``source.filename``), not this writer's\n``teitok-2`` output, or not valid. Off AMČR's production chain, whose stored TEITOK keeps\nlinguistics and layout only.",
+        "description": "Project a finished record onto its TEITOK file (atrium-project#70, flexiconv#1).\n\nPure XML transform (no pipeline), for a record that is complete only after this service ran:\nthe page categories become ``pb/@ana`` plus a ``classDecl`` taxonomy, and keyword-extract's\nTEATER/AMČR categories and controlled keywords become ``profileDesc/textClass/keywords``,\neach pointing at its pages. Only the header and ``pb/@ana`` change. Re-projecting replaces\nan earlier projection. Refused (422) when the TEITOK is not the record's document (its\n``<title>`` is neither ``doc_id`` nor the id of ``source.filename``), not this writer's\n``teitok-2`` output, or not valid. Off AMČR's production chain, whose stored TEITOK keeps\nlinguistics and layout only.",
         "operationId": "project_record",
         "requestBody": {
           "content": {
@@ -1328,7 +1328,7 @@
             ]
           },
           "pages": {
-            "description": "Originator: alto-postprocess (OCR/ALTO path) or digital-convert (digital-born PDF/DOCX path), selected per document by source.origin — never both. page-classification may write category fields; nlp-enrich may write teitok_surface. Field-level ownership — never co-mutated.",
+            "description": "Originator: ocr-postprocess (named alto-postprocess before 2026-10-01) (OCR/ALTO path) or digital-convert (digital-born PDF/DOCX path), selected per document by source.origin — never both. page-classification may write category fields; nlp-enrich may write teitok_surface. Field-level ownership — never co-mutated.",
             "type": "array",
             "items": {
               "type": "object",
@@ -1426,7 +1426,7 @@
             }
           },
           "content": {
-            "description": "Originator: alto-postprocess or digital-convert, selected per document by source.origin (Issue #18) — never both. Reading-order text for search, or null when externalised by reference.",
+            "description": "Originator: ocr-postprocess (named alto-postprocess before 2026-10-01) or digital-convert, selected per document by source.origin (Issue #18) — never both. Reading-order text for search, or null when externalised by reference.",
             "type": "object",
             "additionalProperties": true,
             "properties": {
@@ -1445,7 +1445,7 @@
             }
           },
           "lines": {
-            "description": "Originator: alto-postprocess (categ/quality/lang/text) or digital-convert (text/bbox/group_id/lang/quality_score/categ), selected per document by source.origin (Issue #18) — never both. nlp-enrich writes morphology and teitok_ref. Field-level ownership. NOTE for validators: only page+line are required, so a row stripped of its text by a field-ownership filter still validates here — the round-trip assertion belongs in the writing tool, not in this schema.",
+            "description": "Originator: ocr-postprocess (named alto-postprocess before 2026-10-01) (categ/quality/lang/text) or digital-convert (text/bbox/group_id/lang/quality_score/categ), selected per document by source.origin (Issue #18) — never both. nlp-enrich writes morphology and teitok_ref. Field-level ownership. NOTE for validators: only page+line are required, so a row stripped of its text by a field-ownership filter still validates here — the round-trip assertion belongs in the writing tool, not in this schema.",
             "type": "array",
             "items": {
               "type": "object",
@@ -1468,7 +1468,7 @@
                 },
                 "categ": {
                   "type": "string",
-                  "description": "Line category. Open string with TWO authorised originators emitting DISJOINT label sets: alto-postprocess emits Clear/Empty/Noisy/Non-text/Trash, digital-convert emits Garbage/Inverted. Both sets are declared in the hub-canonical atrium_vocab.py as the `line-category` scheme; `atrium_vocab.LINE_CATEGORY_ORIGINATORS` says which tool emits which. 'Garbage', 'Inverted' and 'Trash' are load-bearing for api_util/json_to_md.py's DROP_CATEGORIES, which filters on atrium_vocab.UNTRUSTWORTHY_LINE_CATEGORIES (defect V-1 in docs/skos_strategy.md 6, fixed 2026-09-25: it covered only the first two, so a Trash line reached the model exactly like a Clear one). A re-spelled category passes that filter unnoticed, so do not re-spell one on the way out. A re-spelling would not fail validation either -- it would only put a tool out of step with the registry, in silence.",
+                  "description": "Line category. Open string with TWO authorised originators emitting DISJOINT label sets: ocr-postprocess (formerly alto-postprocess) emits Clear/Empty/Noisy/Non-text/Trash, digital-convert emits Garbage/Inverted. Both sets are declared in the hub-canonical atrium_vocab.py as the `line-category` scheme; `atrium_vocab.LINE_CATEGORY_ORIGINATORS` says which tool emits which. 'Garbage', 'Inverted' and 'Trash' are load-bearing for api_util/json_to_md.py's DROP_CATEGORIES, which filters on atrium_vocab.UNTRUSTWORTHY_LINE_CATEGORIES (defect V-1 in docs/skos_strategy.md 6, fixed 2026-09-25: it covered only the first two, so a Trash line reached the model exactly like a Clear one). A re-spelled category passes that filter unnoticed, so do not re-spell one on the way out. A re-spelling would not fail validation either -- it would only put a tool out of step with the registry, in silence.",
                   "x-atrium-scheme": "line-category",
                   "examples": [
                     "Clear",
@@ -1547,7 +1547,7 @@
             }
           },
           "tables": {
-            "description": "Originator: alto-postprocess (ALTO spatial-block tables) or digital-convert (DOCX/PDF structural extraction), selected per document by source.origin (Issue #18, resolved) — never both. Grid SHAPE only: cell text is never duplicated here, it lives once in lines[] and is linked back via group_id, so this stays the lossless structured twin of the disposable Markdown table in 'regenerable'.",
+            "description": "Originator: ocr-postprocess (named alto-postprocess before 2026-10-01) (ALTO spatial-block tables) or digital-convert (DOCX/PDF structural extraction), selected per document by source.origin (Issue #18, resolved) — never both. Grid SHAPE only: cell text is never duplicated here, it lives once in lines[] and is linked back via group_id, so this stays the lossless structured twin of the disposable Markdown table in 'regenerable'.",
             "type": "array",
             "items": {
               "type": "object",
@@ -1634,7 +1634,7 @@
             }
           },
           "entities": {
-            "description": "Owner: nlp-enrich; llm-enrich writes pid. `translation_en` is RESERVED: declared for the translator, written by no tool (atrium-project#70). Carries all three tagsets so no mapping is lost.",
+            "description": "Owner: nlp-enrich; keyword-extract (llm-enrich before 2026-10-01) writes pid. `translation_en` is RESERVED: declared for the translator, written by no tool (atrium-project#70). Carries all three tagsets so no mapping is lost.",
             "type": "array",
             "items": {
               "type": "object",
@@ -1739,7 +1739,7 @@
             }
           },
           "enrichment": {
-            "description": "Owner: llm-enrich. Superset of the LLM document schema, plus the explicit page citation.",
+            "description": "Owner: keyword-extract (llm-enrich before 2026-10-01). Superset of the LLM document schema, plus the explicit page citation.",
             "type": "object",
             "additionalProperties": true,
             "properties": {
@@ -1805,7 +1805,7 @@
             }
           },
           "forms": {
-            "description": "Owner: llm-enrich. VLM/LLM-driven labeled fixed-field extraction (e.g. archival intake sheets: name/date/plot-number/signature). No deterministic ALTO/DOCX structural signal marks a region as a form field the way it does for tables, so this carries a confidence score per field and is always single-owner regardless of document origin.",
+            "description": "Owner: keyword-extract (llm-enrich before 2026-10-01). VLM/LLM-driven labeled fixed-field extraction (e.g. archival intake sheets: name/date/plot-number/signature). No deterministic ALTO/DOCX structural signal marks a region as a form field the way it does for tables, so this carries a confidence score per field and is always single-owner regardless of document origin.",
             "type": "array",
             "items": {
               "type": "object",
@@ -1879,31 +1879,6 @@
             "title": "File",
             "description": "The text: a .csv/.xlsx table (`text`, optional `page_num`/`line_num`), a .txt (one line per row; a form feed starts a new page), or a TEITOK .xml -- e.g. flexiconv's conversion of a PDF, DOCX or PAGE XML (api_flexiconv.sh) -- whose text is annotated and whose pages, lines and boxes become the output's layout."
           },
-          "kw_method": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "keybert",
-                  "yake",
-                  "legacy",
-                  "none"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Kw Method",
-            "description": "The keyword method. Absent: the server's default (`/info` `keyword_methods.default`, the `DEFAULT_KW_METHOD` setting)."
-          },
-          "num_keywords": {
-            "type": "integer",
-            "maximum": 100.0,
-            "minimum": 1.0,
-            "title": "Num Keywords",
-            "default": 20
-          },
           "lang": {
             "type": "string",
             "const": "cs",
@@ -1934,7 +1909,7 @@
           "teitok_enrichment": {
             "type": "boolean",
             "title": "Teitok Enrichment",
-            "description": "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and this run's keywords, for the document and for each page, in `profileDesc/textClass`. AMČR's stored TEITOK leaves it off.",
+            "description": "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and its controlled keywords, in `profileDesc/textClass`. AMČR's stored TEITOK leaves it off.",
             "default": false
           }
         },
@@ -1956,7 +1931,7 @@
             "type": "string",
             "contentMediaType": "application/json",
             "title": "Document Json",
-            "description": "The document's finished record (after page-classification and llm-enrich)."
+            "description": "The document's finished record (after page-classification and keyword-extract)."
           },
           "format": {
             "type": "string",
@@ -2045,31 +2020,6 @@
             "title": "File",
             "description": "The text: a .csv/.xlsx table (`text`, optional `page_num`/`line_num`), a .txt (one line per row; a form feed starts a new page), or a TEITOK .xml -- e.g. flexiconv's conversion of a PDF, DOCX or PAGE XML (api_flexiconv.sh) -- whose text is annotated and whose pages, lines and boxes become the output's layout."
           },
-          "kw_method": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "keybert",
-                  "yake",
-                  "legacy",
-                  "none"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Kw Method",
-            "description": "The keyword method. Absent: the server's default (`/info` `keyword_methods.default`, the `DEFAULT_KW_METHOD` setting)."
-          },
-          "num_keywords": {
-            "type": "integer",
-            "maximum": 100.0,
-            "minimum": 1.0,
-            "title": "Num Keywords",
-            "default": 20
-          },
           "lang": {
             "type": "string",
             "const": "cs",
@@ -2091,7 +2041,7 @@
           "teitok_enrichment": {
             "type": "boolean",
             "title": "Teitok Enrichment",
-            "description": "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and this run's keywords, for the document and for each page, in `profileDesc/textClass`. AMČR's stored TEITOK leaves it off.",
+            "description": "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and its controlled keywords, in `profileDesc/textClass`. AMČR's stored TEITOK leaves it off.",
             "default": false
           }
         },
@@ -2331,14 +2281,6 @@
             "title": "Teitok Xml",
             "description": "The NLP-enriched TEITOK XML; null when none was produced."
           },
-          "keywords": {
-            "items": {
-              "$ref": "#/components/schemas/Keyword"
-            },
-            "type": "array",
-            "title": "Keywords",
-            "description": "The document's keywords; empty with `kw_method=none`."
-          },
           "ne_summary": {
             "items": {
               "$ref": "#/components/schemas/NamedEntitySummary"
@@ -2365,33 +2307,6 @@
             "type": "array",
             "title": "Limits Applied",
             "description": "Every limit that shaped the result without refusing it."
-          },
-          "method_requested": {
-            "type": "string",
-            "title": "Method Requested",
-            "description": "The keyword method asked for (the server default when none was)."
-          },
-          "method_used": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Method Used",
-            "description": "The keyword method that ran: `keybert`, `yake`, `legacy`, `none`."
-          },
-          "llm": {
-            "anyOf": [
-              {},
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Llm",
-            "description": "Reserved; always null."
           },
           "layout_source": {
             "type": "string",
@@ -2437,19 +2352,15 @@
           "pages",
           "stages",
           "teitok_xml",
-          "keywords",
           "ne_summary",
           "paradata",
           "limits_applied",
-          "method_requested",
-          "method_used",
-          "llm",
           "layout_source",
           "teitok_schema_valid",
           "teitok_schema_errors"
         ],
         "title": "EnrichResponse",
-        "description": "The enriched document: TEITOK XML, keywords, entities, paradata, and the record when asked."
+        "description": "The enriched document: TEITOK XML, entities, paradata, and the record when asked."
       },
       "EnrichTextRequest": {
         "properties": {
@@ -2475,32 +2386,6 @@
             "title": "Doc Id",
             "description": "The document's id.",
             "default": "document"
-          },
-          "kw_method": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "keybert",
-                  "yake",
-                  "legacy",
-                  "none"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Kw Method",
-            "description": "The keyword method; the server default when absent."
-          },
-          "num_keywords": {
-            "type": "integer",
-            "maximum": 100.0,
-            "minimum": 1.0,
-            "title": "Num Keywords",
-            "description": "How many keywords to return.",
-            "default": 20
           },
           "lang": {
             "type": "string",
@@ -2534,7 +2419,7 @@
           "teitok_enrichment": {
             "type": "boolean",
             "title": "Teitok Enrichment",
-            "description": "Opt-in, default false: see `/enrich`. Projects the record's page categories and this run's keywords (per document and per page) into the TEITOK header.",
+            "description": "Opt-in, default false: see `/enrich`. Projects the record's page categories and its controlled keywords into the TEITOK header.",
             "default": false
           }
         },
@@ -2767,51 +2652,6 @@
         ],
         "title": "JobStatus",
         "description": "A job's state."
-      },
-      "Keyword": {
-        "properties": {
-          "keyword": {
-            "type": "string",
-            "title": "Keyword"
-          },
-          "score": {
-            "type": "number",
-            "title": "Score",
-            "description": "The method's score (higher is more relevant)."
-          }
-        },
-        "additionalProperties": true,
-        "type": "object",
-        "required": [
-          "keyword",
-          "score"
-        ],
-        "title": "Keyword",
-        "description": "One keyword of the document, by the keyword method used."
-      },
-      "KeywordMethods": {
-        "properties": {
-          "default": {
-            "type": "string",
-            "title": "Default",
-            "description": "The server's `DEFAULT_KW_METHOD`."
-          },
-          "available": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
-            "title": "Available"
-          }
-        },
-        "additionalProperties": true,
-        "type": "object",
-        "required": [
-          "default",
-          "available"
-        ],
-        "title": "KeywordMethods",
-        "description": "The keyword methods: the server default (used when a request names none), and each one."
       },
       "LimitMeta": {
         "properties": {
@@ -3145,9 +2985,6 @@
           },
           "models": {
             "$ref": "#/components/schemas/NlpModels"
-          },
-          "keyword_methods": {
-            "$ref": "#/components/schemas/KeywordMethods"
           }
         },
         "additionalProperties": true,
@@ -3161,8 +2998,7 @@
           "openapi_sha256",
           "stage_plan",
           "core_stages_mandatory",
-          "models",
-          "keyword_methods"
+          "models"
         ],
         "title": "NlpInfo",
         "description": "`/info` of atrium-nlp-enrich."
@@ -3570,6 +3406,6 @@
   },
   "x-atrium-record-schema": {
     "schema_version": "1.0",
-    "sha256": "3431e9153fb8ccb7409cc7d5f3d7a1907420004f738d36505afa1f667ebe7d9f"
+    "sha256": "2a968799a5c50386abe8a65da9678f97f442ea7d691bf2f97d8f232b7ca3481e"
   }
 }

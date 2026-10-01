@@ -342,12 +342,6 @@ def test_page_conllu_mirrors_udpipe_output():
     assert any(ln.endswith("SpaceAfter=No") for ln in lines)
 
 
-def test_page_keywords_with_the_legacy_method_need_no_extra_package():
-    kws = tp.page_keywords(_sample(), "legacy", 3)
-    assert set(kws) <= {"pb-1", "pb-2"} and kws
-    assert all(1 <= len(v) <= tp.KW_MIN for v in kws.values())  # asked 3, clamped up to 5 max
-
-
 def test_statistical_block_reads_the_per_document_csv(tmp_path):
     csv_path = tmp_path / "CTX000000001_keywords.csv"
     csv_path.write_text("keyword,score\nHradiště,1.0\nkeramika,0.5\n", encoding="utf-8")
@@ -480,13 +474,8 @@ class TestPipelineStage:
         ns = argparse.Namespace(
             stages=["manifest", "udp", "nt", "stats"],
             config=Path("dummy"),
-            kw=False,
-            kw_method="yake",
-            llm=False,
-            llm_config="dummy_llm.txt",
             force=False,
             lang="cs",
-            num_keywords=None,
         )
         for k, v in kwargs.items():
             setattr(ns, k, v)
@@ -497,33 +486,33 @@ class TestPipelineStage:
     def test_off_by_default(self):
         import run_pipeline as rp
 
-        plan = rp._build_plan(self._args(kw=True), self._VALUES)
+        plan = rp._build_plan(self._args(), self._VALUES)
         assert "project" not in [s["name"] for s in plan["stage_plan"]]
         assert plan["teitok_enrichment"] is False
 
     @pytest.mark.parametrize("how", ["flag", "config"])
-    def test_on_after_keywords_before_llm(self, how):
+    def test_on_after_the_core_stages(self, how):
         import run_pipeline as rp
 
-        args = self._args(kw=True, llm=True, teitok_enrichment=how == "flag")
+        args = self._args(teitok_enrichment=how == "flag")
         values = dict(self._VALUES, TEITOK_ENRICHMENT="true" if how == "config" else "false")
         names = [s["name"] for s in rp._build_plan(args, values)["stage_plan"]]
-        assert names[-3:] == ["keywords", "project", "llm"]
+        assert names[-2:] == ["stats", "project"]
 
     def test_start_from_project_skips_everything_before_it(self):
         import run_pipeline as rp
 
-        args = self._args(kw=True, teitok_enrichment=True, start_from="project")
+        args = self._args(teitok_enrichment=True, start_from="project")
         plan = rp._build_plan(args, self._VALUES)
         assert {s["name"]: s["skip"] for s in plan["stage_plan"]}["project"] is False
-        assert all(plan["skips"][s] for s in ("manifest", "udp", "nt", "stats", "keywords"))
+        assert all(plan["skips"][s] for s in ("manifest", "udp", "nt", "stats"))
 
     def test_the_stage_command(self, tmp_path):
         import run_pipeline as rp
 
-        args = self._args(kw=True, teitok_enrichment=True, num_keywords=12)
+        args = self._args(teitok_enrichment=True)
         plan = rp._build_plan(args, self._VALUES)
-        cmd = rp._project_command(plan, args, Path("pd"), tmp_path, "yake")
+        cmd = rp._project_command(plan, args, Path("pd"), tmp_path)
         assert cmd[1:3] == ["-m", "api_util.teitok_project"]
         joined = " ".join(cmd)
         assert "--teitok-dir ./out/TEITOK --in-place" in joined
@@ -532,10 +521,9 @@ class TestPipelineStage:
             or "--exclude ./out/TEITOK/flexiconv" in joined
         )
         assert f"--record-dir {tmp_path}" in joined
-        assert "--kw-method yake --kw-per-doc-dir out/KW_PER_DOC_Y" in joined
-        assert "-n 12" in joined
-        no_kw = rp._project_command(plan, self._args(), Path("pd"), None, "yake")
-        assert "--kw-method" not in no_kw and "--record-dir" not in no_kw
+        assert "--kw-method" not in joined
+        no_record = rp._project_command(plan, self._args(), Path("pd"), None)
+        assert "--record-dir" not in no_record
 
     def test_the_config_knob_ships_off_and_the_environment_turns_it_on(self, monkeypatch):
         import run_pipeline as rp

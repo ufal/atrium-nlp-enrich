@@ -6,13 +6,16 @@ Runs the four shell stages in order
 
     api_1_manifest.sh → api_2_udp.sh → api_3_nt.sh → api_4_stats.sh
 
-optionally followed by the keyword-extraction stage (keywords.py), the opt-in
-record projection onto the TEITOK files (api_util/teitok_project.py,
---teitok-enrichment; atrium-project#70) and the optional LLM
-semantic-enrichment stage (llm_run.py), then merges every
+optionally followed by the opt-in record projection onto the TEITOK files
+(api_util/teitok_project.py, --teitok-enrichment; atrium-project#70), then merges every
 per-stage paradata JSON produced during THIS run into a single
 ``pipeline-run-merged`` summary record via
 ``atrium_paradata.merge_run_paradata``.
+
+Keywords are not made here: the statistical and the controlled kind moved to
+atrium-keyword-extract on 2026-10-01 (atrium-keyword-extract#1). The pipeline's ``keywords``
+and ``llm`` stages and their flags (``--kw``, ``--kw-method``, ``-n``, ``--kw-fallback``,
+``--skip-keywords``, ``--llm``, ``--llm-config``, ``--skip-llm``) are gone.
 """
 
 from __future__ import annotations
@@ -55,7 +58,7 @@ _CORE_STAGES: Dict[str, Tuple[str, str]] = {
     "stats": ("api_4_stats.sh", "Statistics + TEITOK"),
 }
 _CORE_ORDER = ["manifest", "udp", "nt", "stats"]
-_FULL_STAGE_ORDER = _CORE_ORDER + ["keywords", "project", "llm"]
+_FULL_STAGE_ORDER = _CORE_ORDER + ["project"]
 
 # --with-flexiconv: api_flexiconv.sh runs first, and FLEXICONV_ANNOTATE=true makes the manifest
 # take the converted documents in and stage 4 take their layout from them (issue #10, stage 6).
@@ -175,154 +178,6 @@ def _sweep_stale_state_files(paradata_dir: Path) -> List[str]:
     return removed
 
 
-def _keybert_deps_preflight() -> None:
-    missing = []
-    try:
-        pass
-    except Exception as exc:
-        missing.append(f"torch ({exc})")
-
-    try:
-        pass
-    except Exception:
-        pass
-
-    import sys
-
-    if "torchvision" in sys.modules and not hasattr(sys.modules["torchvision"], "extension"):
-        import types
-
-        sys.modules["torchvision"].extension = types.ModuleType("torchvision.extension")
-        sys.modules["torchvision"].extension._HAS_OPS = False
-
-    try:
-        import transformers
-
-        real_classes = {}
-        try:
-            from transformers.modeling_utils import PreTrainedModel
-
-            real_classes["PreTrainedModel"] = PreTrainedModel
-        except Exception:
-            pass
-        try:
-            from transformers.tokenization_utils import PreTrainedTokenizer
-
-            real_classes["PreTrainedTokenizer"] = PreTrainedTokenizer
-        except Exception:
-            pass
-        try:
-            from transformers.configuration_utils import PretrainedConfig
-
-            real_classes["PretrainedConfig"] = PretrainedConfig
-        except Exception:
-            pass
-        try:
-            from transformers.models.auto import (
-                AutoConfig,
-                AutoFeatureExtractor,
-                AutoImageProcessor,
-                AutoModel,
-                AutoProcessor,
-                AutoTokenizer,
-            )
-
-            real_classes["AutoModel"] = AutoModel
-            real_classes["AutoTokenizer"] = AutoTokenizer
-            real_classes["AutoProcessor"] = AutoProcessor
-            real_classes["AutoConfig"] = AutoConfig
-            real_classes["AutoFeatureExtractor"] = AutoFeatureExtractor
-            real_classes["AutoImageProcessor"] = AutoImageProcessor
-        except Exception:
-            pass
-        try:
-            from transformers.processing_utils import ProcessorMixin
-
-            real_classes["ProcessorMixin"] = ProcessorMixin
-        except Exception:
-            pass
-        try:
-            from transformers.feature_extraction_utils import BatchFeature
-
-            real_classes["BatchFeature"] = BatchFeature
-        except Exception:
-            pass
-        try:
-            from transformers.trainer import Trainer
-
-            real_classes["Trainer"] = Trainer
-        except Exception:
-            pass
-        try:
-            from transformers.training_args import TrainingArguments
-
-            real_classes["TrainingArguments"] = TrainingArguments
-        except Exception:
-            pass
-
-        class DummyPreTrained:
-            pass
-
-        _to_patch = (
-            "PreTrainedModel",
-            "PreTrainedTokenizer",
-            "PretrainedConfig",
-            "AutoModel",
-            "AutoTokenizer",
-            "AutoProcessor",
-            "AutoConfig",
-            "AutoFeatureExtractor",
-            "AutoImageProcessor",
-            "ProcessorMixin",
-            "BatchFeature",
-            "Trainer",
-            "TrainingArguments",
-        )
-
-        for attr in _to_patch:
-            try:
-                _ = getattr(transformers, attr)
-            except Exception:
-                val = real_classes.get(attr, DummyPreTrained)
-                setattr(transformers, attr, val)
-                if "transformers" in sys.modules:
-                    sys.modules["transformers"].__dict__[attr] = val
-    except Exception:
-        pass
-
-    for mod in ("sentence_transformers", "keybert"):
-        try:
-            __import__(mod)
-        except Exception as exc:
-            missing.append(f"{mod} ({exc})")
-
-    if missing:
-        raise ImportError(
-            "Keyword method 'keybert' requires the following package(s) which "
-            f"failed to import: {', '.join(missing)}.\n"
-            "  Fix:\n"
-            "    pip install keybert sentence-transformers torch\n"
-            "  Or use the CPU-only YAKE backend:  --kw-method yake"
-        ) from None
-
-
-def _llm_deps_preflight() -> None:
-    missing = []
-    try:
-        pass
-    except Exception as exc:
-        missing.append(f"torch ({exc})")
-    try:
-        pass
-    except Exception as exc:
-        missing.append(f"transformers ({exc})")
-    if missing:
-        raise ImportError(
-            "The --llm stage requires the following package(s) which are not "
-            f"installed properly: {', '.join(missing)}."
-        ) from None
-
-
 class StageResult:
     def __init__(
         self,
@@ -428,15 +283,6 @@ def _build_plan(args: argparse.Namespace, values: Dict[str, str]) -> Dict[str, A
         script, label = _CORE_STAGES[name]
         plan_stages.append({"name": name, "script": script, "label": label, "skip": skips[name]})
 
-    if getattr(args, "kw", False):
-        plan_stages.append(
-            {
-                "name": "keywords",
-                "script": "keywords.py",
-                "label": f"Keyword extraction ({getattr(args, 'kw_method', 'yake')})",
-                "skip": skips["keywords"],
-            }
-        )
     teitok_enrichment = bool(getattr(args, "teitok_enrichment", False)) or _config_bool(
         values, "TEITOK_ENRICHMENT", False
     )
@@ -449,16 +295,6 @@ def _build_plan(args: argparse.Namespace, values: Dict[str, str]) -> Dict[str, A
                 "skip": skips["project"],
             }
         )
-    if getattr(args, "llm", False):
-        plan_stages.append(
-            {
-                "name": "llm",
-                "script": "llm_run.py",
-                "label": "LLM semantic enrichment",
-                "skip": skips["llm"],
-            }
-        )
-
     fail_on_empty = (
         False if getattr(args, "force", False) else _config_bool(values, "FAIL_ON_EMPTY", True)
     )
@@ -470,10 +306,6 @@ def _build_plan(args: argparse.Namespace, values: Dict[str, str]) -> Dict[str, A
         "paradata_dir": paradata_dir,
         "input_tables_dir": values.get("INPUT_TABLES_DIR", ""),
         "fail_on_empty": fail_on_empty,
-        "kw": bool(getattr(args, "kw", False)),
-        "kw_method": getattr(args, "kw_method", "yake"),
-        "llm": bool(getattr(args, "llm", False)),
-        "llm_config": getattr(args, "llm_config", "llm_config.txt"),
         "teitok_enrichment": teitok_enrichment,
         "teitok_output_dir": values.get("TEITOK_OUTPUT_DIR")
         or (f"{output_dir}/TEITOK" if output_dir else "TEITOK"),
@@ -637,8 +469,6 @@ def main(argv=None):
     parser.add_argument("--skip-udp", action="store_true", help="Skip UDPipe morphology/syntax")
     parser.add_argument("--skip-nt", action="store_true", help="Skip NameTag NER")
     parser.add_argument("--skip-stats", action="store_true", help="Skip Statistics + TEITOK")
-    parser.add_argument("--skip-keywords", action="store_true", help="Skip keyword extraction")
-    parser.add_argument("--skip-llm", action="store_true", help="Skip LLM semantic enrichment")
     parser.add_argument(
         "--with-flexiconv",
         action="store_true",
@@ -647,14 +477,6 @@ def main(argv=None):
     )
 
     # 3. Rest of the existing arguments...
-    parser.add_argument("--kw", action="store_true")
-    parser.add_argument("--kw-method", default="yake", choices=["legacy", "yake", "keybert"])
-    parser.add_argument(
-        "-n", "--num-keywords", type=int, default=None, help="Number of keywords to extract"
-    )
-    parser.add_argument(
-        "--kw-fallback", action="store_true", help="Fallback to yake if keybert fails"
-    )
     parser.add_argument(
         "--strict-empty", action="store_true", help="Treat all-skipped runs as failures"
     )
@@ -662,13 +484,10 @@ def main(argv=None):
     parser.add_argument(
         "--teitok-enrichment",
         action="store_true",
-        help="Opt-in (default off; also TEITOK_ENRICHMENT=true in the config): after the "
-        "keywords stage, project the document record's page categories and llm-enrich "
-        "categories/keywords, and this run's per-page and per-document keywords, into the "
-        "TEITOK headers (api_util/teitok_project.py, atrium-project#70).",
+        help="Opt-in (default off; also TEITOK_ENRICHMENT=true in the config): project the "
+        "document record's page categories and the keywords keyword-extract wrote into it "
+        "(`enrichment`) into the TEITOK headers (api_util/teitok_project.py, atrium-project#70).",
     )
-    parser.add_argument("--llm", action="store_true")
-    parser.add_argument("--llm-config", default="llm_config.txt")
     parser.add_argument("--merged-out", default=None)
     parser.add_argument("--clean-state", action="store_true")
     parser.add_argument("-f", "--force", action="store_true")
@@ -708,30 +527,11 @@ def main(argv=None):
     output_dir = plan["output_dir"]
     paradata_dir = Path(plan["paradata_dir"])
     fail_on_empty = plan["fail_on_empty"]
-    effective_kw_method = args.kw_method
 
     print("=== ATRIUM nlp-enrich pipeline runner ===")
     print(f"    config:        {args.config}")
     print(f"    output_dir:    {output_dir or '(unset)'}")
     print(f"    paradata_dir:  {paradata_dir}")
-
-    try:
-        if args.kw and effective_kw_method == "keybert":
-            _keybert_deps_preflight()
-        if getattr(args, "llm", False):
-            _llm_deps_preflight()
-    except ImportError as exc:
-        if args.kw and effective_kw_method == "keybert" and getattr(args, "kw_fallback", False):
-            print(f"\n[WARNING] KeyBERT missing, falling back to YAKE: {exc}", file=sys.stderr)
-            effective_kw_method = "yake"
-        elif args.force:
-            print(
-                f"\n[WARNING] Dependency preflight failed:\n{exc}\n[WARNING] --force enabled. Bypassing crash.",
-                file=sys.stderr,
-            )
-        else:
-            print(f"\n[ERROR] Dependency preflight failed:\n{exc}", file=sys.stderr)
-            return 3
 
     if args.dry_run:
         print("\n[dry-run] Configuration valid; stage plan resolved. No stages executed.")
@@ -801,68 +601,6 @@ def main(argv=None):
             doc_json_scratch_dir, args.document_json_out, doc_json_doc_id
         )
 
-    if getattr(args, "kw", False):
-        if plan["skips"]["keywords"]:
-            print(f"\n-- SKIPPED: keywords — Keyword extraction ({effective_kw_method})")
-            skipped_names.append("keywords")
-        else:
-            last_start = _space_stages(last_start)
-            snapshot = _snapshot_paradata_dir(paradata_dir)
-            kw_method = effective_kw_method
-
-            def run_kw(method):
-                label = f"Keyword extraction ({method})"
-                print(f"\n=== Stage: keywords — {label} ===")
-                suffix_l = {"legacy": "l", "yake": "y", "keybert": "kb"}.get(method, method)
-                suffix_u = {"legacy": "L", "yake": "Y", "keybert": "KB"}.get(method, method.upper())
-
-                kw_out_file = str(Path(output_dir) / f"keywords_summary_{suffix_l}.csv")
-                kw_per_doc_dir = str(Path(output_dir) / f"KW_PER_DOC_{suffix_u}")
-
-                cmd = [
-                    sys.executable,
-                    str(_REPO_ROOT / "keywords.py"),
-                    "-i",
-                    str(Path(output_dir) / "UDP"),
-                    "-m",
-                    method,
-                    "-o",
-                    kw_out_file,
-                    "-d",
-                    kw_per_doc_dir,
-                    "--paradata-dir",
-                    str(paradata_dir),
-                    "-l",
-                    args.lang,
-                ]
-                if args.num_keywords is not None:
-                    cmd.extend(["-n", str(args.num_keywords)])
-
-                return _run_subprocess(cmd, env, _REPO_ROOT), label
-
-            rc, label = run_kw(kw_method)
-
-            if rc == 4 and getattr(args, "kw_fallback", False) and kw_method == "keybert":
-                print(
-                    "\n[WARNING] KeyBERT runtime load failed. Re-running with YAKE.",
-                    file=sys.stderr,
-                )
-                kw_method = "yake"
-                rc, label = run_kw(kw_method)
-
-            paradata, ppath = _collect_stage_paradata(paradata_dir, snapshot)
-            results.append(StageResult("keywords", label, rc, paradata, ppath))
-            effective_kw_method = kw_method
-
-            if rc != 0 and not args.force:
-                _finalize_merge(results, paradata_dir, args, before, skipped_names)
-                return rc
-
-            if paradata is not None and _is_empty_failure(
-                paradata.get("statistics", {}), strict=args.strict_empty
-            ):
-                empty_failures.append("keywords")
-
     if plan["teitok_enrichment"]:
         label = "Record projection onto TEITOK (opt-in)"
         if plan["skips"]["project"]:
@@ -872,9 +610,7 @@ def main(argv=None):
             last_start = _space_stages(last_start)
             snapshot = _snapshot_paradata_dir(paradata_dir)
             print(f"\n=== Stage: project — {label} ===")
-            cmd = _project_command(
-                plan, args, paradata_dir, doc_json_scratch_dir, effective_kw_method
-            )
+            cmd = _project_command(plan, args, paradata_dir, doc_json_scratch_dir)
             rc = _run_subprocess(cmd, env, _REPO_ROOT)
             paradata, ppath = _collect_stage_paradata(paradata_dir, snapshot)
             results.append(StageResult("project", label, rc, paradata, ppath))
@@ -882,29 +618,6 @@ def main(argv=None):
             if rc != 0 and not args.force:
                 _finalize_merge(results, paradata_dir, args, before, skipped_names)
                 return rc
-
-    if getattr(args, "llm", False):
-        if plan["skips"]["llm"]:
-            print("\n-- SKIPPED: llm — LLM semantic enrichment")
-            skipped_names.append("llm")
-        else:
-            last_start = _space_stages(last_start)
-            llm_paradata_dir = _resolve_llm_paradata_dir(args.llm_config, paradata_dir)
-            snapshot = _snapshot_paradata_dir(llm_paradata_dir)
-            print("\n=== Stage: llm — LLM semantic enrichment ===")
-            cmd = [sys.executable, str(_REPO_ROOT / "llm_run.py"), args.llm_config]
-            rc = _run_subprocess(cmd, env, _REPO_ROOT)
-            paradata, ppath = _collect_stage_paradata(llm_paradata_dir, snapshot)
-            results.append(StageResult("llm", "LLM semantic enrichment", rc, paradata, ppath))
-
-            if rc != 0 and not args.force:
-                _finalize_merge(results, paradata_dir, args, before, skipped_names)
-                return rc
-
-            if paradata is not None and _is_empty_failure(
-                paradata.get("statistics", {}), strict=args.strict_empty
-            ):
-                empty_failures.append("llm")
 
     _finalize_merge(results, paradata_dir, args, before, skipped_names)
 
@@ -938,15 +651,13 @@ def _project_command(
     args: argparse.Namespace,
     paradata_dir: Path,
     record_dir: Optional[Path],
-    kw_method: str,
 ) -> List[str]:
     """The ``project`` stage: api_util/teitok_project.py over this run's TEITOK directory.
 
     The record comes from the 'stats' stage's document-json directory when the run has one
-    (``--document-json``/``--document-json-out``); without it only this run's keywords
-    project. Statistical keywords are projected when the run extracts them (``--kw``): the
-    per-document list keywords.py wrote, and per-page lists with the same method. flexiconv's
-    own TEITOK profile (TEITOK_FLEXICONV_DIR) is left alone.
+    (``--document-json``/``--document-json-out``); without it there is nothing to project.
+    The keywords come from the record (keyword-extract's blocks), not from this run.
+    flexiconv's own TEITOK profile (TEITOK_FLEXICONV_DIR) is left alone.
     """
     teitok_dir = plan["teitok_output_dir"]
     cmd = [
@@ -965,34 +676,7 @@ def _project_command(
     ]
     if record_dir is not None:
         cmd += ["--record-dir", str(record_dir)]
-    if getattr(args, "kw", False):
-        suffix = {"legacy": "L", "yake": "Y", "keybert": "KB"}.get(kw_method, kw_method.upper())
-        cmd += [
-            "--kw-method",
-            kw_method,
-            "--kw-per-doc-dir",
-            str(Path(plan["output_dir"]) / f"KW_PER_DOC_{suffix}"),
-        ]
-        if args.num_keywords is not None:
-            cmd += ["-n", str(args.num_keywords)]
     return cmd
-
-
-def _resolve_llm_paradata_dir(llm_config_path: str, default_dir: Path) -> Path:
-    p = Path(llm_config_path)
-    if not p.exists():
-        return default_dir
-    try:
-        values = _parse_config(p)
-        if values.get("PARADATA_DIR"):
-            return Path(values["PARADATA_DIR"])
-    except Exception as exc:
-        print(
-            f"[WARNING] Could not read PARADATA_DIR from {llm_config_path}: {exc}; "
-            f"using default {default_dir}",
-            file=sys.stderr,
-        )
-    return default_dir
 
 
 def _finalize_merge(

@@ -27,10 +27,8 @@ SERVICES = [
 ]
 
 #: Settings besides every [limit] variable (which the test perturbs from tool_limits.LIMITS)
-#: that a deployment changes and that must not change the spec. DEFAULT_KW_METHOD is the one
-#: that did (atrium-project#32 round 2): it was the `kw_method` form default.
+#: that a deployment changes and that must not change the spec. #: that did once (atrium-project#32 round 2); the pattern stays, the keyword setting is gone.
 ENV_PERTURB = {
-    "DEFAULT_KW_METHOD": "yake",
     "ALLOWED_ORIGINS": "https://example.org",
     "UDPIPE_URL": "https://udpipe.invalid/",
     "NAMETAG_URL": "https://nametag.invalid/",

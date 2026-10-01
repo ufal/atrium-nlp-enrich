@@ -230,23 +230,17 @@ def test_enrich_response_conforms_to_the_published_schema(pipeline):
     response = client.post(
         "/enrich",
         files={"file": ("doc.csv", b"text\nPraha\n", "text/csv")},
-        data={"kw_method": "none"},
     )
     body = _conforms("post", "/enrich", 200, response)
-    assert body["method_requested"] == "none" and body["llm"] is None
+    assert "keywords" not in body and "method_used" not in body
 
 
-def test_enrich_text_uses_the_server_default_method_and_conforms(pipeline, monkeypatch):
-    """No `kw_method`: the server's DEFAULT_KW_METHOD applies — the spec's default is null."""
-    from service import api
-
-    monkeypatch.setattr(api, "DEFAULT_KW_METHOD", "none")
+def test_enrich_text_conforms_and_the_keyword_fields_are_gone(pipeline):
     body = _conforms(
         "post", "/enrich_text", 200, client.post("/enrich_text", json={"lines": ["Praha"]})
     )
-    assert body["method_requested"] == "none"
-    kw = _SPEC["components"]["schemas"]["EnrichTextRequest"]["properties"]["kw_method"]
-    assert kw.get("default") is None
+    assert "keywords" not in body
+    assert "kw_method" not in _SPEC["components"]["schemas"]["EnrichTextRequest"]["properties"]
 
 
 def test_an_unsupported_file_type_is_415_unsupported_media_type(pipeline):
@@ -265,16 +259,14 @@ def test_a_record_that_cannot_be_opened_is_422_invalid_record_before_the_pipelin
         "file": ("doc.csv", b"text\nPraha\n", "text/csv"),
         "document_json": ("doc.document.json", part, "application/json"),
     }
-    body = _conforms(
-        "post", "/enrich", 422, client.post("/enrich", files=files, data={"kw_method": "none"})
-    )
+    body = _conforms("post", "/enrich", 422, client.post("/enrich", files=files, data={}))
     assert body["reason"] == "invalid_record" and pipeline == []
 
 
 def test_an_inline_record_that_cannot_be_opened_is_422_invalid_record(pipeline):
     response = client.post(
         "/enrich_text",
-        json={"lines": ["Praha"], "kw_method": "none", "document_json": {"schema_version": "2.0"}},
+        json={"lines": ["Praha"], "document_json": {"schema_version": "2.0"}},
     )
     body = _conforms("post", "/enrich_text", 422, response)
     assert body["reason"] == "invalid_record" and pipeline == []
@@ -282,8 +274,8 @@ def test_an_inline_record_that_cannot_be_opened_is_422_invalid_record(pipeline):
 
 @pytest.mark.parametrize(
     "data",
-    [{"kw_method": "bogus"}, {"format": "tar"}, {"lang": "de"}, {"num_keywords": "0"}],
-    ids=["kw_method", "format", "lang", "num_keywords"],
+    [{"format": "tar"}, {"lang": "de"}],
+    ids=["format", "lang"],
 )
 def test_a_value_outside_the_published_enum_or_bounds_is_422(pipeline, data):
     """The spec's enums and bounds are what the server enforces (an unknown `format` used to
@@ -349,9 +341,7 @@ def test_an_amcr_seed_keeps_its_identity_and_the_run_is_returned(pipeline_run):
             "application/json",
         ),
     }
-    body = _conforms(
-        "post", "/enrich", 200, client.post("/enrich", files=files, data={"kw_method": "none"})
-    )
+    body = _conforms("post", "/enrich", 200, client.post("/enrich", files=files, data={}))
     record, action = body["document_json"], body["paradata"]
     assert record["doc_id"] == _AMCR_SEED["doc_id"] and record["source"] == _AMCR_SEED["source"]
 
@@ -369,7 +359,7 @@ def test_without_a_record_the_action_is_the_merged_runs(pipeline_run):
         "post",
         "/enrich_text",
         200,
-        client.post("/enrich_text", json={"lines": ["Praha"], "kw_method": "none"}),
+        client.post("/enrich_text", json={"lines": ["Praha"]}),
     )
     action = body["paradata"]
     assert action_problems(action) == []
@@ -381,7 +371,7 @@ def test_the_jobs_api_conforms_to_the_published_schema(pipeline):
     accepted = client.post(
         "/jobs",
         files={"file": ("doc.csv", b"text\nPraha\n", "text/csv")},
-        data={"kw_method": "none"},
+        data={},
     )
     job_id = _conforms("post", "/jobs", 200, accepted)["job_id"]
     status = client.get(f"/jobs/{job_id}")

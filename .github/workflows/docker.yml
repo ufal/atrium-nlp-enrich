@@ -41,17 +41,17 @@ jobs:
       hf-model-cache: false
       # base  -> ghcr.io/ufal/atrium-nlp-enrich       (batch run_pipeline.py)
       # api   -> ghcr.io/ufal/atrium-nlp-enrich-api   (python -m service.api, $PORT)
-      # llm   -> ghcr.io/ufal/atrium-nlp-enrich-llm   (GPU semantic enrichment)
+      # (the `llm` target and its image atrium-nlp-enrich-llm are gone since 1.0.0:
+      # the keyword and LLM code left, see atrium-keyword-extract)
       # Targets are passed through verbatim since the template fix — "base"
       # now genuinely builds the `AS base` stage, not the last one.
-      build-targets: '["base", "api", "llm"]'
+      build-targets: '["base", "api"]'
       # issue #55: only `api` is a runnable HTTP server, so only `api` gets the
       # container smoke (docker run -> wait for HEALTHCHECK healthy -> GET /health
       # and /ready -> docker stop and assert a clean exit inside the grace period).
-      # `base` and `llm` are batch CLIs — probing either would fail an image that is
+      # `base` is a batch CLI — probing it would fail an image that is
       # behaving exactly as intended.
       probe-targets: '["api"]'
       # atrium-project#72: `api` is this stage's production image, the one AMČR pins; its
       # first-party files are declared in .github/production-image.json and checked by
-      # workflow-lint. `base` (run_pipeline.py) and `llm` are batch targets: published, never
-      # pinned; `llm` leaves with the keyword code (#40).
+      # workflow-lint. `base` (run_pipeline.py) is a batch target: published, never pinned.

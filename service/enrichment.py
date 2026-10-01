@@ -64,7 +64,6 @@ _RUNNER_ENV_VARS = (
     "ATRIUM_RUNNER_REF",
 )
 
-_KW_METHODS = ("keybert", "yake", "legacy", "none")
 _DOC_ID_RE = re.compile(r"[^A-Za-z0-9._-]")
 _DEFAULT_DOC_ID = "document"
 
@@ -88,11 +87,6 @@ class PipelineError(Exception):
         self.returncode = returncode
 
 
-class KeywordPreflightError(PipelineError):
-    def __init__(self, message: str, returncode: int = 3) -> None:
-        super().__init__(message, http_status=503, returncode=returncode)
-
-
 @dataclass
 class EnrichmentResult:
     job_id: str
@@ -100,8 +94,6 @@ class EnrichmentResult:
     workspace: Path
     output_dir: Path
     returncode: int
-    kw_method_requested: str
-    kw_method_used: Optional[str]
     pages: int = 0
     stages: List[Dict[str, Any]] = field(default_factory=list)
     stdout_tail: str = ""
@@ -472,46 +464,14 @@ def _run_and_log(
     return proc.returncode, combined[-4000:]
 
 
-def _detect_kw_method_used(out_dir: Path) -> str:
-    """Return which keyword backend produced output in *out_dir*.
-
-    Checks for per-document keyword CSV files in the three possible output
-    subdirectories (KB → Y → L) and returns the name of the first that has
-    at least one result file.  Returns ``"none"`` when no keyword output is
-    found.  This is the API's window into which backend actually ran (e.g.
-    keybert requested but yake used after degradation fallback).
-    """
-    for sub, name in (
-        ("KW_PER_DOC_KB", "keybert"),
-        ("KW_PER_DOC_Y", "yake"),
-        ("KW_PER_DOC_L", "legacy"),
-    ):
-        d = out_dir / sub
-        if d.exists() and any(d.glob("*_keywords.csv")):
-            return name
-    return "none"
-
-
 class PipelineManager:
     def __init__(self) -> None:
         _API_JOBS_ROOT.mkdir(parents=True, exist_ok=True)
 
-    def warmup(self, kw_method: str = "keybert") -> None:
-        """
-        Pre-populates the HuggingFace disk cache and validates KeyBERT loads
-        so the first request degrades cleanly if needed.
-        Note: This does not warm the in-RAM model per request, as extraction
-        runs in a subprocess spawn pool.
-        """
-        if kw_method != "keybert":
-            return
-        try:
-            from keywords import DEFAULT_KEYBERT_MODEL, _get_keybert_model
-
-            _get_keybert_model(DEFAULT_KEYBERT_MODEL)
-            logger.info("KeyBERT model loaded.")
-        except Exception as exc:
-            logger.warning("KeyBERT warmup failed: %s. Will degrade gracefully.", exc)
+    def warmup(self) -> None:
+        """Nothing to load: the models are remote (UDPipe, NameTag) and every run is a
+        subprocess. Kept so the lifespan has one place to add a preload."""
+        return None
 
     def config_facts(self) -> Dict[str, Any]:
         facts = {
@@ -555,7 +515,7 @@ class PipelineManager:
 
         return facts
 
-    def dry_run(self, kw_method: str = "keybert") -> Tuple[int, str]:
+    def dry_run(self) -> Tuple[int, str]:
         """Run the pipeline in --dry-run mode — the body of the deep health check
         (service/api.py's _deep_health, issue #55). Bounded by ``timeout=`` (added in
         the same issue): this is called from a Docker HEALTHCHECK's deep probe and,
@@ -580,8 +540,6 @@ class PipelineManager:
         self,
         rows: List[Dict[str, Any]],
         doc_id: str,
-        kw_method: str = "keybert",
-        num_keywords: int = 20,
         lang: str = "cs",
         document_json: Optional[bytes] = None,
         layout: Optional[Layout] = None,
@@ -592,8 +550,6 @@ class PipelineManager:
         API_JOB_TIMEOUT), the run and every process it started are stopped when it is up,
         the workspace is removed, and ``LimitExceeded`` (504) is raised. *teitok_enrichment*
         adds run_pipeline.py's opt-in ``project`` stage (atrium-project#70)."""
-        if kw_method not in _KW_METHODS:
-            raise ValueError(f"Invalid kw_method '{kw_method}'. Choose from {_KW_METHODS}.")
         doc_id = sanitize_doc_id(doc_id)
         job_id = uuid.uuid4().hex
         workspace = _API_JOBS_ROOT / job_id
@@ -619,14 +575,14 @@ class PipelineManager:
                 (workspace / "layout" / "alto" / f"{doc_id}.alto.xml").write_bytes(layout.data)
 
             cmd = [sys.executable, str(_RUN_PIPELINE), "--config", str(cfg)]
-            cmd.extend(["--kw-fallback", "--strict-empty", "--lang", lang])
+            cmd.extend(["--strict-empty", "--lang", lang])
 
             # (atrium-project#10, J3) Rule 1: a service accepts and returns an optional
             # document_json part. run_pipeline.py has supported both flags since the
             # document-JSON bridge landed; this subprocess call simply never appended
             # them, so the CLI honoured the accretion contract and the deployed API
             # surface did not. Threaded only on opt-in, matching translator's and
-            # llm-enrich's services: without a baseline there is nothing to accrete onto,
+            # the other services: without a baseline there is nothing to accrete onto,
             # and emitting a bare own-part record nobody asked for would be a second,
             # undocumented output.
             document_json_out: Optional[Path] = None
@@ -645,10 +601,6 @@ class PipelineManager:
                     ]
                 )
 
-            if kw_method != "none":
-                cmd.extend(["--kw", "--kw-method", kw_method])
-                if num_keywords is not None:
-                    cmd.extend(["--num-keywords", str(num_keywords)])
             if teitok_enrichment:
                 cmd.append("--teitok-enrichment")
 
@@ -666,12 +618,6 @@ class PipelineManager:
                     http_status=502,
                     returncode=rc,
                 )
-            if rc == 3:
-                raise KeywordPreflightError(
-                    f"Keyword preflight failed (exit 3).\n{tail}", returncode=rc
-                )
-            if rc == 4:
-                raise KeywordPreflightError("Keyword backend failed at runtime.", returncode=4)
             if rc == 5:
                 raise PipelineError(
                     "The TEITOK output failed its output contract (exit 5): a writer defect, "
@@ -694,16 +640,12 @@ class PipelineManager:
                     returncode=0,
                 )
 
-            kw_method_used = _detect_kw_method_used(workspace / "out")
-
             return EnrichmentResult(
                 job_id=job_id,
                 doc_id=doc_id,
                 workspace=workspace,
                 output_dir=workspace / "out",
                 returncode=rc,
-                kw_method_requested=kw_method,
-                kw_method_used=kw_method_used,
                 pages=pages,
                 stages=self._read_stage_records(workspace / "out" / "paradata"),
                 stdout_tail=tail,
@@ -777,31 +719,6 @@ class PipelineManager:
             return tt.read_text(encoding="utf-8")
         cands = list((result.output_dir / "TEITOK").glob("*.teitok.xml"))
         return cands[0].read_text(encoding="utf-8") if cands else None
-
-    @staticmethod
-    def collect_keywords(result: EnrichmentResult) -> List[Dict[str, Any]]:
-        if result.kw_method_used is None or result.kw_method_used == "none":
-            return []
-        suffix = {"legacy": "L", "yake": "Y", "keybert": "KB"}.get(
-            result.kw_method_used, result.kw_method_used.upper()
-        )
-        kw_dir = result.output_dir / f"KW_PER_DOC_{suffix}"
-        path = kw_dir / f"{result.doc_id}_keywords.csv"
-        if not path.exists():
-            cands = list(kw_dir.glob("*_keywords.csv"))
-            if not cands:
-                return []
-            path = cands[0]
-        kws: List[Dict[str, Any]] = []
-        with open(path, "r", encoding="utf-8") as fh:
-            reader = csv.DictReader(fh)
-            for row in reader:
-                try:
-                    score = float(row.get("score", 0) or 0)
-                except (TypeError, ValueError):
-                    score = 0.0
-                kws.append({"keyword": row.get("keyword", ""), "score": score})
-        return kws
 
     @staticmethod
     def collect_ne_summary(result: EnrichmentResult) -> List[Dict[str, Any]]:

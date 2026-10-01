@@ -21,7 +21,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import keywords as kw
 import service.enrichment as enr
 import tool_limits
 from api_util import summarize_nt_udp as summ
@@ -112,7 +111,7 @@ def test_a_run_over_api_job_timeout_is_limit_exceeded_and_leaves_no_workspace(
     monkeypatch.setattr(enr.subprocess, "run", run)
     with pytest.raises(LimitExceeded) as info:
         enr.PipelineManager().enrich(
-            [{"text": "Praha", "page_num": 1, "line_num": 1}], "d.csv", kw_method="none", timeout=7
+            [{"text": "Praha", "page_num": 1, "line_num": 1}], "d.csv", timeout=7
         )
     assert (
         info.value.http_status == 504
@@ -131,7 +130,7 @@ def test_the_endpoint_answers_504_limit_exceeded_and_frees_the_slot(client, monk
         lambda cmd, **k: SimpleNamespace(returncode=124, stdout="", stderr=""),
     )
     monkeypatch.setenv("API_JOB_TIMEOUT", "9")
-    response = client.post("/enrich", files=_csv(), data={"kw_method": "none"})
+    response = client.post("/enrich", files=_csv(), data={})
     assert response.status_code == 504
     body = response.json()
     assert body["reason"] == "limit_exceeded" and body["limit"]["env"] == "API_JOB_TIMEOUT"
@@ -144,7 +143,7 @@ def test_the_endpoint_answers_504_limit_exceeded_and_frees_the_slot(client, monk
 
 def test_every_slot_taken_is_429_busy_with_retry_after(client):
     api._semaphore.running = tool_limits.MAX_CONCURRENT_JOBS.get()
-    response = client.post("/enrich", files=_csv(), data={"kw_method": "none"})
+    response = client.post("/enrich", files=_csv(), data={})
     assert response.status_code == 429
     assert response.json()["reason"] == "busy"
     assert response.headers["Retry-After"] == "30"
@@ -153,7 +152,7 @@ def test_every_slot_taken_is_429_busy_with_retry_after(client):
 def test_max_words_is_413_limit_exceeded_on_jobs_too(client, monkeypatch):
     monkeypatch.setenv("MAX_WORDS", "2")
     for path in ("/enrich", "/jobs"):
-        response = client.post(path, files=_csv("jedna dva tři"), data={"kw_method": "none"})
+        response = client.post(path, files=_csv("jedna dva tři"), data={})
         assert response.status_code == 413, path
         body = response.json()
         assert body["reason"] == "limit_exceeded" and body["limit"]["key"] == "max_words"
@@ -162,7 +161,7 @@ def test_max_words_is_413_limit_exceeded_on_jobs_too(client, monkeypatch):
 
 def test_an_empty_input_is_refused_by_jobs_at_once(client):
     files = {"file": ("empty.txt", b"\n\n", "text/plain")}
-    assert client.post("/jobs", files=files, data={"kw_method": "none"}).status_code == 422
+    assert client.post("/jobs", files=files, data={}).status_code == 422
 
 
 def test_a_full_queue_is_429_busy(client, monkeypatch):
@@ -172,7 +171,7 @@ def test_a_full_queue_is_429_busy(client, monkeypatch):
     waiting = Job(job_id="waiting-" + os.urandom(4).hex(), status="queued")
     _jobs[waiting.job_id] = waiting
     try:
-        response = client.post("/jobs", files=_csv(), data={"kw_method": "none"})
+        response = client.post("/jobs", files=_csv(), data={})
         assert response.status_code == 429
         assert (
             response.json()["reason"] == "busy" and "MAX_QUEUED_JOBS=1" in response.json()["detail"]
@@ -194,7 +193,7 @@ def test_a_job_is_queued_until_it_holds_a_slot(monkeypatch):
 
         monkeypatch.setattr(api, "_run_enrichment", fake_run)
         monkeypatch.setattr(api.PipelineManager, "cleanup", staticmethod(lambda _r: None))
-        task = asyncio.ensure_future(api._run_job_background(job, [], "d", "none", 20, "cs"))
+        task = asyncio.ensure_future(api._run_job_background(job, [], "d", "cs"))
         await asyncio.sleep(0.05)
         assert job.status == "queued"
         await slots.release()
@@ -214,7 +213,7 @@ def test_a_timed_out_job_fails_with_the_reason(monkeypatch):
             raise tool_limits.API_JOB_TIMEOUT.exceeded(None, detail="Pipeline execution timed out.")
 
         monkeypatch.setattr(api, "_run_enrichment", over)
-        await api._run_job_background(job, [], "d", "none", 20, "cs")
+        await api._run_job_background(job, [], "d", "cs")
         return job
 
     job = asyncio.run(scenario())
@@ -247,7 +246,7 @@ def test_the_enrich_text_body_is_bounded(client, monkeypatch):
 def test_an_oversized_document_json_part_is_413(client, monkeypatch):
     monkeypatch.setenv("MAX_UPLOAD_MB", "0.001")
     files = {**_csv(), "document_json": ("d.json", b"{" + b" " * 4096 + b"}", "application/json")}
-    response = client.post("/enrich", files=files, data={"kw_method": "none"})
+    response = client.post("/enrich", files=files, data={})
     assert response.status_code == 413
     assert response.json()["detail"] == "document_json too large: over 0.001 MB (MAX_UPLOAD_MB)."
 
@@ -282,61 +281,7 @@ def test_a_callers_source_path_cannot_leave_the_workspace(tmp_path):
     assert not (tmp_path.parent / "escaped.csv").exists()
 
 
-# ── notes: KeyBERT chunking and the entity summary ──────────────────────────────────
-
-
-class _Encoder:
-    max_seq_length = 8
-
-    @staticmethod
-    def tokenizer(text):
-        return {"input_ids": ["[CLS]", *text.split(), "[SEP]"]}
-
-
-class _KeyBERT:
-    model = SimpleNamespace(embedding_model=_Encoder())
-
-    def extract_keywords(self, chunks, **_kw):
-        return [[(chunk.split()[0], 0.5)] for chunk in chunks]
-
-
-def test_keybert_chunking_is_a_setting_and_is_counted(monkeypatch):
-    monkeypatch.setenv("KEYBERT_CHUNK_WORDS", "10")
-    monkeypatch.setenv("KEYBERT_CHUNK_OVERLAP", "2")
-    monkeypatch.setattr(kw, "_get_keybert_model", lambda _name: _KeyBERT())
-    monkeypatch.setattr(
-        kw,
-        "_extract_surface_text",
-        lambda p: " ".join(f"w{i}" for i in range(25)) if p == "long" else "a b",
-    )
-    counts: dict = {}
-    result = kw._extract_keybert(["long", "short"], 5, limit_counts=counts)
-    assert len(result) == 2 and result[1] == [("a", 0.5)]
-    # 25 words, chunks of 10 starting every 8 words: w0-w9, w8-w17, w16-w24 (over the 8-token
-    # window) and w24 (not over it) -- the chunking the literal 400/50 always did.
-    assert counts == {"split": 1, "trimmed": 3, "window": 8}
-    assert [c.split()[0] for c in kw._chunk_words([f"w{i}" for i in range(25)], 10, 2)] == [
-        "w0",
-        "w8",
-        "w16",
-        "w24",
-    ]
-
-
-def test_keybert_notes_reach_the_paradata(tmp_path):
-    from atrium_paradata import ParadataLogger
-
-    logger = ParadataLogger(program="nlp-enrich", config={}, paradata_dir=str(tmp_path))
-    kw._note_keybert_limits(logger, {"split": 2, "trimmed": 5, "window": 128})
-    notes = {n["limit"]: n for n in logger.limits_applied}
-    assert (notes["keybert_chunk_words"]["effect"], notes["keybert_chunk_words"]["count"]) == (
-        "split",
-        2,
-    )
-    assert (notes["keybert_max_seq_tokens"]["value"], notes["keybert_max_seq_tokens"]["count"]) == (
-        128,
-        5,
-    )
+# ── notes: the entity summary ──────────────────────────────────
 
 
 def test_the_entity_summary_top_n_is_a_setting_and_is_noted(tmp_path, monkeypatch):
@@ -387,7 +332,7 @@ def test_info_reports_every_limit(client, monkeypatch):
     assert data["limits"] == tool_limits.LIMITS.values()
     assert data["limits"]["max_queued_jobs"] == 3
     assert data["limits_meta"]["lindat_timeout_s"]["env"] == "LINDAT_TIMEOUT_S"
-    assert data["limits_meta"]["keybert_max_seq_tokens"]["source"] == "derived"
+    assert not any("keybert" in k for k in data["limits"])
 
 
 def test_the_envelope_carries_the_runs_limits_applied(monkeypatch):
@@ -401,7 +346,6 @@ def test_the_envelope_carries_the_runs_limits_applied(monkeypatch):
     }
     for name, value in (
         ("collect_teitok", None),
-        ("collect_keywords", []),
         ("collect_ne_summary", []),
         ("collect_merged_paradata", {"limits_applied": [note]}),
     ):
@@ -410,12 +354,11 @@ def test_the_envelope_carries_the_runs_limits_applied(monkeypatch):
         doc_id="d",
         pages=1,
         stages=[],
-        kw_method_used="none",
         layout_source="rows",
         document_json_out=None,
     )
-    assert api._build_envelope(result, "none")["limits_applied"] == [note]
+    assert api._build_envelope(result)["limits_applied"] == [note]
     monkeypatch.setattr(
         enr.PipelineManager, "collect_merged_paradata", staticmethod(lambda _r: None)
     )
-    assert api._build_envelope(result, "none")["limits_applied"] == []
+    assert api._build_envelope(result)["limits_applied"] == []

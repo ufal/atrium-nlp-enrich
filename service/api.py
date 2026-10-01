@@ -6,9 +6,9 @@ its error statuses, so the committed ``service/openapi.json`` — attached to ev
 and what the AMČR pipeline generates its clients from — types every field. The models below
 DOCUMENT the responses (``response_model=None``): the bytes sent are what the handlers build,
 and ``tests/test_api_contract.py`` validates real responses against the published schema.
-The parameters with a closed set of values (``kw_method``, ``lang``, ``format``) are enums
-in the spec, and the default keyword method is the SERVER's (``DEFAULT_KW_METHOD``, reported
-in ``/info``), no longer baked into the spec from the environment. Refusals carry registered
+The parameters with a closed set of values (``lang``, ``format``) are enums in the spec.
+Keyword extraction is not part of this service since 1.0.0: it moved to atrium-keyword-extract
+(POST /extract_keywords). Refusals carry registered
 reasons: an unsupported file type is 415 ``unsupported_media_type``, a record that cannot be
 opened is 422 ``invalid_record`` (it was dropped with a warning before). Every JSON success
 carries the run's Process Run Crate ``CreateAction`` as ``paradata`` (atrium-project#71).
@@ -57,7 +57,6 @@ from .atrium_service import (
     serve_lifecycle,
 )
 from .enrichment import (
-    KeywordPreflightError,
     Layout,
     PipelineError,
     PipelineManager,
@@ -92,22 +91,14 @@ from tool_limits import (  # noqa: E402
 # request; /info reports them all. The upload limit's import-time value stays here for
 # the callers and tests that read it.
 MAX_UPLOAD_MB = MAX_UPLOAD.get()
-# The server's default keyword method. It is applied per request when a client sends none,
-# and reported in /info `keyword_methods.default`; it is NOT the spec's default for the
-# `kw_method` parameter (atrium-project#32 round 2): a spec that changed with this setting
-# would not match the one attached to the release the image was built from.
-DEFAULT_KW_METHOD = os.environ.get("DEFAULT_KW_METHOD", "keybert")
-
 #: The tool id (/info `service`, the spec's `x-atrium-service`): the repository name.
 SERVICE = "atrium-nlp-enrich"
 
-_ALLOWED_KW = ("keybert", "yake", "legacy", "none")
 _ALLOWED_LANG = ("cs",)
 
 #: The closed parameter sets, as the spec's enums (atrium-project#32 round 2). The handlers
 #: still check them with their own messages (`_validate_params`); the enums tell a generated
 #: client the values before it sends one.
-KwMethod = Literal["keybert", "yake", "legacy", "none"]
 Lang = Literal["cs"]
 EnrichFormat = Literal["json", "zip"]
 RescaleFormat = Literal["json", "xml"]
@@ -135,15 +126,6 @@ class StageSummary(BaseModel):
     output_counts_by_type: Dict[str, Any] = Field(description="Outputs written, per type.")
 
 
-class Keyword(BaseModel):
-    """One keyword of the document, by the keyword method used."""
-
-    model_config = ConfigDict(extra="allow")
-
-    keyword: str
-    score: float = Field(description="The method's score (higher is more relevant).")
-
-
 class NamedEntity(BaseModel):
     """One named entity of a page, with how often it occurs."""
 
@@ -167,7 +149,7 @@ class NamedEntitySummary(BaseModel):
 
 
 class EnrichResponse(BaseModel):
-    """The enriched document: TEITOK XML, keywords, entities, paradata, and the record when asked."""
+    """The enriched document: TEITOK XML, entities, paradata, and the record when asked."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -178,9 +160,6 @@ class EnrichResponse(BaseModel):
     stages: List[StageSummary] = Field(description="What each pipeline stage did.")
     teitok_xml: Optional[str] = Field(
         description="The NLP-enriched TEITOK XML; null when none was produced."
-    )
-    keywords: List[Keyword] = Field(
-        description="The document's keywords; empty with `kw_method=none`."
     )
     ne_summary: List[NamedEntitySummary] = Field(description="Named entities per page.")
     paradata: Optional[CreateAction] = Field(
@@ -193,13 +172,6 @@ class EnrichResponse(BaseModel):
     limits_applied: List[LimitNote] = Field(
         description="Every limit that shaped the result without refusing it."
     )
-    method_requested: str = Field(
-        description="The keyword method asked for (the server default when none was)."
-    )
-    method_used: Optional[str] = Field(
-        description="The keyword method that ran: `keybert`, `yake`, `legacy`, `none`."
-    )
-    llm: Optional[Any] = Field(description="Reserved; always null.")
     layout_source: str = Field(
         description="Where the pages and boxes came from: `alto`, `teitok` or `rows`."
     )
@@ -325,22 +297,12 @@ class NlpModels(BaseModel):
     nametag: Optional[str]
 
 
-class KeywordMethods(BaseModel):
-    """The keyword methods: the server default (used when a request names none), and each one."""
-
-    model_config = ConfigDict(extra="allow")
-
-    default: str = Field(description="The server's `DEFAULT_KW_METHOD`.")
-    available: Dict[str, str]
-
-
 class NlpInfo(InfoBase):
     """`/info` of atrium-nlp-enrich."""
 
     stage_plan: List[str]
     core_stages_mandatory: bool
     models: NlpModels
-    keyword_methods: KeywordMethods
 
 
 class EnrichTextRequest(BaseModel):
@@ -356,10 +318,6 @@ class EnrichTextRequest(BaseModel):
         ),
     )
     doc_id: str = Field("document", description="The document's id.")
-    kw_method: Optional[KwMethod] = Field(
-        None, description="The keyword method; the server default when absent."
-    )
-    num_keywords: int = Field(20, ge=1, le=100, description="How many keywords to return.")
     lang: Lang = "cs"
     format: EnrichFormat = Field(
         "json", description="`json` (the envelope) or `zip` (the workspace output)."
@@ -375,7 +333,7 @@ class EnrichTextRequest(BaseModel):
         False,
         description=(
             "Opt-in, default false: see `/enrich`. Projects the record's page categories and "
-            "this run's keywords (per document and per page) into the TEITOK header."
+            "its controlled keywords into the TEITOK header."
         ),
     )
 
@@ -456,7 +414,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, _manager.warmup, DEFAULT_KW_METHOD)
+    await loop.run_in_executor(None, _manager.warmup)
     _state.warm = True
     # issue #35: /jobs state (service/jobs.py's _jobs dict) is process-local -- this
     # service expects a single replica. Said once at boot, in the log a partner
@@ -465,7 +423,7 @@ async def lifespan(app: FastAPI):
         "nlp-enrich: /jobs state is process-local; expects a single replica "
         "(atrium-project#53 factors IV/VI)"
     )
-    # issue #55: composes with the existing warmup above rather than replacing it.
+    # issue #55: composes with the warmup above rather than replacing it.
     # Installs the SIGTERM/SIGINT handling that flips /ready to 503 and, on shutdown,
     # waits for in-flight requests AND any job tracked via _state.track() (see
     # submit_job below) — the mechanism that stops a rolling restart from killing a
@@ -480,7 +438,7 @@ app = FastAPI(
     title="ATRIUM nlp-enrich API",
     version=read_tool_version(_SERVICE_DIR.parent),
     description="Text lines (a table, a .txt, or a converted TEITOK file) → NLP-enriched "
-    "TEITOK XML + keywords.",
+    "TEITOK XML.",
     lifespan=lifespan,
     # The typed contract (atrium-project#32 round 2): every route documents the §4.4 error
     # body for 422 and 500 (and FastAPI's own 422 body, which is not what is sent, goes);
@@ -516,13 +474,9 @@ add_cors(app)
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 
-def _validate_params(kw_method: str, lang: str, num_keywords: int) -> None:
-    if kw_method not in _ALLOWED_KW:
-        raise HTTPException(422, f"kw_method must be one of {_ALLOWED_KW}") from None
+def _validate_params(lang: str) -> None:
     if lang not in _ALLOWED_LANG:
         raise HTTPException(422, f"lang must be one of {_ALLOWED_LANG} in v1") from None
-    if not (1 <= num_keywords <= 100):
-        raise HTTPException(422, "num_keywords must be between 1 and 100") from None
 
 
 def _schema_verdict(xml_text: str) -> tuple[bool | None, List[str]]:
@@ -592,29 +546,24 @@ async def _read_layout(filename: str, data: bytes, alto: UploadFile | None) -> L
 def _run_pipeline_sync(
     rows,
     doc_id,
-    kw_method,
-    num_keywords,
     lang,
     document_json=None,
     layout=None,
     teitok_enrichment=False,
 ):
-    """Blocking pipeline call with graceful backend degradation configured, stopped at
-    API_JOB_TIMEOUT (LimitExceeded, 504)."""
+    """Blocking pipeline call, stopped at API_JOB_TIMEOUT (LimitExceeded, 504)."""
     return _manager.enrich(
         rows,
         doc_id,
-        kw_method=kw_method,
-        num_keywords=num_keywords,
         lang=lang,
         document_json=document_json,
         layout=layout,
         timeout=API_JOB_TIMEOUT.get(),
         teitok_enrichment=teitok_enrichment,
-    ), kw_method
+    )
 
 
-def _build_envelope(result, requested_method, sent=()) -> Dict[str, Any]:
+def _build_envelope(result, sent=()) -> Dict[str, Any]:
     teitok_xml = PipelineManager.collect_teitok(result)
     merged = PipelineManager.collect_merged_paradata(result)
     record = (
@@ -627,15 +576,11 @@ def _build_envelope(result, requested_method, sent=()) -> Dict[str, Any]:
         "pages": result.pages,
         "stages": result.stages,
         "teitok_xml": teitok_xml,
-        "keywords": PipelineManager.collect_keywords(result),
         "ne_summary": PipelineManager.collect_ne_summary(result),
         "paradata": _run_action(merged, result, record, teitok_xml, sent) if merged else None,
         # Every limit that shaped this result without refusing it (atrium-project#53): the
         # stages record them in their paradata, the run's merged record carries them.
         "limits_applied": list((merged or {}).get("limits_applied") or []),
-        "method_requested": requested_method,
-        "method_used": result.kw_method_used,
-        "llm": None,
         # issue #38, F: where the pages and boxes came from, and the contract verdict the
         # stage-4 gate reached (a run that failed it never gets here: exit 5 -> 500)
         "layout_source": result.layout_source,
@@ -699,8 +644,6 @@ def _sent(name, data, media_type, alto=None, layout=None) -> List[Dict[str, Any]
 async def _run_enrichment(
     rows,
     doc_id,
-    kw_method,
-    num_keywords,
     lang,
     fmt,
     document_json=None,
@@ -710,20 +653,16 @@ async def _run_enrichment(
 ) -> tuple[Any, str, Any]:
     loop = asyncio.get_event_loop()
     try:
-        result, requested = await loop.run_in_executor(
+        result = await loop.run_in_executor(
             None,
             _run_pipeline_sync,
             rows,
             doc_id,
-            kw_method,
-            num_keywords,
             lang,
             document_json,
             layout,
             teitok_enrichment,
         )
-    except KeywordPreflightError as exc:
-        raise HTTPException(503, str(exc)) from exc
     except PipelineError as exc:
         raise HTTPException(exc.http_status, str(exc)) from exc
 
@@ -731,7 +670,7 @@ async def _run_enrichment(
         if fmt == "zip":
             zip_path = PipelineManager.zip_workspace_output(result)
             return zip_path, "zip", result
-        envelope = _build_envelope(result, requested, sent)
+        envelope = _build_envelope(result, sent)
         return envelope, "json", result
     except Exception:
         PipelineManager.cleanup(result)
@@ -755,8 +694,6 @@ def _check_rows(rows) -> None:
 async def _enrich_common(
     rows,
     doc_id,
-    kw_method,
-    num_keywords,
     lang,
     fmt,
     document_json=None,
@@ -764,7 +701,7 @@ async def _enrich_common(
     teitok_enrichment=False,
     sent=(),
 ):
-    _validate_params(kw_method, lang, num_keywords)
+    _validate_params(lang)
     _check_rows(rows)
 
     if not _semaphore.take():
@@ -777,8 +714,6 @@ async def _enrich_common(
         data, out_fmt, result = await _run_enrichment(
             rows,
             doc_id,
-            kw_method,
-            num_keywords,
             lang,
             fmt,
             document_json,
@@ -804,8 +739,6 @@ async def _run_job_background(
     job: Job,
     rows,
     doc_id,
-    kw_method,
-    num_keywords,
     lang,
     document_json=None,
     layout=None,
@@ -821,8 +754,6 @@ async def _run_job_background(
             data, out_fmt, result = await _run_enrichment(
                 rows,
                 doc_id,
-                kw_method,
-                num_keywords,
                 lang,
                 fmt="json",
                 document_json=document_json,
@@ -886,15 +817,6 @@ async def info() -> Dict[str, Any]:
             "udpipe": facts.get("udpipe_model"),
             "nametag": facts.get("nametag_model"),
         },
-        keyword_methods={
-            "default": DEFAULT_KW_METHOD,
-            "available": {
-                "keybert": "best quality; GPU-capable embedding model",
-                "yake": "fast CPU statistical extraction",
-                "legacy": "stdlib KER lemma-frequency baseline",
-                "none": "skip keyword extraction",
-            },
-        },
     )
 
 
@@ -911,7 +833,7 @@ def _deep_health() -> str | None:
     function is a plain sync ``def``, so FastAPI/Starlette dispatch it to the anyio
     threadpool instead of the event loop, same as every other repo's ``_deep_health``.
     """
-    rc, tail = _manager.dry_run(kw_method="none")
+    rc, tail = _manager.dry_run()
     if rc != 0:
         return f"dry-run exit {rc}: {tail[-1500:]}"
     facts = _manager.config_facts()
@@ -961,19 +883,13 @@ _FILE_HELP = (
 )
 
 
-#: The keyword-method parameter's description, for /enrich and /jobs.
-_KW_METHOD_HELP = (
-    "The keyword method. Absent: the server's default (`/info` `keyword_methods.default`, the "
-    "`DEFAULT_KW_METHOD` setting)."
-)
-
 #: The statuses the enrichment endpoints refuse or fail with (§4.4), beyond the app-wide 422/500.
 _ENRICH_ERRORS = (413, 429, 502, 503, 504)
 
 _TEITOK_ENRICHMENT_HELP = (
     "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the "
     "record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and "
-    "this run's keywords, for the document and for each page, in `profileDesc/textClass`. "
+    "its controlled keywords, in `profileDesc/textClass`. "
     "AMČR's stored TEITOK leaves it off."
 )
 
@@ -997,8 +913,6 @@ def _normalize(filename: str, data: bytes):
 )
 async def enrich(
     file: UploadFile = File(..., description=_FILE_HELP),  # noqa: B008
-    kw_method: Optional[KwMethod] = Form(None, description=_KW_METHOD_HELP),  # noqa: B008
-    num_keywords: int = Form(20, ge=1, le=100),
     lang: Lang = Form("cs"),  # noqa: B008
     format: EnrichFormat = Form("json"),  # noqa: B008
     document_json: UploadFile = File(  # noqa: B008
@@ -1018,8 +932,6 @@ async def enrich(
     return await _enrich_common(
         rows,
         doc_id,
-        kw_method or DEFAULT_KW_METHOD,
-        num_keywords,
         lang,
         format,
         baseline,
@@ -1037,8 +949,8 @@ async def enrich(
 async def enrich_text(payload: EnrichTextRequest, request: Request):
     """The `/enrich` pipeline on inline lines (§4.3, the JSON sibling of the upload endpoint).
 
-    Since atrium-project#32 round 2 the body is a typed model: a malformed value (a
-    non-numeric `num_keywords`, an unknown `format`) is a 422 validation error where it
+    Since atrium-project#32 round 2 the body is a typed model: a malformed value (an
+    unknown `format`) is a 422 validation error where it
     used to be a 500 or, for `format`, silently JSON.
     """
     # The body is bounded like an upload (atrium-project#53): it had no size limit at all.
@@ -1050,15 +962,13 @@ async def enrich_text(payload: EnrichTextRequest, request: Request):
         elif isinstance(item, dict) and item.get("text"):
             rows.append(item)
     # Inline JSON in, inline JSON out — an embedded object rather than an upload part,
-    # matching llm-enrich's /extract_keywords_text (#10 J3).
+    # matching the other services' inline-JSON endpoints (#10 J3).
     baseline = parse_record_part(payload.document_json, "document_json")
     baseline_bytes = json.dumps(baseline).encode("utf-8") if baseline is not None else None
     lines = json.dumps(payload.lines, ensure_ascii=False).encode("utf-8")
     return await _enrich_common(
         rows,
         payload.doc_id,
-        payload.kw_method or DEFAULT_KW_METHOD,
-        payload.num_keywords,
         payload.lang,
         payload.format,
         baseline_bytes,
@@ -1176,7 +1086,7 @@ async def project_record(
     ),
     document_json: UploadFile = File(  # noqa: B008
         ...,
-        description="The document's finished record (after page-classification and llm-enrich).",
+        description="The document's finished record (after page-classification and keyword-extract).",
         json_schema_extra={"contentMediaType": "application/json"},
     ),
     format: ProjectFormat = Form("json"),  # noqa: B008
@@ -1184,7 +1094,7 @@ async def project_record(
     """Project a finished record onto its TEITOK file (atrium-project#70, flexiconv#1).
 
     Pure XML transform (no pipeline), for a record that is complete only after this service ran:
-    the page categories become ``pb/@ana`` plus a ``classDecl`` taxonomy, and llm-enrich's
+    the page categories become ``pb/@ana`` plus a ``classDecl`` taxonomy, and keyword-extract's
     TEATER/AMČR categories and controlled keywords become ``profileDesc/textClass/keywords``,
     each pointing at its pages. Only the header and ``pb/@ana`` change. Re-projecting replaces
     an earlier projection. Refused (422) when the TEITOK is not the record's document (its
@@ -1239,8 +1149,6 @@ async def project_record(
 )
 async def submit_job(
     file: UploadFile = File(..., description=_FILE_HELP),  # noqa: B008
-    kw_method: Optional[KwMethod] = Form(None, description=_KW_METHOD_HELP),  # noqa: B008
-    num_keywords: int = Form(20, ge=1, le=100),
     lang: Lang = Form("cs"),  # noqa: B008
     document_json: UploadFile = File(  # noqa: B008
         None,
@@ -1250,8 +1158,7 @@ async def submit_job(
     alto: UploadFile = File(None, description=_ALTO_HELP),  # noqa: B008
     teitok_enrichment: bool = Form(False, description=_TEITOK_ENRICHMENT_HELP),
 ):
-    kw_method = kw_method or DEFAULT_KW_METHOD
-    _validate_params(kw_method, lang, num_keywords)
+    _validate_params(lang)
     data = await read_upload_bounded(file, MAX_UPLOAD.get(), "Upload")
     filename = file.filename or "upload.csv"
     # Read here, not in the background task, like document_json below.
@@ -1291,8 +1198,6 @@ async def submit_job(
             job,
             rows,
             doc_id,
-            kw_method,
-            num_keywords,
             lang,
             baseline,
             layout,

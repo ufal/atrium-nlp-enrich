@@ -3,14 +3,15 @@
 Single-file entry point for the ATRIUM NLP enrichment pipeline (issue
 [#8](https://github.com/ufal/atrium-nlp-enrich/issues/8)): upload ordered text
 lines — a table, a `.txt`, or a TEITOK file converted by flexiconv — get back enriched
-**TEITOK XML + keywords + paradata**. The four core
-stages (`manifest → udp → nt → stats`) always run; **LLM enrichment is excluded
-from every API entry point**.
+**TEITOK XML + named entities + paradata**. The four core
+stages (`manifest → udp → nt → stats`) always run. Keyword extraction is not part of this
+service (since 1.0.0): it is [atrium-keyword-extract](https://github.com/ufal/atrium-keyword-extract)'s
+`POST /extract_keywords`.
 
 ## Quick start
 
 ```bash
-./setup_api_service.sh                 # venv + deps + KeyBERT prefetch + serve
+./setup_api_service.sh                 # venv + deps + serve
 # or, manually:
 pip install -r requirements.txt -r service/requirements.txt
 python -m service.api                  # honours PORT/HOST; default 0.0.0.0:8000
@@ -30,7 +31,7 @@ python service/test_api.py -f data_samples/DOC_LINE_CATEG/CTX000000001.csv
 | Method | Path                | Purpose                                                                                                                                                                      |
 |--------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | GET    | `/`                 | minimal landing page (see `/docs` for OpenAPI UI)                                                                                                                            |
-| GET    | `/info`             | service id, endpoints, stage plan, pinned models, keyword methods + default, `limits` (every [limit](#limits), current value) and `limits_meta` (the variable behind each)   |
+| GET    | `/info`             | service id, endpoints, stage plan, pinned models, `limits` (every [limit](#limits), current value) and `limits_meta` (the variable behind each)   |
 | GET    | `/health`           | liveness — 200 always, even mid-shutdown. `?deep=true` adds config validity via `run_pipeline.py --dry-run` + UDPipe/NameTag reachability (503 on failure or while draining) |
 | GET    | `/ready`            | readiness — 503 until warmup finishes, 200 while serving, 503 the instant `SIGTERM` arrives. The Kubernetes `readinessProbe`/`startupProbe` target                           |
 | POST   | `/enrich`           | **single-file entry point** — upload CSV/XLSX/TXT, or a converted TEITOK `.xml`; optionally the ALTO of a table's pages                                                      |
@@ -40,7 +41,7 @@ python service/test_api.py -f data_samples/DOC_LINE_CATEG/CTX000000001.csv
 | GET    | `/jobs/{id}/result` | the `/enrich` JSON envelope of a finished job (409 while it runs)                                                                                                            |
 | DELETE | `/jobs/{id}`        | forget a job (finished jobs are also forgotten `JOB_TTL_S`, an hour, after they end); job ids are local to the replica                                                       |
 | POST   | `/rescale`          | rescale a TEITOK's bboxes to page images of another size, page by page                                                                                                       |
-| POST   | `/project_record`   | project a finished record's page categories and llm-enrich categories/keywords onto its TEITOK header (opt-in, atrium-project#70)                                            |
+| POST   | `/project_record`   | project a finished record's page categories and its TEATER/AMČR categories and controlled keywords onto its TEITOK header (opt-in, atrium-project#70)                                            |
 
 ### `POST /enrich` (multipart form)
 
@@ -48,16 +49,10 @@ python service/test_api.py -f data_samples/DOC_LINE_CATEG/CTX000000001.csv
 |---------------------|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `file`              | *required* | `.csv` (needs a `text` column; optional `page_num`, `line_num`), `.xlsx`, `.txt` (a form feed starts a new page), or a TEITOK `.xml` (`*.teitok.xml`, or any `.xml` starting with `<TEI`) — see [Layout inputs](#layout-inputs)                                   |
 | `alto`              | *optional* | ALTO XML of the pages a `.csv`/`.xlsx` lists the lines of — see [Layout inputs](#layout-inputs)                                                                                                                                                                   |
-| `kw_method`         | server's   | `keybert` \| `yake` \| `legacy` \| `none`; absent → the server's `DEFAULT_KW_METHOD` (`keybert` unless set; `/info` `keyword_methods.default`). The spec's default is null: it no longer changes with the setting (atrium-project#32)                             |
-| `num_keywords`      | `20`       | 1–100                                                                                                                                                                                                                                                             |
 | `lang`              | `cs`       | Czech-pinned in v1                                                                                                                                                                                                                                                |
 | `format`            | `json`     | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`; any other value → 422 (it silently became `json` before atrium-project#32 round 2)                                                                                                                       |
 | `document_json`     | *optional* | baseline ATRIUM Document JSON (or an AMČR seed) to accrete onto — see below; not a JSON object → 422 `invalid_record`                                                                                                                                             |
-| `teitok_enrichment` | `false`    | opt-in (atrium-project#70): the returned TEITOK also carries the record's page categories (`pb/@ana`) and this run's keywords, per document and per page, in its header — see [`POST /project_record`](#post-project_record-multipart-form). `/jobs` takes it too |
-
-`keybert` is the best/default backend. If its preflight fails at runtime the
-service **degrades once to `yake`** and reports `method_requested` vs
-`method_used` rather than failing the enrichment.
+| `teitok_enrichment` | `false`    | opt-in (atrium-project#70): the returned TEITOK also carries the record's page categories (`pb/@ana`) and the record's controlled keywords in its header — see [`POST /project_record`](#post-project_record-multipart-form). `/jobs` takes it too |
 
 ### Layout inputs
 
@@ -76,7 +71,7 @@ The TEITOK the service returns has the layout of what it was given (issue
   `api_flexiconv.sh` (CLI) first: flexiconv is GPL-3.0 and is **not** in the service image. A file
   that is not well-formed, or breaks TEITOK-core rules (duplicate ids, references that point
   nowhere), is refused with 422 and the diagnostics.
-* An **`alto` part** goes with a `.csv`/`.xlsx` (e.g. alto-postprocess's `DOC_LINE_CATEG` table and
+* An **`alto` part** goes with a `.csv`/`.xlsx` (e.g. ocr-postprocess's `DOC_LINE_CATEG` table and
   the ALTO it was made from); with a `.txt` or a TEITOK file it is refused (422). A PAGE XML or
   hOCR file in its place is refused with the hint to convert it with `api_flexiconv.sh`.
 * The `doc_id` is the file name without `.teitok.xml`, `.alto.xml` or the table extension.
@@ -85,7 +80,7 @@ The TEITOK the service returns has the layout of what it was given (issue
 
 ```json
 { "doc_id": "CTX1", "lines": ["Výzkum odhalil základy kostela.", "..."],
-  "kw_method": "keybert", "num_keywords": 20, "format": "json",
+  "format": "json",
   "document_json": { "...optional baseline record, inline..." },
   "teitok_enrichment": false }
 ```
@@ -129,13 +124,10 @@ through to it, so there is one implementation, not two.
   "doc_id": "...", "pages": 2,
   "stages": [ {"script": "api_4_stats", "successfully_processed": 1, ...} ],
   "teitok_xml": "<?xml ...>",
-  "keywords": [ {"keyword": "...", "score": 0.91} ],
   "ne_summary": [ {"file": "...", "page": "1", "entities": [...] } ],
   "paradata": { "@id": "urn:uuid:...", "@type": "CreateAction", "...": "..." },
-  "limits_applied": [ {"limit": "keybert_chunk_words", "value": 400, "effect": "split",
+  "limits_applied": [ {"limit": "ne_summary_top_n", "value": 20, "effect": "trimmed",
                        "count": 1, "detail": "...", "program": "nlp-enrich"} ],
-  "method_requested": "keybert", "method_used": "keybert",
-  "llm": null,
   "layout_source": "rows",
   "teitok_schema_valid": true, "teitok_schema_errors": [],
   "document_json": { "...only when a baseline was supplied..." }
@@ -143,8 +135,7 @@ through to it, so there is one implementation, not two.
 ```
 
 `limits_applied` lists every [limit](#limits) that shaped the result without refusing it
-(atrium-project#53) — a document embedded in KeyBERT chunks, chunks longer than the encoder's
-window, pages whose entity summary kept its top N. The stages record them in their paradata;
+(atrium-project#53) — pages whose entity summary kept its top N. The stages record them in their paradata;
 this is the merged record's list (`[]` when no limit applied).
 
 **`paradata`** is the call's provenance (atrium-project#71): one Process Run Crate `CreateAction`,
@@ -163,7 +154,7 @@ describes it.
 never gets here — stage 4 stops with exit code 5, answered as 500.
 
 `format=zip` instead streams the full workspace `OUTPUT_DIR`
-(`TEITOK/`, `UDP_NE/`, `KW_PER_DOC_*/`, summary CSVs, `paradata/`, and
+(`TEITOK/`, `UDP_NE/`, summary CSVs, `paradata/`, and
 `<doc_id>.document.json` when a baseline was supplied).
 
 ### `POST /rescale` (multipart form)
@@ -238,7 +229,7 @@ curl -s -F "file=@mixed_pages.teitok.xml" -F "scale=0.5" \
 ### `POST /project_record` (multipart form)
 
 A standalone header transform (no pipeline) for a record that is complete only after this
-service ran: after page-classification and llm-enrich (atrium-project#70 item 2, ufal/flexiconv#1).
+service ran: after page-classification and the stage that writes the controlled keywords (atrium-project#70 item 2, ufal/flexiconv#1).
 Opt-in by being called; AMČR's stored TEITOK keeps linguistics and layout only.
 
 | Field           | Default    | Notes                                                                                   |
@@ -248,7 +239,7 @@ Opt-in by being called; AMČR's stored TEITOK keeps linguistics and layout only.
 | `format`        | `json`     | `json` envelope, or `xml` to download the projected `.teitok.xml`                       |
 
 What is written — `pb/@ana` and a `classDecl` taxonomy for the page categories,
-`profileDesc/textClass/keywords` for llm-enrich's TEATER/AMČR categories and controlled
+`profileDesc/textClass/keywords` for the TEATER/AMČR categories and controlled
 keywords, each pointing at its pages — is the table in the main README's
 [Record projection onto TEITOK](../README.md#record-projection-onto-teitok-opt-in). Nothing
 below the header changes but `pb/@ana`; projecting again replaces an earlier projection. 422
@@ -281,8 +272,7 @@ first run and concurrent requests can't collide. Every input form is normalized
 to a canonical `text[,page_num,line_num]` CSV so stage 1 always runs on the same
 path and no input type bypasses a mandatory step.
 
-The runner's exit codes map to HTTP: `0`→200; `3` (keyword preflight)→retry with
-`yake`, else 503; `4` (keyword backend failed at runtime)→503; `5` (the TEITOK failed its
+The runner's exit codes map to HTTP: `0`→200; `5` (the TEITOK failed its
 output contract — a writer defect, "please report it")→500; `1` (empty run)/`2` (missing
 stage)/other→502; an input over a limit → 413/422 `limit_exceeded`, a run over
 `API_JOB_TIMEOUT` → 504 `limit_exceeded`, every slot or the queue full → 429 `busy`
@@ -308,7 +298,6 @@ layout declares.
 | `ALLOWED_ORIGINS`     | `*`       | CORS origins                                                                              |
 | `UDPIPE_URL`          | LINDAT    | attachable UDPipe 2 endpoint (issue #63); same variable name as atrium-translator         |
 | `NAMETAG_URL`         | LINDAT    | attachable NameTag 3 endpoint (issue #63)                                                 |
-| `DEFAULT_KW_METHOD`   | `keybert` | default keyword backend                                                                   |
 | `API_JOBS_ROOT`       | see below | where per-job workspaces are created; computed from the repo root, not a literal          |
 | `API_KEEP_WORKSPACES` | unset     | keep per-request workspaces for debugging -- survives only as long as the pod (#35)       |
 
@@ -350,17 +339,9 @@ config. `tests/test_limits_contract.py` checks this table against `tool_limits.p
 | `word_chunk_limit`       | `WORD_CHUNK_LIMIT`                                                  | 900     | words    | UDPipe gets the text in pieces cut at a line end, annotated in full (`config_api.txt` `WORD_CHUNK_LIMIT`)                                           |
 | `lindat_timeout_s`       | `LINDAT_TIMEOUT_S`                                                  | 60      | s        | the UDPipe or NameTag call is retried (`config_api.txt` `TIMEOUT`)                                                                                  |
 | `lindat_max_retries`     | `LINDAT_MAX_RETRIES`                                                | 5       | retries  | the stage fails → 502 (`config_api.txt` `MAX_RETRIES`)                                                                                              |
-| `keybert_chunk_words`    | `KEYBERT_CHUNK_WORDS`                                               | 400     | words    | a longer document is embedded in overlapping chunks and its keywords merged — `split` note                                                          |
-| `keybert_chunk_overlap`  | `KEYBERT_CHUNK_OVERLAP`                                             | 50      | words    | the words two consecutive KeyBERT chunks share                                                                                                      |
 | `ne_summary_top_n`       | `NE_SUMMARY_TOP_N`                                                  | 20      | entities | a page keeps its N most frequent entities in `ne_summary` — `trimmed` note (the TEITOK and `document_json` carry every entity)                      |
-| `keybert_max_seq_tokens` | — (derived from the KeyBERT model, `kw_config.txt` `KEYBERT_MODEL`) | —       | tokens   | a longer chunk is embedded from its start — `trimmed` note; 128 for the default model, `null` until it is loaded                                    |
 
-`KEYBERT_CHUNK_WORDS` stays 400 until an evaluation says otherwise: with the default encoder's
-128-token window, most 400-word chunks are embedded from their start, and `limits_applied`
-now says how many.
-
-Not settings: `num_keywords` (1–100) is a bound on a request parameter, part of the API schema
-(atrium-project#32 item 1); Starlette's multipart parser keeps its own defaults.
+Not settings: Starlette's multipart parser keeps its own defaults.
 
 ## Errors
 
@@ -380,7 +361,7 @@ validation error adds FastAPI's list of problems as `errors`.
 | 429    | `busy`                   | every processing slot taken (synchronous endpoints), or the `/jobs` queue full; retry after `Retry-After` seconds            |
 | 500    | `null`                   | the TEITOK failed its output contract (exit 5) — a writer defect, please report it                                           |
 | 502    | `null`                   | a stage failed: an empty run, a missing stage, UDPipe or NameTag after their retries                                         |
-| 503    | `null`                   | the keyword backend failed (exit 3/4), or the replica is shutting down                                                       |
+| 503    | `null`                   | the replica is shutting down                                                                                                |
 | 504    | `limit_exceeded`         | the run took longer than `API_JOB_TIMEOUT` and was stopped                                                                   |
 
 ## Shutdown behavior (issue #55)
@@ -429,7 +410,7 @@ to the release's `openapi.json.sha256` for an image built from that tag.
 - **After an API change**, regenerate and commit it:
   `python atrium_openapi.py export --app service.api:app --out service/openapi.json`.
   `tests/test_openapi_contract.py` fails while it is stale, and when any setting
-  (`DEFAULT_KW_METHOD`, every limit) changes it.
+  (every limit) changes it.
 - **Compatibility.** Each release compares its spec with the previous release's
   (`release.yml`, `atrium_openapi.py compare` with oasdiff): a breaking change fails the
   release unless the major version went up (for 0.x, that means 1.0), and a removed reason

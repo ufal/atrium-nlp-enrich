@@ -1,7 +1,7 @@
 """tool_limits.py — every limit atrium-nlp-enrich has (atrium-project#53, factor III).
 
 One declaration, read by the service (``service/api.py``, ``service/enrichment.py``) and by
-the pipeline stages it runs (``keywords.py``, ``api_util/summarize_nt_udp.py``), and
+the pipeline stages it runs (``api_util/summarize_nt_udp.py``), and
 reported by ``GET /info`` (``limits`` and ``limits_meta``). Each limit is an environment
 setting; a malformed value stops the process at startup, naming the variable
 (``atrium_limits.LimitConfigError``). ``.env.example`` and ``service/README.md``'s
@@ -24,9 +24,8 @@ the stage scripts and the CLI import this too.
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 from atrium_limits import LimitSet, limit, upload_limit
 
@@ -71,12 +70,7 @@ LINDAT_TIMEOUT_S = limit("LINDAT_TIMEOUT_S", 60, unit="s", minimum=1)
 #: out the stage fails → 502.
 LINDAT_MAX_RETRIES = limit("LINDAT_MAX_RETRIES", 5, unit="retries", minimum=1)
 
-# ── keywords and the entity summary ─────────────────────────────────────────────────────
-#: Words per KeyBERT chunk: a longer document is embedded in overlapping chunks and its
-#: keywords merged → ``split`` note.
-KEYBERT_CHUNK_WORDS = limit("KEYBERT_CHUNK_WORDS", 400, unit="words", minimum=1)
-#: Words two consecutive KeyBERT chunks share.
-KEYBERT_CHUNK_OVERLAP = limit("KEYBERT_CHUNK_OVERLAP", 50, unit="words")
+# ── the entity summary ──────────────────────────────────────────────────────────────────
 #: Entities per page in the entity summary (``ne_summary``, ``summary_ne_counts.csv``);
 #: a page with more distinct entities keeps its N most frequent → ``trimmed`` note. The
 #: TEITOK and the document record carry every entity.
@@ -114,16 +108,6 @@ def config_values() -> Dict[str, str]:
     return out
 
 
-def keybert_max_seq_tokens() -> Optional[int]:
-    """Tokens of one chunk the KeyBERT encoder reads (its ``max_seq_length``); a longer
-    chunk is embedded from its start → ``trimmed`` note. ``None`` until the model is loaded
-    in this process (the service loads it at startup when ``DEFAULT_KW_METHOD=keybert``)."""
-    keywords = sys.modules.get("keywords")
-    if keywords is None:
-        return None
-    return keywords.keybert_window(getattr(keywords, "_keybert_model_instance", None))[1]
-
-
 LIMITS = LimitSet(
     MAX_UPLOAD,
     MAX_WORDS,
@@ -135,14 +119,6 @@ LIMITS = LimitSet(
     WORD_CHUNK_LIMIT,
     LINDAT_TIMEOUT_S,
     LINDAT_MAX_RETRIES,
-    KEYBERT_CHUNK_WORDS,
-    KEYBERT_CHUNK_OVERLAP,
     NE_SUMMARY_TOP_N,
     config=config_values,
-)
-LIMITS.derived(
-    "keybert_max_seq_tokens",
-    keybert_max_seq_tokens,
-    unit="tokens",
-    derived_from=["KEYBERT_MODEL (kw_config.txt)"],
 )

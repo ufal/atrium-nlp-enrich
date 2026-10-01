@@ -23,7 +23,6 @@
 #   REQUIREMENTS     — base + test requirements (no LLM stack)
 #
 # Infra note: this job runs on GitHub-hosted ubuntu-latest (CPU-only).
-# GPU inference tests live in gpu-inference.yml on self-hosted runners.
 
 name: Scheduled Smoke Tests
 
@@ -77,8 +76,7 @@ jobs:
       - name: Install dependencies
         # transformers unlocks tests/test_lazy_imports.py's transformers case. It is NOT
         # in requirements-test.txt because it pulls tokenizers/safetensors, which is too
-        # much to add to every PR run; torch stays out entirely, because gpu-inference.yml
-        # already covers the torch-gated tests on a runner that has a GPU.
+        # much to add to every PR run; torch stays out entirely: nothing here needs it since 1.0.0.
         run: |
           pip install -r requirements.txt -r requirements-test.txt
           pip install transformers

@@ -19,7 +19,6 @@ import service.enrichment as enr  # noqa: E402
 from service.api import _build_envelope, app  # noqa: E402
 from service.enrichment import (  # noqa: E402
     PipelineManager,
-    _detect_kw_method_used,
     normalize_upload,
 )
 
@@ -68,14 +67,13 @@ def test_api_exit_code_0_success(mock_subprocess_run, test_client):
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.glob", return_value=[Path("test.teitok.xml")]),
         patch("service.enrichment.PipelineManager.collect_teitok", return_value="<xml></xml>"),
-        patch("service.enrichment.PipelineManager.collect_keywords", return_value=[]),
         patch("service.enrichment.PipelineManager.collect_ne_summary", return_value=[]),
         patch("service.enrichment.PipelineManager.collect_merged_paradata", return_value={}),
     ):
         response = test_client.post(
             "/enrich",
             files={"file": ("test.csv", create_dummy_csv(), "text/csv")},
-            data={"kw_method": "none", "format": "json"},
+            data={"format": "json"},
         )
 
     assert response.status_code == 200
@@ -93,27 +91,10 @@ def test_api_exit_code_1_or_2_bad_gateway(mock_subprocess_run, test_client):
         response = test_client.post(
             "/enrich",
             files={"file": ("test.csv", create_dummy_csv(), "text/csv")},
-            data={"kw_method": "none"},
+            data={},
         )
         assert response.status_code == 502
         assert "exit" in response.json()["detail"].lower()
-
-
-def test_api_exit_code_3_or_4_service_unavailable(mock_subprocess_run, test_client):
-    """Exit codes 3 and 4 (keyword/preflight errors) should map to HTTP 503."""
-    for rc in [3, 4]:
-        mock_result = MagicMock()
-        mock_result.returncode = rc
-        mock_result.stdout = "Keyword error"
-        mock_result.stderr = ""
-        mock_subprocess_run.return_value = mock_result
-
-        response = test_client.post(
-            "/enrich",
-            files={"file": ("test.csv", create_dummy_csv(), "text/csv")},
-            data={"kw_method": "keybert"},
-        )
-        assert response.status_code == 503
 
 
 # ── F-S2: workspace cleanup ───────────────────────────────────────────────────
@@ -137,7 +118,7 @@ def test_workspace_cleanup_on_failure(mock_rmtree, mock_subprocess_run, test_cli
     test_client.post(
         "/enrich",
         files={"file": ("test.csv", create_dummy_csv(), "text/csv")},
-        data={"kw_method": "none"},
+        data={},
     )
 
     mock_rmtree.assert_called()
@@ -156,14 +137,13 @@ def test_workspace_cleanup_on_success(mock_rmtree, mock_subprocess_run, test_cli
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.glob", return_value=[Path("test.teitok.xml")]),
         patch("service.enrichment.PipelineManager.collect_teitok", return_value="<xml/>"),
-        patch("service.enrichment.PipelineManager.collect_keywords", return_value=[]),
         patch("service.enrichment.PipelineManager.collect_ne_summary", return_value=[]),
         patch("service.enrichment.PipelineManager.collect_merged_paradata", return_value={}),
     ):
         test_client.post(
             "/enrich",
             files={"file": ("test.csv", create_dummy_csv(), "text/csv")},
-            data={"kw_method": "none", "format": "json"},
+            data={"format": "json"},
         )
 
     mock_rmtree.assert_called()
@@ -183,55 +163,10 @@ def test_concurrency_limit_returns_429(test_client):
         response = test_client.post(
             "/enrich",
             files={"file": ("test.csv", create_dummy_csv(), "text/csv")},
-            data={"kw_method": "none"},
+            data={},
         )
 
     assert response.status_code == 429
-
-
-# ── _detect_kw_method_used ────────────────────────────────────────────────────
-
-
-def test_detect_kw_method_used_degradation(tmp_path):
-    """_detect_kw_method_used reports the correct backend from output dir layout.
-
-    Tests the keybert → yake → legacy → none precedence and the
-    keybert-takes-priority-when-both-present case.
-    """
-    # Case 1: yake only — should return "yake"
-    yake_dir = tmp_path / "yake_only"
-    yake_dir.mkdir()
-    (yake_dir / "KW_PER_DOC_Y").mkdir()
-    (yake_dir / "KW_PER_DOC_Y" / "doc_keywords.csv").write_text("keyword,score\n")
-    assert _detect_kw_method_used(yake_dir) == "yake"
-
-    # Case 2: keybert and yake present — keybert wins
-    kb_dir = tmp_path / "both"
-    kb_dir.mkdir()
-    (kb_dir / "KW_PER_DOC_KB").mkdir()
-    (kb_dir / "KW_PER_DOC_KB" / "doc_keywords.csv").write_text("keyword,score\n")
-    (kb_dir / "KW_PER_DOC_Y").mkdir()
-    (kb_dir / "KW_PER_DOC_Y" / "doc_keywords.csv").write_text("keyword,score\n")
-    assert _detect_kw_method_used(kb_dir) == "keybert"
-
-    # Case 3: legacy only
-    leg_dir = tmp_path / "legacy_only"
-    leg_dir.mkdir()
-    (leg_dir / "KW_PER_DOC_L").mkdir()
-    (leg_dir / "KW_PER_DOC_L" / "doc_keywords.csv").write_text("keyword,score\n")
-    assert _detect_kw_method_used(leg_dir) == "legacy"
-
-    # Case 4: no keyword output at all
-    empty_dir = tmp_path / "empty_out"
-    empty_dir.mkdir()
-    assert _detect_kw_method_used(empty_dir) == "none"
-
-    # Case 5: subdirectory exists but contains no *_keywords.csv files
-    ghost_dir = tmp_path / "ghost"
-    ghost_dir.mkdir()
-    (ghost_dir / "KW_PER_DOC_Y").mkdir()
-    # no CSV files inside
-    assert _detect_kw_method_used(ghost_dir) == "none"
 
 
 # ── input normalization ───────────────────────────────────────────────────────
@@ -261,27 +196,31 @@ def test_enrich_text_inline(client, monkeypatch):
     c = TestClient(api.app)
     r = c.post(
         "/enrich_text",
-        json={"doc_id": "inlinedoc", "lines": ["Praha", "Brno"], "kw_method": "yake"},
+        json={"doc_id": "inlinedoc", "lines": ["Praha", "Brno"]},
     )
     assert r.status_code == 200
     assert r.json()["doc_id"] == "inlinedoc"
 
 
-def test_invalid_kw_method_422(client):
+def test_invalid_lang_422(client):
     api, _ = client
     c = TestClient(api.app)
-    r = c.post(
-        "/enrich", files={"file": ("x.csv", b"text\nA\n", "text/csv")}, data={"kw_method": "bogus"}
-    )
+    r = c.post("/enrich", files={"file": ("x.csv", b"text\nA\n", "text/csv")}, data={"lang": "xx"})
     assert r.status_code == 422
+
+
+def test_keyword_parameters_are_gone(client):
+    """Keywords moved to atrium-keyword-extract: the old form fields are not in the spec."""
+    api, _ = client
+    spec = api.app.openapi()
+    text = str(spec["paths"]["/enrich"])
+    assert "kw_method" not in text and "num_keywords" not in text
 
 
 def test_empty_input_422(client):
     api, _ = client
     c = TestClient(api.app)
-    r = c.post(
-        "/enrich", files={"file": ("x.csv", b"text\n", "text/csv")}, data={"kw_method": "none"}
-    )
+    r = c.post("/enrich", files={"file": ("x.csv", b"text\n", "text/csv")}, data={})
     assert r.status_code == 422
 
 
@@ -307,8 +246,6 @@ def _make_stub(monkeypatch, returncode=0, doc_id="document"):
             self.workspace = Path("/tmp")
             self.output_dir = Path("/tmp")
             self.returncode = returncode
-            self.kw_method_requested = "keybert"
-            self.kw_method_used = "yake" if returncode == 0 else None
             self.pages = 1
             self.stages = []
             self.stdout_tail = "..."
@@ -318,15 +255,12 @@ def _make_stub(monkeypatch, returncode=0, doc_id="document"):
             self.layout_source = "rows"  # no layout uploaded (issue #38, F)
 
     def _stub_enrich(*a, **k):
-        if returncode == 3:
-            raise enr.KeywordPreflightError("stub failed")
         if returncode != 0:
             raise enr.PipelineError("stub failed", 502, returncode)
         return StubResult()
 
     monkeypatch.setattr(PipelineManager, "enrich", _stub_enrich)
     monkeypatch.setattr(PipelineManager, "collect_teitok", lambda *a: "<teitok/>")
-    monkeypatch.setattr(PipelineManager, "collect_keywords", lambda *a: [])
     monkeypatch.setattr(PipelineManager, "collect_ne_summary", lambda *a: [])
     monkeypatch.setattr(PipelineManager, "collect_merged_paradata", lambda *a: {})
     monkeypatch.setattr(PipelineManager, "zip_workspace_output", lambda *a: Path("test.zip"))
@@ -420,7 +354,6 @@ def test_enrich_threads_document_json_flags_into_run_pipeline(tmp_path, monkeypa
     result = PipelineManager().enrich(
         [{"text": "Praha", "page_num": 1, "line_num": 1}],
         "CTX000000001.csv",
-        kw_method="none",
         document_json=json.dumps(_UPSTREAM_BASELINE).encode("utf-8"),
     )
 
@@ -432,7 +365,7 @@ def test_enrich_threads_document_json_flags_into_run_pipeline(tmp_path, monkeypa
 
 
 def test_enrich_without_document_json_sends_no_flags(tmp_path, monkeypatch):
-    """Opt-in, matching translator and llm-enrich: with no baseline there is nothing to
+    """Opt-in, matching translator and the other services: with no baseline there is nothing to
     accrete onto, and a bare own-part record nobody asked for would be a second,
     undocumented output. The envelope must not grow a key either."""
     monkeypatch.setattr(enr, "_API_JOBS_ROOT", tmp_path)
@@ -446,7 +379,7 @@ def test_enrich_without_document_json_sends_no_flags(tmp_path, monkeypatch):
     monkeypatch.setattr(enr.subprocess, "run", _run)
 
     result = PipelineManager().enrich(
-        [{"text": "Praha", "page_num": 1, "line_num": 1}], "CTX000000001.csv", kw_method="none"
+        [{"text": "Praha", "page_num": 1, "line_num": 1}], "CTX000000001.csv"
     )
 
     assert "--document-json" not in captured["cmd"]
@@ -475,7 +408,7 @@ def test_enrich_endpoint_returns_accreted_record_with_upstream_blocks_intact(
                 "application/json",
             ),
         },
-        data={"kw_method": "none", "format": "json"},
+        data={"format": "json"},
     )
 
     assert response.status_code == 200
@@ -497,7 +430,7 @@ def test_enrich_endpoint_omits_document_json_when_not_requested(tmp_path, monkey
     response = test_client.post(
         "/enrich",
         files={"file": ("CTX000000001.csv", create_dummy_csv(), "text/csv")},
-        data={"kw_method": "none", "format": "json"},
+        data={"format": "json"},
     )
 
     assert response.status_code == 200
@@ -506,7 +439,7 @@ def test_enrich_endpoint_omits_document_json_when_not_requested(tmp_path, monkey
 
 def test_enrich_text_accepts_an_inline_baseline(tmp_path, monkeypatch, test_client):
     """/enrich_text takes the baseline as an embedded object rather than an upload part,
-    matching llm-enrich's /extract_keywords_text."""
+    matching the other services' inline-JSON endpoints."""
     monkeypatch.setattr(enr, "_API_JOBS_ROOT", tmp_path)
     monkeypatch.setattr(enr.subprocess, "run", _fake_pipeline_run(tmp_path))
 
@@ -515,7 +448,6 @@ def test_enrich_text_accepts_an_inline_baseline(tmp_path, monkeypatch, test_clie
         json={
             "doc_id": "CTX000000001",
             "lines": ["Praha"],
-            "kw_method": "none",
             "document_json": _UPSTREAM_BASELINE,
         },
     )
@@ -527,7 +459,7 @@ def test_enrich_text_accepts_an_inline_baseline(tmp_path, monkeypatch, test_clie
 def test_enrich_text_rejects_a_non_object_baseline(test_client):
     response = test_client.post(
         "/enrich_text",
-        json={"lines": ["Praha"], "kw_method": "none", "document_json": "not-an-object"},
+        json={"lines": ["Praha"], "document_json": "not-an-object"},
     )
     assert response.status_code == 422
 

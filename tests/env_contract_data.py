@@ -33,18 +33,12 @@ NOT_PUBLISHED: dict[str, str] = {
     "INPUT_ALTO_DIR": "batch-pipeline knob read by api_util/summarize_nt_udp.py; belongs to config_api.txt, not a deployment",
     "FLEXICONV_ANNOTATE": "batch-pipeline knob read by api_util/summarize_nt_udp.py; belongs to config_api.txt, not a deployment",
     "TEITOK_FLEXICONV_DIR": "batch-pipeline knob read by api_util/summarize_nt_udp.py; belongs to config_api.txt, not a deployment",
-    "HF_TOKEN": "read only by llm_run.py, the batch keyword-extraction CLI entrypoint; service/api.py never imports it",
-    "PARADATA_DIR": "read only by keywords.py, the batch CLI; not reachable from the service entrypoint",
-    "PROMPT_TEMPLATE": "read only by prompt_template.py via llm_run.py, the batch CLI; not reachable from the service entrypoint",
-    "PROMPT_GEO_GUARDRAIL": "read only by prompt_template.py via llm_run.py, the batch CLI; not reachable from the service entrypoint",
-    "PROMPT_VOCAB_GROUPING": "read only by prompt_template.py via llm_run.py, the batch CLI; not reachable from the service entrypoint",
 }
 
 # In .env.example but read by no Python in this repo — each with a reason.
 CONSUMED_ELSEWHERE: dict[str, str] = {
     "ATRIUM_VERSION": "read only by docker-compose.yaml to pick the image tag; no Python here reads it",
     "ATRIUM_UID": "read only by docker-compose.yaml (`user: ${ATRIUM_UID:-10001}:0`); no Python here reads it",
-    "HF_HOME": "read by huggingface_hub itself, set by the Dockerfile and docker-compose.yaml",
 }
 
 # service/README.md or .env.example cells whose value is prose rather than a literal

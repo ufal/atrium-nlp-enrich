@@ -11,8 +11,7 @@ ENV ATRIUM_RUNNER_IMAGE=${ATRIUM_RUNNER_IMAGE} \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    HF_HOME=/cache/huggingface
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # ── Distro security patches, applied at build time ───────────────────────────
 # `python:3.11-slim` is a floating TAG, and nothing in this ecosystem bumps it:
@@ -69,13 +68,13 @@ COPY . .
 # convention (OpenShift's), atrium-project#69 / roadmap B6. docker-compose.yaml runs these
 # images as `user: "${ATRIUM_UID:-10001}:0"`, so on Linux the container can run as the uid
 # that owns the ./data bind mount, and a uid with no passwd entry still reaches /app,
-# /cache, /data and $HOME through group 0. HOME is explicit because without a passwd entry
+# /data and $HOME through group 0. HOME is explicit because without a passwd entry
 # it would be `/`. The default runtime -- uid 10001 as the owner -- is unchanged.
 RUN chmod +x api_1_manifest.sh api_2_udp.sh api_3_nt.sh api_4_stats.sh \
     && useradd --create-home --uid 10001 atrium \
-    && mkdir -p /cache/huggingface /data \
-    && chown -R atrium:0 /app /cache /data /home/atrium \
-    && chmod -R g=u /app /cache /data /home/atrium
+    && mkdir -p /data \
+    && chown -R atrium:0 /app /data /home/atrium \
+    && chmod -R g=u /app /data /home/atrium
 ENV HOME=/home/atrium
 
 USER atrium
@@ -132,26 +131,3 @@ ENTRYPOINT ["python", "-m", "service.api"]
 CMD []
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
     CMD ["python", "/app/service/healthcheck.py"]
-
-
-# ---------------------------------------------------------------------------
-# Optional LLM/GPU variant — published as :<version>-llm
-# ---------------------------------------------------------------------------
-FROM base AS llm
-
-USER root
-COPY requirements_llm.txt ./
-
-# Dynamically remove the strict torch==2.7.0 pin so vllm can install its required version
-RUN sed -i '/^torch==/d' requirements_llm.txt \
-    && pip install \
-        --extra-index-url https://download.pytorch.org/whl/cpu \
-        -r requirements_llm.txt
-
-# Same arbitrary-UID ownership as `base` (atrium:0, g=u), re-applied to what this stage adds.
-RUN chown -R atrium:0 /app /home/atrium \
-    && chmod -R g=u /app /home/atrium
-USER atrium
-
-ENTRYPOINT ["python", "llm_run.py"]
-CMD ["llm_config.txt"]

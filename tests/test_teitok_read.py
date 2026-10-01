@@ -135,21 +135,6 @@ def test_real_shipped_teitok_fixture_has_genuine_upos_values():
     assert {"NOUN", "ADJ"} & upos_values
 
 
-def test_keywords_extract_lemmas_nonempty_on_real_teitok_fixture():
-    """The end-to-end regression the fix is actually for: keywords._extract_lemmas()
-    must return real content-word lemmas for a .teitok.xml input, not an empty list."""
-    from pathlib import Path
-
-    fixture = Path(__file__).parent.parent / "data_samples" / "TEITOK" / "CTX000000001.teitok.xml"
-    if not fixture.exists():
-        pytest.skip("data_samples/TEITOK/CTX000000001.teitok.xml not present in this checkout")
-
-    import keywords
-
-    lemmas = keywords._extract_lemmas(str(fixture))
-    assert lemmas, "lemma extraction returned nothing for a real TEITOK file"
-
-
 # --- Upstream TEITOK shapes --------------------------------------------------------------
 # The fixtures under tests/fixtures/teitok/flexiconv/ are real flexiconv v0.3.10 output
 # (dates normalised). flexiconv writes no <s>: plain formats become <p>/<head>/<item> text,

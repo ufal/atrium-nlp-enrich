@@ -56,10 +56,6 @@ class TestBuildPlan:
         ns = argparse.Namespace(
             stages=["manifest", "udp", "nt", "stats"],
             config=Path("dummy"),
-            kw=False,
-            kw_method="yake",
-            llm=False,
-            llm_config="dummy_llm.txt",
             force=False,
         )
         for k, v in kwargs.items():
@@ -82,27 +78,6 @@ class TestBuildPlan:
         vals = dict(self._VALUES, FAIL_ON_EMPTY="true")
         plan = rp._build_plan(self._args(force=True), vals)
         assert plan["fail_on_empty"] is False
-
-
-class TestPreflights:
-    def test_keybert_preflight_passes_when_present(self, monkeypatch):
-        import builtins
-
-        real_import = builtins.__import__
-
-        def fake_import(name, *a, **k):
-            if name in (
-                "torch",
-                "transformers",
-                "transformers.modeling_utils",
-                "keybert",
-                "sentence_transformers",
-            ):
-                return object()
-            return real_import(name, *a, **k)
-
-        monkeypatch.setattr(builtins, "__import__", fake_import)
-        rp._keybert_deps_preflight()
 
 
 class TestDocumentJsonOutReporting:

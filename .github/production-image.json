@@ -7,13 +7,10 @@
     "fails too. Run it locally with: python ../atrium-project/tools/ci/image_closure.py",
     "--repo-root . --worktree",
     "The pilot pins `-api`; `base` is the batch pipeline of the same stage (run_pipeline.py),",
-    "published, never pinned; `llm` is the keyword stage's GPU batch target and leaves with",
-    "atrium-nlp-enrich#40. The service runs run_pipeline.py, which runs api_*.sh, which run",
-    "api_util/*.py: the walk follows those script names too. The `moving` rows are the keyword",
-    "and LLM code the image still reaches through run_pipeline.py's `keywords` and `llm`",
-    "stages; nlp-enrich#40 takes them out (and 1.0.0 is the release without them), after which",
-    "these rows go stale and must be removed. api_flexiconv.sh is the developer route (off the",
-    "AMCR chain, nlp-enrich#10; flexiconv is a conditional GPL-3.0 component)."
+    "published, never pinned. The service runs run_pipeline.py, which runs api_*.sh, which run",
+    "api_util/*.py: the walk follows those script names too. Keywords and the LLM stage are",
+    "not part of this image since 1.0.0 (atrium-keyword-extract). api_flexiconv.sh is the",
+    "developer route (off the AMCR chain, nlp-enrich#10; flexiconv is a conditional GPL-3.0 component)."
   ],
   "image": "ghcr.io/ufal/atrium-nlp-enrich-api",
   "target": "api",
@@ -50,12 +47,5 @@
     "api_util/teitok_read.py",
     "api_util/validate_teitok_xml.py"
   ],
-  "vendored": {},
-  "moving": {
-    "keywords.py": "ufal/atrium-nlp-enrich#40",
-    "llm_run.py": "ufal/atrium-nlp-enrich#40",
-    "llm_utils.py": "ufal/atrium-nlp-enrich#40",
-    "prompt_template.py": "ufal/atrium-nlp-enrich#40",
-    "vocab_manager.py": "ufal/atrium-nlp-enrich#40"
-  }
+  "vendored": {}
 }
