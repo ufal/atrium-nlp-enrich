@@ -31,7 +31,7 @@ python service/test_api.py -f data_samples/DOC_LINE_CATEG/CTX000000001.csv
 | Method | Path                | Purpose                                                                                                                                                                      |
 |--------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | GET    | `/`                 | minimal landing page (see `/docs` for OpenAPI UI)                                                                                                                            |
-| GET    | `/info`             | service id, endpoints, stage plan, pinned models, `limits` (every [limit](#limits), current value) and `limits_meta` (the variable behind each)   |
+| GET    | `/info`             | service id, endpoints, stage plan, pinned models, `limits` (every [limit](#limits), current value) and `limits_meta` (the variable behind each)                              |
 | GET    | `/health`           | liveness — 200 always, even mid-shutdown. `?deep=true` adds config validity via `run_pipeline.py --dry-run` + UDPipe/NameTag reachability (503 on failure or while draining) |
 | GET    | `/ready`            | readiness — 503 until warmup finishes, 200 while serving, 503 the instant `SIGTERM` arrives. The Kubernetes `readinessProbe`/`startupProbe` target                           |
 | POST   | `/enrich`           | **single-file entry point** — upload CSV/XLSX/TXT, or a converted TEITOK `.xml`; optionally the ALTO of a table's pages                                                      |
@@ -41,17 +41,17 @@ python service/test_api.py -f data_samples/DOC_LINE_CATEG/CTX000000001.csv
 | GET    | `/jobs/{id}/result` | the `/enrich` JSON envelope of a finished job (409 while it runs)                                                                                                            |
 | DELETE | `/jobs/{id}`        | forget a job (finished jobs are also forgotten `JOB_TTL_S`, an hour, after they end); job ids are local to the replica                                                       |
 | POST   | `/rescale`          | rescale a TEITOK's bboxes to page images of another size, page by page                                                                                                       |
-| POST   | `/project_record`   | project a finished record's page categories and its TEATER/AMČR categories and controlled keywords onto its TEITOK header (opt-in, atrium-project#70)                                            |
+| POST   | `/project_record`   | project a finished record's page categories and its TEATER/AMČR categories and controlled keywords onto its TEITOK header (opt-in, atrium-project#70)                        |
 
 ### `POST /enrich` (multipart form)
 
-| Field               | Default    | Notes                                                                                                                                                                                                                                                             |
-|---------------------|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `file`              | *required* | `.csv` (needs a `text` column; optional `page_num`, `line_num`), `.xlsx`, `.txt` (a form feed starts a new page), or a TEITOK `.xml` (`*.teitok.xml`, or any `.xml` starting with `<TEI`) — see [Layout inputs](#layout-inputs)                                   |
-| `alto`              | *optional* | ALTO XML of the pages a `.csv`/`.xlsx` lists the lines of — see [Layout inputs](#layout-inputs)                                                                                                                                                                   |
-| `lang`              | `cs`       | Czech-pinned in v1                                                                                                                                                                                                                                                |
-| `format`            | `json`     | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`; any other value → 422 (it silently became `json` before atrium-project#32 round 2)                                                                                                                       |
-| `document_json`     | *optional* | baseline ATRIUM Document JSON (or an AMČR seed) to accrete onto — see below; not a JSON object → 422 `invalid_record`                                                                                                                                             |
+| Field               | Default    | Notes                                                                                                                                                                                                                                              |
+|---------------------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `file`              | *required* | `.csv` (needs a `text` column; optional `page_num`, `line_num`), `.xlsx`, `.txt` (a form feed starts a new page), or a TEITOK `.xml` (`*.teitok.xml`, or any `.xml` starting with `<TEI`) — see [Layout inputs](#layout-inputs)                    |
+| `alto`              | *optional* | ALTO XML of the pages a `.csv`/`.xlsx` lists the lines of — see [Layout inputs](#layout-inputs)                                                                                                                                                    |
+| `lang`              | `cs`       | Czech-pinned in v1                                                                                                                                                                                                                                 |
+| `format`            | `json`     | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`; any other value → 422 (it silently became `json` before atrium-project#32 round 2)                                                                                                        |
+| `document_json`     | *optional* | baseline ATRIUM Document JSON (or an AMČR seed) to accrete onto — see below; not a JSON object → 422 `invalid_record`                                                                                                                              |
 | `teitok_enrichment` | `false`    | opt-in (atrium-project#70): the returned TEITOK also carries the record's page categories (`pb/@ana`) and the record's controlled keywords in its header — see [`POST /project_record`](#post-project_record-multipart-form). `/jobs` takes it too |
 
 ### Layout inputs
@@ -361,7 +361,7 @@ validation error adds FastAPI's list of problems as `errors`.
 | 429    | `busy`                   | every processing slot taken (synchronous endpoints), or the `/jobs` queue full; retry after `Retry-After` seconds            |
 | 500    | `null`                   | the TEITOK failed its output contract (exit 5) — a writer defect, please report it                                           |
 | 502    | `null`                   | a stage failed: an empty run, a missing stage, UDPipe or NameTag after their retries                                         |
-| 503    | `null`                   | the replica is shutting down                                                                                                |
+| 503    | `null`                   | the replica is shutting down                                                                                                 |
 | 504    | `limit_exceeded`         | the run took longer than `API_JOB_TIMEOUT` and was stopped                                                                   |
 
 ## Shutdown behavior (issue #55)

@@ -3,7 +3,7 @@
   "info": {
     "title": "ATRIUM nlp-enrich API",
     "description": "Text lines (a table, a .txt, or a converted TEITOK file) → NLP-enriched TEITOK XML.",
-    "version": "1.0.0",
+    "version": "1.0.0-beta",
     "x-atrium-service": "atrium-nlp-enrich"
   },
   "paths": {

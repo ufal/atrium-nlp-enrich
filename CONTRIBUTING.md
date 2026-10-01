@@ -201,12 +201,12 @@ tests/
 
 **Per-repo targets:**
 
-| Repository                | Test file           | Primary targets                                                                                                                                    |
-|---------------------------|---------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
-| `atrium-nlp-enrich`       | `test_teitok_project.py` | the opt-in record → TEITOK projection, `run_pipeline.py`'s `project` stage                                                                  |
-| `atrium-ocr-postprocess`  | `test_text_util.py` | Density/ratio helpers, detectors, `pre_filter_line`, `parse_line_splits`, `categorize_line` (ppl passed directly, no GPU), `compute_quality_score` |
-| `atrium-ocr-postprocess`  | `test_utils.py`     | `directory_scraper`, `dataframe_results` (Top-1 and Top-N), `collect_images`                                                                       |
-| `atrium-translator`       | `test_utils.py`     | `_resolve_namespaces`, `validate_xml_with_xsd`, `process_alto_xml`, `process_amcr_xml` (mock translator injected)                                  |
+| Repository               | Test file                | Primary targets                                                                                                                                    |
+|--------------------------|--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
+| `atrium-nlp-enrich`      | `test_teitok_project.py` | the opt-in record → TEITOK projection, `run_pipeline.py`'s `project` stage                                                                         |
+| `atrium-ocr-postprocess` | `test_text_util.py`      | Density/ratio helpers, detectors, `pre_filter_line`, `parse_line_splits`, `categorize_line` (ppl passed directly, no GPU), `compute_quality_score` |
+| `atrium-ocr-postprocess` | `test_utils.py`          | `directory_scraper`, `dataframe_results` (Top-1 and Top-N), `collect_images`                                                                       |
+| `atrium-translator`      | `test_utils.py`          | `_resolve_namespaces`, `validate_xml_with_xsd`, `process_alto_xml`, `process_amcr_xml` (mock translator injected)                                  |
 
 **Heavy tests** — a test that loads a model checkpoint, calls an external API, or needs a
 GPU does not belong in the default suite. Put it behind the workflow that has the
@@ -282,15 +282,15 @@ a change to what it writes moves the XSD and `tests/fixtures/teitok/CTX_projecte
 Pipeline output is controlled by boolean flags in `config_api.txt`. When adding a new output format,
 follow this pattern:
 
-| Variable             | Description                                                                                           | Default |
-|----------------------|-------------------------------------------------------------------------------------------------------|---------|
-| `SAVE_CONLLU_NE`     | Enriched CoNLL-U with NER in the `MISC` field                                                         | `true`  |
-| `SAVE_CSV`           | Token-level summary CSV per document                                                                  | `true`  |
-| `SAVE_TEITOK`        | TEITOK XML (bounding boxes when ALTO is given)                                                        | `true`  |
-| `BBOX_ORIGIN`        | TEITOK bbox origin: `page` or `printspace`                                                            | `page`  |
-| `REGENERATE_TEITOK`  | Rewrite existing `.teitok.xml` instead of resuming                                                    | `false` |
-| `FLEXICONV_ANNOTATE` | Annotate flexiconv-converted documents too (stage 1 text, stage 4 layout from `TEITOK_FLEXICONV_DIR`) | `false` |
-| `TEITOK_ENRICHMENT`  | Project the record's page categories and controlled keywords into the TEITOK headers (`run_pipeline.py`)     | `false` |
+| Variable             | Description                                                                                              | Default |
+|----------------------|----------------------------------------------------------------------------------------------------------|---------|
+| `SAVE_CONLLU_NE`     | Enriched CoNLL-U with NER in the `MISC` field                                                            | `true`  |
+| `SAVE_CSV`           | Token-level summary CSV per document                                                                     | `true`  |
+| `SAVE_TEITOK`        | TEITOK XML (bounding boxes when ALTO is given)                                                           | `true`  |
+| `BBOX_ORIGIN`        | TEITOK bbox origin: `page` or `printspace`                                                               | `page`  |
+| `REGENERATE_TEITOK`  | Rewrite existing `.teitok.xml` instead of resuming                                                       | `false` |
+| `FLEXICONV_ANNOTATE` | Annotate flexiconv-converted documents too (stage 1 text, stage 4 layout from `TEITOK_FLEXICONV_DIR`)    | `false` |
+| `TEITOK_ENRICHMENT`  | Project the record's page categories and controlled keywords into the TEITOK headers (`run_pipeline.py`) | `false` |
 
 New flags must be documented here and in `config_api.txt`.
 
