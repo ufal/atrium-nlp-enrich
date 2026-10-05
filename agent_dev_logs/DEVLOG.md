@@ -483,7 +483,14 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
   atrium-digital-convert `v1.0.0-beta`). Born-digital conversion was never in this repository, so the row no longer
   names it. Part of the hub's 2026-10-05 alignment sweep.
 
-  **Not pushed: files delivered in chat.**
+  Files delivered in chat; pushed by the maintainer as `a7828c5`.
+
+## 2026-10-05 (evening) — DEVLOG commit line; W5 has no issue
+* The README entry names its commit (`a7828c5`).
+* atrium-digital-convert#4 W5 belongs to this repository and has no issue here yet: TEITOK from `pages[].canvas` and
+  `lines[].bbox`, for records without ALTO.
+
+  Files delivered in chat.
 
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
