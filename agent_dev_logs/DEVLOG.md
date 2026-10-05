@@ -476,6 +476,15 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
   README notes they run from a checkout. `docker.yml` names `api` as the production target.
 * Revendored the three declared-rename files. Tag draft: `v0.23.0`. **Not pushed: files delivered in chat.**
 
+## 2026-10-05 — README: where the LLM stage went
+* "Where things went" said the LLM controlled-vocabulary stage was in atrium-digital-convert, "moving into
+  keyword-extract next". digital-convert removed it in its v1.1.0-beta, so the row now names
+  atrium-keyword-extract (the code arrives with atrium-keyword-extract#2; until then it is at
+  atrium-digital-convert `v1.0.0-beta`). Born-digital conversion was never in this repository, so the row no longer
+  names it. Part of the hub's 2026-10-05 alignment sweep.
+
+  **Not pushed: files delivered in chat.**
+
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);

@@ -1372,11 +1372,11 @@ stages.
 Since v1.0.0 this repository is the morphology / named-entity / TEITOK stage only. The October 2026
 split of the ATRIUM tool repositories moved the rest:
 
-| What                                                             | Now in                                                                                                                                 | Was                                    |
-|------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------|
-| Keyword extraction: KeyBERT, YAKE, KER; `POST /extract_keywords` | [atrium-keyword-extract](https://github.com/ufal/atrium-keyword-extract)                                                               | `keywords.py`, `--kw*`, `kw_method`    |
-| Born-digital documents, the LLM controlled-vocabulary stage      | [atrium-digital-convert](https://github.com/ufal/atrium-digital-convert) (the LLM/vocabulary code is moving into keyword-extract next) | `llm_run.py`, `vocab_*.py`, `prompts/` |
-| OCR output postprocessing (ALTO and the other OCR formats)       | [atrium-ocr-postprocess](https://github.com/ufal/atrium-ocr-postprocess)                                                               | `atrium-alto-postprocess`              |
+| What                                                             | Now in                                                                                                                                                                                                                       | Was                                    |
+|------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------|
+| Keyword extraction: KeyBERT, YAKE, KER; `POST /extract_keywords` | [atrium-keyword-extract](https://github.com/ufal/atrium-keyword-extract)                                                                                                                                                     | `keywords.py`, `--kw*`, `kw_method`    |
+| The LLM controlled-vocabulary stage                              | [atrium-keyword-extract](https://github.com/ufal/atrium-keyword-extract), by way of atrium-llm-enrich and atrium-digital-convert (until atrium-keyword-extract#2 lands, the code is at atrium-digital-convert `v1.0.0-beta`) | `llm_run.py`, `vocab_*.py`, `prompts/` |
+| OCR output postprocessing (ALTO and the other OCR formats)       | [atrium-ocr-postprocess](https://github.com/ufal/atrium-ocr-postprocess)                                                                                                                                                     | `atrium-alto-postprocess`              |
 
 The API lost the `kw_method` and `num_keywords` parameters, the `keywords`, `method_requested`,
 `method_used` and `llm` response fields and the `keyword_methods` block of `/info`: a breaking
