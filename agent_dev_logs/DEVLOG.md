@@ -508,6 +508,19 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 
   Files delivered in chat.
 
+## 2026-10-08 — Digest and plan for the two new issues (#41, #42)
+* **#41** (a LINDAT timeout or outage is reported as an empty run): the chain read on `86b0277`, from the clients'
+  exit 1 through the stage scripts and `run_pipeline.py` to the 502 "empty run"; the plan gives the clients exit
+  codes 3 (no answer) and 4 (timeout), passes them through the stage scripts, and maps them to a 502 naming the
+  service and a 504 `limit_exceeded` (`lindat_timeout_s`). No shared-module change.
+* **#42** (W5, TEITOK from a born-digital record): the 2026-10-05 note above now has its issue. The plan carries out
+  Stage 8 of `plans/teitok_conformance_plan.md` with today's code references: an adapter returning
+  `_parse_alto()`'s shape from `pages[].canvas` and `lines[].bbox`, the record as the third layout source,
+  `layout_source: "record"`, `pt` in `bbox_scale`.
+* **Dev logs:** `digests/41.digest.md`, `plans/41.plan.md`, `digests/42.digest.md`, `plans/42.plan.md`.
+
+  Files delivered in chat.
+
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);
