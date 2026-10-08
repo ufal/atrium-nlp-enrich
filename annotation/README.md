@@ -9,13 +9,22 @@ The core campaign workflow consists of:
 
 ## Contents
 
-| File                                 | Purpose                                                                     |
-|--------------------------------------|-----------------------------------------------------------------------------|
-| `docker-compose.yml`, `env.example`  | Standalone Label Studio campaign deployment (host port 8001)                |
-| `archaeo_labels.xml`                 | 6-type XML label configuration for Label Studio interface                   |
-| `GUIDELINES.md`                      | Boundary rules and entity definitions for annotators                        |
-| `conllu_to_ls.py`                    | Converts UDPipe CoNLL-U or NameTag TSV into Label Studio task JSON          |
-| `ls_to_iob2.py`                      | Converts Label Studio JSON exports back into NameTag-compatible IOB2 format |
+| File                                | Purpose                                                                                                                                                                     |
+|-------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `docker-compose.yml`, `env.example` | Standalone Label Studio campaign deployment (host port 8001); `env.example` also lists the `DOCCANO_*` settings of a doccano server you run yourself (no compose file here) |
+| `archaeo_labels.xml`                | 6-type XML label configuration for Label Studio interface                                                                                                                   |
+| `archaeo_labels.json`               | The same six types as a doccano label configuration (doccano → Labels → Import)                                                                                             |
+| `GUIDELINES.md`                     | Boundary rules and entity definitions for annotators                                                                                                                        |
+| `conllu_to_ls.py`                   | Converts UDPipe CoNLL-U or NameTag TSV into Label Studio task JSON                                                                                                          |
+| `ls_to_iob2.py`                     | Converts Label Studio JSON exports back into NameTag-compatible IOB2 format                                                                                                 |
+| `conllu_to_doccano.py`              | The same input as a doccano JSONL import file (`text` + `label` spans)                                                                                                      |
+| `doccano_to_iob2.py`                | Converts a doccano JSONL export back into NameTag-compatible IOB2 format                                                                                                    |
+| `data_samples_converted/`           | Label Studio import files made from `data_samples/` with the pipeline's own CNEC and OntoNotes labels (not the six archaeo types), to try an import                         |
+
+The annotation tool is not chosen yet ([#18](https://github.com/ufal/atrium-nlp-enrich/issues/18)): Label Studio is the
+deployed one, the doccano pair is the lighter alternative, and both read and write the same IOB2.
+`tests/test_annotation_kit.py` keeps this table, the label sets (XML, JSON, `GUIDELINES.md`,
+`api_util/ner_types.py`) and the converted samples consistent.
 
 ---
 
@@ -69,10 +78,14 @@ python annotation/conllu_to_ls.py \
 ### Command 3: Converting IOB2 TSV Files
 
 ```bash
+cat data_samples/NE/CTX000000001/CTX000000001-1.tsv \
+    data_samples/NE/CTX000000001/CTX000000001-2.tsv > CTX000000001.tsv
 python annotation/conllu_to_ls.py \
-    --tsv data_samples/NE/CTX000000001/CTX000000001-1.tsv \
+    --tsv CTX000000001.tsv \
     -o import_tsv.json
 ```
+
+The two TSVs are page chunks of one document; the `cat` is what makes `data_samples_converted/import_tsv.json`.
 
 * **Explanation:** Ingests two-column or three-column IOB2 TSV files (written by `api_util/call_nametag.py` or LLM pre-annotation scripts) and formats them into Label Studio task JSONs.
 

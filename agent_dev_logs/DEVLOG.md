@@ -492,6 +492,22 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 
   Files delivered in chat.
 
+## 2026-10-07 (evening) — #18: the annotation kit's housekeeping
+* `annotation/achaeo_labels.xml` is now `archaeo_labels.xml`, the name the README tells annotators to paste. The
+  README's contents table lists every file (the doccano pair, `archaeo_labels.json`, `data_samples_converted/`) and
+  says the tool is still undecided (#18). Its Command 3 now joins the two page chunks first, which is what makes
+  `data_samples_converted/import_tsv.json`; the old command, on `-1.tsv` alone, made a different file.
+* `tests/test_annotation_kit.py` (9 tests): the table names exactly the files of the directory; the six types,
+  hotkeys and colours agree in the XML, the doccano JSON, `GUIDELINES.md` and `api_util/ner_types.py`; each converted
+  sample is made of Label Studio tasks whose spans slice their own text; Commands 2 and 3 reproduce
+  `import_preannot.json` and `import_tsv.json`. The three drifts it exists for (the file name, a hotkey, a table row)
+  each fail it.
+* Not changed: `import_tsv_onto.json` is a byte-identical copy of `import_tsv.json`; the tool decision.
+* **Checks:** fast lane 941 passed, 9 skipped; ruff check and format clean.
+* **Dev logs:** the pairs of #7 and #18 refreshed.
+
+  Files delivered in chat.
+
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);
