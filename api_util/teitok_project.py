@@ -20,17 +20,19 @@ page category (``pages[].category``,  ``<pb ana="#pcat-DRAW"/>`` + ``encodingDes
 ``page_categories[P]``)               [@id="tax-page-category"]/category[@id="pcat-DRAW"]
                                       [@corresp=<atrium_vocab concept URI>]/catDesc``
 TEATER category (``enrichment.items``) ``profileDesc/textClass/keywords[@scheme="#tax-amcr-teater"]
-                                      [@resp="#app-llm-enrich"]/term[@type="teater-category"][@ref=
+                                      [@resp="#app-kw-controlled"]/term[@type="teater-category"][@ref=
                                       concept URIs from teater_category_ids][@cert=max confidence]
                                       [@corresp="#pb-K …"]``; the meta sentinel is skipped
-controlled keywords cs / en           ``keywords[@resp="#app-llm-enrich"][@lang]/term[@type=
+controlled keywords cs / en           ``keywords[@resp="#app-kw-controlled"][@lang]/term[@type=
                                       "extracted-keyword"][@corresp]`` (no ``@cert``: the confidence
                                       belongs to the category)
-statistical keywords (nlp-enrich,     ``keywords[@resp="#app-kw"][@scheme="#kw-<method>"]/term[@type=
-per document and per page)            "statistical-keyword"][@n=rank][@score]``; a page's list is one
-                                      more such ``keywords`` with ``@corresp="#pb-K"``
+statistical keywords (the record's    ``keywords[@resp="#app-kw-statistical"][@scheme="#kw-<method>"]/term
+``keywords`` block, keyword-extract,  [@type="statistical-keyword"][@n=rank][@score]``, at most 20 per
+per document and per page)            list; a page's list is one more such ``keywords`` with
+                                      ``@corresp="#pb-K"``
 provenance                            ``appInfo/application[@id="app-…"]`` appended after the writer's
-                                      own (``teitok_layout``'s converter pick is unaffected) and one
+                                      own (``teitok_layout``'s converter pick is unaffected), its
+                                      ``@ident`` the program the record's stamp names, and one
                                       ``revisionDesc/change[@type="enriched"]``
 ====================================  ==================================================================
 
@@ -38,10 +40,10 @@ provenance                            ``appInfo/application[@id="app-…"]`` app
 
 **Pages** named by the record resolve, in order: ``pages[].teitok_surface`` (the ``<pb
 corresp>``), ``page_index`` (``pb-K``), a numeric page key (``pb-K`` — the physical index
-nlp-enrich and page-classification key by), and last the ``<pb n>`` label. An llm-enrich item's
-``page`` is the label of its ``## Page`` marker, so it resolves through the record's ``pages[]``
-entry of that label when there is one, then by ``<pb n>``, then as a number. A page that resolves
-to nothing is reported, never fatal. Line anchoring is deferred (llm-enrich's line numbers and the
+nlp-enrich and page-classification key by), and last the ``<pb n>`` label. An ``enrichment``
+item's ``page`` and a ``keywords`` page are labels (``lines[].page``), so they resolve through the
+record's ``pages[]`` entry of that label when there is one, then by ``<pb n>``, then as a number.
+A page that resolves to nothing is reported, never fatal. Line anchoring is deferred (llm-enrich's line numbers and the
 writer's ``lb`` numbering drift). ``enrichment.summary``/``topics`` are never written by
 llm-enrich, so there is no paragraph description to project.
 
@@ -53,19 +55,22 @@ result with ``validate_teitok_xml`` (profile ``contract``) before anything is wr
 touches ``note[@n="orgfile"]``. A TEITOK regeneration (``REGENERATE_TEITOK``, a stage-4 re-run)
 drops the projection — re-project after it.
 
+The keywords come from the record only (atrium-project#73): keyword-extract writes the
+statistical ones as the ``keywords`` block and the controlled ones as ``enrichment``. Up to
+v1.0.0-beta this module could also read a ``keywords.py`` CSV or compute per-page keywords itself;
+that code needed ``keywords.py``, which left with the keyword extraction (atrium-keyword-extract#1).
+
 CLI::
 
     python -m api_util.teitok_project --teitok X.teitok.xml --record X.document.json --in-place
-    python -m api_util.teitok_project --teitok X.teitok.xml --record X.document.json --out Y.teitok.xml \\
-        --kw-method yake --kw-csv KW_PER_DOC_Y/X_keywords.csv
+    python -m api_util.teitok_project --teitok X.teitok.xml --record X.document.json --out Y.teitok.xml
     python -m api_util.teitok_project --teitok-dir data_samples/TEITOK --record-dir records/ \\
-        --kw-method yake --kw-per-doc-dir data_samples/KW_PER_DOC_Y --in-place   # what run_pipeline runs
+        --in-place   # what run_pipeline runs
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import datetime as _dt
 import json
 import os
@@ -80,7 +85,7 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 import atrium_vocab  # noqa: E402
-from api_util.teitok_read import _local, _tok_form  # noqa: E402
+from api_util.teitok_read import _local  # noqa: E402
 from api_util.validate_teitok_xml import (  # noqa: E402
     WRITER_FORMAT,
     _etree,
@@ -92,12 +97,21 @@ from atrium_document import canonical_doc_id  # noqa: E402
 #: Who the ``<change>`` names.
 PROJECTOR = "atrium-nlp-enrich"
 #: The applications this module may add, ``key -> (id, ident, label)``. Their ids are owned here.
+#: The ident is the default; the program the record's stamp names wins (an ``enrichment`` block
+#: written before 1 October 2026 is ``atrium-llm-enrich``'s).
 APPLICATIONS: Dict[str, Tuple[str, str, str]] = {
     "pc": ("app-pc", "atrium-page-classification", "ATRIUM page classification"),
-    "llm": ("app-llm-enrich", "atrium-llm-enrich", "ATRIUM LLM enrichment"),
-    "kw": ("app-kw", "atrium-nlp-enrich-keywords", "atrium-nlp-enrich keywords.py"),
+    "controlled": (
+        "app-kw-controlled",
+        "atrium-keyword-extract",
+        "ATRIUM controlled-vocabulary keywords",
+    ),
+    "statistical": ("app-kw-statistical", "atrium-keyword-extract", "ATRIUM statistical keywords"),
 }
-OWNED_APP_IDS = frozenset(app_id for app_id, _, _ in APPLICATIONS.values())
+#: The ids an earlier projector wrote (``app-llm-enrich``, ``app-kw`` until v1.0.0-beta): a
+#: re-projection still removes them.
+LEGACY_APP_IDS = frozenset({"app-llm-enrich", "app-kw"})
+OWNED_APP_IDS = frozenset(app_id for app_id, _, _ in APPLICATIONS.values()) | LEGACY_APP_IDS
 TAX_PAGE_CATEGORY = "tax-page-category"
 TAX_VOCAB = "tax-amcr-teater"
 PCAT_PREFIX = "pcat-"
@@ -106,18 +120,14 @@ KW_SCHEME_PREFIX = "kw-"
 META_TERM = "Nerelevantní (meta-text)"
 #: Where a ``teater_category_ids`` ``{source, id}`` pair lives as a URI.
 VOCAB_BASES = {"amcr": atrium_vocab.NS["amcr"], "teater": atrium_vocab.NS["teater"]}
-#: flexiconv#1 asks for 5-20 keyword/score pairs per page.
-KW_MIN, KW_MAX = 5, 20
+#: flexiconv#1 asks for 5-20 keyword/score pairs per page: a statistical list is cut at 20.
+KW_MAX = 20
 
 _ID_UNSAFE = re.compile(r"[^A-Za-z0-9_.-]")
 
 
 class ProjectionError(ValueError):
     """The projection was refused: wrong document, invalid input, or invalid output."""
-
-
-def clamp_keywords(n: int) -> int:
-    return max(KW_MIN, min(KW_MAX, int(n)))
 
 
 # ── small XML helpers (namespace-agnostic: rescaled documents may carry the TEI namespace) ──
@@ -295,6 +305,62 @@ def _block_run(record: Dict[str, Any], block: str) -> str:
     return str(stamp.get("run_id") or "")
 
 
+def _block_ident(record: Dict[str, Any], block: str, default: str) -> str:
+    """``atrium-<program>`` of the program the record's stamp names for ``block``, else ``default``."""
+    stamp = ((record.get("assembled") or {}).get("blocks") or {}).get(block) or {}
+    program = str(stamp.get("program") or "").strip()
+    return f"atrium-{program}" if program else default
+
+
+def _keyword_list(items: Any) -> List[Tuple[str, float]]:
+    """A ``keywords`` list as ``(keyword, score)`` pairs, by rank, at most :data:`KW_MAX`."""
+    usable = [
+        k
+        for k in items or []
+        if isinstance(k, dict)
+        and str(k.get("keyword") or "").strip()
+        and isinstance(k.get("score"), (int, float))
+        and not isinstance(k.get("score"), bool)
+    ]
+    usable.sort(key=lambda k: k.get("rank") if isinstance(k.get("rank"), int) else len(usable) + 1)
+    return [(str(k["keyword"]).strip(), float(k["score"])) for k in usable[:KW_MAX]]
+
+
+def _statistical(
+    record: Dict[str, Any], pages: "_PageIndex", record_pages, report
+) -> Dict[str, Any]:
+    """The record's ``keywords`` block (keyword-extract, atrium-project#73), resolved onto pages."""
+    block = record.get("keywords") if isinstance(record.get("keywords"), dict) else {}
+    groups = [g for g in block.get("pages") or [] if isinstance(g, dict)]
+    methods = sorted(
+        {
+            str(k.get("method"))
+            for items in [block.get("document")] + [g.get("keywords") for g in groups]
+            for k in items or []
+            if isinstance(k, dict) and k.get("method")
+        }
+    )
+    if len(methods) > 1:
+        report["notes"].append(
+            f"the keywords block mixes methods {methods}; projected as {methods[0]!r}"
+        )
+    by_page: Dict[str, List[Tuple[str, float]]] = {}
+    for group in groups:
+        label = str(group.get("page") or "")
+        pb_id = pages.item_page(label, record_pages)
+        if pb_id is None:
+            report["unresolved_pages"].append({"from": "keywords", "page": label})
+            continue
+        kws = _keyword_list(group.get("keywords"))
+        if kws:
+            by_page.setdefault(pb_id, []).extend(kws)
+    return {
+        "method": methods[0] if methods else "",
+        "document": _keyword_list(block.get("document")),
+        "pages": {pb_id: kws[:KW_MAX] for pb_id, kws in by_page.items()},
+    }
+
+
 # ── projection ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -344,16 +410,15 @@ def project_record(
     xml_text: str,
     record: Optional[Dict[str, Any]],
     *,
-    statistical: Optional[Dict[str, Any]] = None,
     when: Optional[str] = None,
     force: bool = False,
     paired_as: Optional[str] = None,
 ) -> Tuple[str, Dict[str, Any]]:
-    """Project ``record`` (and optional ``statistical`` keywords) onto a TEITOK document.
+    """Project ``record`` onto a TEITOK document: its page categories, its ``enrichment`` (the
+    controlled keywords) and its ``keywords`` block (the statistical ones, atrium-project#73).
 
-    ``statistical`` = ``{"method", "method_version"?, "params"?, "document": [(kw, score)],
-    "pages": {pb_id: [(kw, score)]}}`` (see :func:`statistical_block`). Returns ``(xml_text,
-    report)``; the text is unchanged when there is nothing to project and nothing to remove.
+    Returns ``(xml_text, report)``; the text is unchanged when there is nothing to project and
+    nothing to remove.
     Raises :class:`ProjectionError` for another document's TEITOK, for an input that does not
     validate (unless ``force``), and for an output that does not. ``paired_as`` is the id a
     caller paired the two files by (the pipeline: ``<doc_id>.teitok.xml`` with
@@ -416,7 +481,7 @@ def project_record(
     if unknown:
         report["notes"].append(f"page categories outside atrium_vocab: {unknown}")
 
-    # llm-enrich items -> TEATER categories and controlled keywords
+    # enrichment items (keyword-extract's controlled kind) -> TEATER categories and keywords
     teater: Dict[str, Dict[str, Any]] = {}
     controlled: Dict[str, Dict[str, List[str]]] = {"cs": {}, "en": {}}
     for item in (record.get("enrichment") or {}).get("items") or []:
@@ -446,15 +511,11 @@ def project_record(
                 if kw:
                     controlled[lang].setdefault(kw, []).extend(pb_ids)
 
-    stat = statistical or {}
-    stat_document = [(k, s) for k, s in stat.get("document") or [] if str(k).strip()]
-    stat_pages = {}
-    for pb_id, kws in (stat.get("pages") or {}).items():
-        if pb_id not in pages.by_id:
-            report["unresolved_pages"].append({"from": "statistical keywords", "page": pb_id})
-        elif kws:
-            stat_pages[pb_id] = kws
-    method = str(stat.get("method") or "")
+    # the keywords block (keyword-extract's statistical kind) -> statistical keywords
+    stat = _statistical(record, pages, record_pages, report)
+    stat_document = stat["document"]
+    stat_pages = stat["pages"]
+    method = stat["method"]
     has_stat = bool(method and (stat_document or stat_pages))
 
     if not (categories or teater or has_stat):
@@ -472,10 +533,13 @@ def project_record(
         app_info = _make(enc, "appInfo")
         _place(enc, app_info, 3, before=enc[0] if len(enc) > 1 else None)
 
-    def application(key: str, version: str = "", desc: str = "") -> None:
+    def application(
+        key: str, version: str = "", desc: str = "", ident: Optional[str] = None
+    ) -> None:
         # One line, like the writer's own <application> elements.
-        app_id, ident, label = APPLICATIONS[key]
-        app = _make(app_info, "application", {"ident": ident, "version": version, "id": app_id})
+        app_id, default_ident, label = APPLICATIONS[key]
+        attrs = {"ident": ident or default_ident, "version": version, "id": app_id}
+        app = _make(app_info, "application", attrs)
         _make(app, "label", text=label)
         if desc:
             _make(app, "desc", text=desc)
@@ -486,13 +550,17 @@ def project_record(
         application("pc", desc=f"page categories of the record{f', run {run}' if run else ''}")
     if teater:
         run = _block_run(record, "enrichment")
-        application("llm", desc=f"enrichment block of the record{f', run {run}' if run else ''}")
-    if has_stat:
-        params = stat.get("params") or {}
         application(
-            "kw",
-            version=str(stat.get("method_version") or method),
-            desc=", ".join(f"{k}={v}" for k, v in sorted(params.items())) or f"method={method}",
+            "controlled",
+            desc=f"enrichment block of the record{f', run {run}' if run else ''}",
+            ident=_block_ident(record, "enrichment", APPLICATIONS["controlled"][1]),
+        )
+    if has_stat:
+        run = _block_run(record, "keywords")
+        application(
+            "statistical",
+            desc=f"keywords block of the record, method={method}{f', run {run}' if run else ''}",
+            ident=_block_ident(record, "keywords", APPLICATIONS["statistical"][1]),
         )
 
     formatted = []  # (element, depth) whose inside is indented once built
@@ -528,8 +596,8 @@ def project_record(
             _make(
                 tax,
                 "desc",
-                text=f"Statistical keywords, keywords.py --method {method}: @n is the rank, "
-                "@score the method's score (higher = more relevant)",
+                text=f"Statistical keywords ({method}): @n is the rank, @score the method's own "
+                "score (higher = more relevant; comparable within one list only)",
             )
 
     if teater or has_stat:
@@ -541,7 +609,8 @@ def project_record(
         _place(profile, tc, 3)
         formatted.append((tc, 3))
         if teater:
-            kws = _make(tc, "keywords", {"scheme": f"#{TAX_VOCAB}", "resp": "#app-llm-enrich"})
+            resp = f"#{APPLICATIONS['controlled'][0]}"
+            kws = _make(tc, "keywords", {"scheme": f"#{TAX_VOCAB}", "resp": resp})
             for label, slot in teater.items():
                 attrs = {
                     "type": "teater-category",
@@ -554,7 +623,7 @@ def project_record(
             for lang in ("cs", "en"):
                 if not controlled[lang]:
                     continue
-                kws = _make(tc, "keywords", {"resp": "#app-llm-enrich", "lang": lang})
+                kws = _make(tc, "keywords", {"resp": resp, "lang": lang})
                 for kw, pb_ids in controlled[lang].items():
                     _make(
                         kws,
@@ -568,7 +637,13 @@ def project_record(
 
             def stat_list(kws: list, corresp: Optional[str] = None) -> None:
                 el = _make(
-                    tc, "keywords", {"scheme": scheme, "resp": "#app-kw", "corresp": corresp}
+                    tc,
+                    "keywords",
+                    {
+                        "scheme": scheme,
+                        "resp": f"#{APPLICATIONS['statistical'][0]}",
+                        "corresp": corresp,
+                    },
                 )
                 for rank, (kw, score) in enumerate(kws, 1):
                     _make(
@@ -639,116 +714,6 @@ def _serialise(original: str, tree) -> str:
     return decl + body + ("\n" if original.endswith("\n") else "")
 
 
-# ── statistical keywords ────────────────────────────────────────────────────────────────────
-
-
-def _page_conllu(text_el) -> Dict[str, str]:
-    """``{pb_id: CoNLL-U}`` built from the TEITOK's own tokens, one page each.
-
-    Same shape as UDPipe's output (a range line + one line per syntactic word for a multi-word
-    token, ``SpaceAfter=No`` from ``join="right"``), so every keywords.py backend reads a page
-    exactly as it reads a whole document."""
-    pages: Dict[str, List[str]] = {}
-    words: Dict[str, int] = {}
-    current = None
-    for el in text_el.iter():
-        tag = _local(el.tag)
-        if tag == "pb" and el.get("id"):
-            current = el.get("id")
-            continue
-        if tag != "tok" or current is None:
-            continue
-        lines = pages.setdefault(current, [])
-        n = words.get(current, 0) + 1
-        misc = "SpaceAfter=No" if el.get("join") == "right" else "_"
-        dtoks = [d for d in el if _local(d.tag) == "dtok"]
-        if dtoks:
-            lines.append(f"{n}-{n + len(dtoks) - 1}\t{_tok_form(el)}\t_\t_\t_\t_\t_\t_\t_\t{misc}")
-            for i, d in enumerate(dtoks):
-                lines.append(
-                    f"{n + i}\t{d.get('form') or '_'}\t{d.get('lemma') or '_'}\t"
-                    f"{d.get('upos') or '_'}\t_\t_\t_\t_\t_\t_"
-                )
-            words[current] = n + len(dtoks) - 1
-        else:
-            lines.append(
-                f"{n}\t{_tok_form(el) or '_'}\t{el.get('lemma') or '_'}\t{el.get('upos') or '_'}"
-                f"\t_\t_\t_\t_\t_\t{misc}"
-            )
-            words[current] = n
-    return {
-        pb: "# sent_id = 1\n" + "\n".join(lines) + "\n\n" for pb, lines in pages.items() if lines
-    }
-
-
-def page_keywords(
-    xml_text: str, method: str, num_keywords: int, **options: Any
-) -> Dict[str, List[Tuple[str, float]]]:
-    """Per-page statistical keywords with keywords.py's own backend (``method``), top
-    ``num_keywords`` clamped to 5-20. ``options`` pass through (``lang``, ``max_words``,
-    ``keybert_model``, …). Raises ``keywords.KeywordBackendError`` when the backend is absent."""
-    import keywords  # noqa: PLC0415  (heavy, and only needed when asked)
-
-    etree = _etree()
-    root = etree.fromstring(xml_text.encode("utf-8"))
-    text_el = _child(root, "text")
-    if text_el is None:
-        return {}
-    per_page = _page_conllu(text_el)
-    if not per_page:
-        return {}
-    n = clamp_keywords(num_keywords)
-    with tempfile.TemporaryDirectory(prefix="teitok_project_") as tmp:
-        ids = list(per_page)
-        paths = []
-        for pb_id in ids:
-            path = Path(tmp) / f"{pb_id}.conllu"
-            path.write_text(per_page[pb_id], encoding="utf-8")
-            paths.append(str(path))
-        results = keywords.extract_keywords(paths, method=method, num_keywords=n, **options)
-    return {pb_id: list(kws)[:n] for pb_id, kws in zip(ids, results, strict=True) if kws}
-
-
-def read_keyword_csv(path: Optional[Path]) -> List[Tuple[str, float]]:
-    """A keywords.py per-document CSV (``keyword,score``), best first; [] when absent."""
-    if not path or not Path(path).is_file():
-        return []
-    out = []
-    with open(path, encoding="utf-8", newline="") as fh:
-        for row in csv.DictReader(fh):
-            try:
-                out.append((row["keyword"], float(row["score"])))
-            except (KeyError, TypeError, ValueError):
-                continue
-    return out
-
-
-def statistical_block(
-    xml_text: str,
-    method: str,
-    num_keywords: int = 20,
-    document_csv: Optional[Path] = None,
-    **options: Any,
-) -> Dict[str, Any]:
-    """The ``statistical`` argument of :func:`project_record`: the document list keywords.py
-    already wrote (``document_csv``) and per-page lists computed now. A missing backend leaves
-    the pages out and says so in ``params``; the document list still projects."""
-    n = clamp_keywords(num_keywords)
-    params: Dict[str, Any] = {"method": method, "top_n": n}
-    params.update({k: v for k, v in options.items() if isinstance(v, (str, int, float, bool))})
-    try:
-        pages = page_keywords(xml_text, method, n, **options)
-    except Exception as exc:  # KeywordBackendError, ImportError: a missing optional backend
-        pages = {}
-        params["pages_skipped"] = str(exc).splitlines()[0][:200]
-    return {
-        "method": method,
-        "params": params,
-        "document": read_keyword_csv(document_csv)[:n],
-        "pages": pages,
-    }
-
-
 # ── files and the CLI ───────────────────────────────────────────────────────────────────────
 
 
@@ -770,10 +735,6 @@ def project_file(
     record_path: Optional[Path],
     out_path: Path,
     *,
-    kw_method: Optional[str] = None,
-    kw_csv: Optional[Path] = None,
-    num_keywords: int = 20,
-    kw_options: Optional[Dict[str, Any]] = None,
     force: bool = False,
     paired_as: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -782,25 +743,14 @@ def project_file(
 
     xml_text = Path(teitok_path).read_text(encoding="utf-8")
     record = load_document(str(record_path)) if record_path and Path(record_path).is_file() else {}
-    statistical = None
-    if kw_method:
-        statistical = statistical_block(
-            xml_text, kw_method, num_keywords, kw_csv, **(kw_options or {})
-        )
-    out, report = project_record(
-        xml_text, record, statistical=statistical, force=force, paired_as=paired_as
-    )
+    out, report = project_record(xml_text, record, force=force, paired_as=paired_as)
     if out != xml_text or Path(out_path) != Path(teitok_path):
         _atomic_write(Path(out_path), out)
     report["teitok"] = str(out_path)
     return report
 
 
-def _kw_csv_for(kw_per_doc_dir: Optional[Path], doc_id: str) -> Optional[Path]:
-    return Path(kw_per_doc_dir) / f"{doc_id}_keywords.csv" if kw_per_doc_dir else None
-
-
-def _run_directory(args: argparse.Namespace, kw_options: Dict[str, Any]) -> int:
+def _run_directory(args: argparse.Namespace) -> int:
     from api_util.teitok_read import doc_id_from_path  # noqa: PLC0415
 
     teitok_dir = Path(args.teitok_dir)
@@ -820,8 +770,6 @@ def _run_directory(args: argparse.Namespace, kw_options: Dict[str, Any]) -> int:
                 "script": "teitok_project",
                 "teitok_dir": str(teitok_dir),
                 "record_dir": str(args.record_dir or ""),
-                "kw_method": args.kw_method or "",
-                "num_keywords": clamp_keywords(args.num_keywords),
             },
             paradata_dir=str(args.paradata_dir),
             output_types=["teitok_xml"],
@@ -839,17 +787,7 @@ def _run_directory(args: argparse.Namespace, kw_options: Dict[str, Any]) -> int:
                 continue
             record = Path(args.record_dir) / f"{doc_id}.document.json" if args.record_dir else None
             try:
-                report = project_file(
-                    path,
-                    record,
-                    path,
-                    kw_method=args.kw_method,
-                    kw_csv=_kw_csv_for(args.kw_per_doc_dir, doc_id),
-                    num_keywords=args.num_keywords,
-                    kw_options=kw_options,
-                    force=args.force,
-                    paired_as=doc_id,
-                )
+                report = project_file(path, record, path, force=args.force, paired_as=doc_id)
             except ProjectionError as exc:
                 failed += 1
                 print(f"[FAIL] {path.name}: {exc}", file=sys.stderr)
@@ -898,32 +836,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--out", type=Path, help="Output file (--teitok; default: stdout).")
     parser.add_argument("--in-place", action="store_true", help="Overwrite the TEITOK file(s).")
     parser.add_argument("--exclude", type=Path, action="append", default=[])
-    parser.add_argument("--kw-method", choices=["legacy", "yake", "keybert"], default=None)
-    parser.add_argument("--kw-csv", type=Path, help="keywords.py per-document CSV (--teitok).")
-    parser.add_argument("--kw-per-doc-dir", type=Path, help="KW_PER_DOC_<M> dir (--teitok-dir).")
-    parser.add_argument("-n", "--num-keywords", type=int, default=20, help="Clamped to 5-20.")
-    parser.add_argument("-l", "--lang", default="cs")
     parser.add_argument("--paradata-dir", type=Path, default=None)
     parser.add_argument("--force", action="store_true", help="Project a non-writer/invalid input.")
     args = parser.parse_args(argv)
-    kw_options = {"lang": args.lang}
 
     if args.teitok_dir:
         if not args.in_place:
             parser.error("--teitok-dir writes in place; pass --in-place")
-        return _run_directory(args, kw_options)
+        return _run_directory(args)
 
     from atrium_document import load_document  # noqa: PLC0415
 
     xml_text = args.teitok.read_text(encoding="utf-8")
     record = load_document(str(args.record)) if args.record else {}
-    statistical = None
-    if args.kw_method:
-        statistical = statistical_block(
-            xml_text, args.kw_method, args.num_keywords, args.kw_csv, **kw_options
-        )
     try:
-        out, report = project_record(xml_text, record, statistical=statistical, force=args.force)
+        out, report = project_record(xml_text, record, force=args.force)
     except ProjectionError as exc:
         print(f"[FAIL] {args.teitok.name}: {exc}", file=sys.stderr)
         return 1

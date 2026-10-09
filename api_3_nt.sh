@@ -35,25 +35,38 @@ while IFS= read -r -d '' conllu; do
 
     mkdir -p "$out_dir"
 
-    if python3 api_util/call_nametag.py \
-            --input      "$conllu" \
-            --model      "$MODEL_NAMETAG" \
-            --output-dir "$out_dir" \
-            --url        "$NAMETAG_URL" \
-            --timeout    "$TIMEOUT" \
-            --retries    "$MAX_RETRIES"; then
+    # The client's exit code says why it stopped (api_util/lindat_errors.py, issue #41):
+    # 6 NameTag did not answer, 7 it timed out, 8 it refused the request. Passed on unchanged.
+    rc=0
+    python3 api_util/call_nametag.py \
+        --input      "$conllu" \
+        --model      "$MODEL_NAMETAG" \
+        --output-dir "$out_dir" \
+        --url        "$NAMETAG_URL" \
+        --timeout    "$TIMEOUT" \
+        --retries    "$MAX_RETRIES" || rc=$?
+    if [ "$rc" -eq 0 ]; then
         n_pages=$(find "$out_dir" -maxdepth 1 -name '*.tsv' 2>/dev/null | wc -l)
         python3 atrium_paradata.py success \
             --state "$PARA_STATE" --type tsv --count "$n_pages"
     else
         # P1 FIX: Log the failure and exit immediately to halt the pipeline
+        # 6, 7 and 8 travel on; anything else (an empty run, a crash, a usage error) stays 1.
+        case "$rc" in
+            6) reason="LINDAT NameTag did not answer after ${MAX_RETRIES} retries" ;;
+            7) reason="LINDAT NameTag timed out (${TIMEOUT} s per attempt, ${MAX_RETRIES} retries)" ;;
+            8) reason="LINDAT NameTag refused the request" ;;
+            *) reason="NameTag API call failed"; rc=1 ;;
+        esac
         python3 atrium_paradata.py skip \
             --state "$PARA_STATE" \
             --file  "$doc" \
-            --reason "NameTag API call failed"
+            --reason "$reason"
+        # An empty output directory would make a resumed run skip the document as done.
+        rmdir "$out_dir" 2>/dev/null || true
 
-        echo "[CRITICAL ERROR] NameTag processing failed for ${doc}. Halting pipeline." >&2
-        exit 1
+        echo "[CRITICAL ERROR] NameTag processing failed for ${doc} (exit ${rc}). Halting pipeline." >&2
+        exit "$rc"
     fi
 done < <(find "${CONLLU_INPUT_DIR}" -name '*.conllu' -type f -print0)
 

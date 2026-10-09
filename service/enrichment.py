@@ -35,6 +35,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import tool_limits  # noqa: E402
+from api_util import lindat_errors  # noqa: E402
 from atrium_document import FILE_SUFFIX, load_document  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -81,10 +82,26 @@ class UnsupportedUploadType(ValueError):
 
 # ── exit-code → HTTP mapping ──────────────────────────────────────────────────
 class PipelineError(Exception):
-    def __init__(self, message: str, http_status: int, returncode: int) -> None:
+    """A pipeline run that failed: its HTTP status, the runner's exit code and, when one is
+    registered for the cause, the error body's ``reason`` (``upstream_unavailable``, #41)."""
+
+    def __init__(
+        self, message: str, http_status: int, returncode: int, reason: Optional[str] = None
+    ) -> None:
         super().__init__(message)
         self.http_status = http_status
         self.returncode = returncode
+        self.reason = reason
+
+
+def _lindat_line(tail: str) -> Optional[str]:
+    """The last line a LINDAT client printed about why it stopped (``api_util/lindat_errors.py``)."""
+    found = [
+        line.strip()
+        for line in tail.splitlines()
+        if line.strip().startswith(lindat_errors.LINE_PREFIX)
+    ]
+    return found[-1] if found else None
 
 
 @dataclass
@@ -606,6 +623,39 @@ class PipelineManager:
 
             rc, tail = self._run_bounded(cmd, job_id, timeout)
 
+            # A LINDAT service that failed is told apart from an empty run (#41): the client's own
+            # exit code travels through its stage script and run_pipeline.py unchanged, and the
+            # line it printed about the cause comes first in the error.
+            if rc == lindat_errors.EXIT_UPSTREAM:
+                cause = (
+                    _lindat_line(tail)
+                    or "LINDAT UDPipe or NameTag did not answer after the retries."
+                )
+                raise PipelineError(
+                    f"{cause}\n{tail}",
+                    http_status=502,
+                    returncode=rc,
+                    reason="upstream_unavailable",
+                )
+            if rc == lindat_errors.EXIT_UPSTREAM_TIMEOUT:
+                cause = _lindat_line(tail) or "LINDAT UDPipe or NameTag timed out on every attempt."
+                raise tool_limits.LINDAT_TIMEOUT_S.exceeded(
+                    None,
+                    # The job's effective value: the environment, else config_api.txt (_derive_config).
+                    value=tool_limits.LIMITS.get(tool_limits.LINDAT_TIMEOUT_S.key),
+                    detail=(
+                        f"{cause} Each attempt may take LINDAT_TIMEOUT_S, and LINDAT_MAX_RETRIES "
+                        "retries follow the first."
+                    ),
+                )
+            if rc == lindat_errors.EXIT_UPSTREAM_REFUSED:
+                cause = _lindat_line(tail) or "LINDAT UDPipe or NameTag refused the request."
+                raise PipelineError(
+                    f"{cause} A deployment or request defect (the model, the request), not the input: "
+                    f"please report it.\n{tail}",
+                    http_status=500,
+                    returncode=rc,
+                )
             if rc == 1:
                 raise PipelineError(
                     f"Pipeline produced no output (empty run, exit 1).\n{tail}",

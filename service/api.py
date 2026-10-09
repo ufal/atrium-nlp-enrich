@@ -248,8 +248,8 @@ class ProjectRecordResponse(BaseModel):
     report: Dict[str, Any] = Field(
         description=(
             "What was projected: `page_categories`, `teater_categories`, `controlled_keywords` "
-            "(per language), `statistical_keywords` (always 0 here), `unresolved_pages`, `notes`, "
-            "and `changed`."
+            "(per language), `statistical_keywords` (`document` and `pages`, from the record's `keywords` "
+            "block), `unresolved_pages`, `notes`, and `changed`."
         )
     )
     schema_valid: Optional[bool] = Field(
@@ -276,7 +276,10 @@ class JobStatus(BaseModel):
     status: str = Field(description="`queued`, `running`, `done` or `failed`.")
     error: Optional[str] = Field(description="Why the job failed.")
     reason: Optional[str] = Field(
-        description="A registered reason code for the failure (`limit_exceeded`), or null."
+        description=(
+            "A registered reason code for the failure (`limit_exceeded`: API_JOB_TIMEOUT or a LINDAT timeout; "
+            "`upstream_unavailable`: LINDAT did not answer), or null."
+        )
     )
 
 
@@ -664,7 +667,9 @@ async def _run_enrichment(
             teitok_enrichment,
         )
     except PipelineError as exc:
-        raise HTTPException(exc.http_status, str(exc)) from exc
+        # `reason` is set for a registered cause: `upstream_unavailable` for a LINDAT service that
+        # did not answer (#41), so a client tells it from an empty run, which keeps `null`.
+        raise AtriumHTTPError(exc.http_status, str(exc), reason=exc.reason) from exc
 
     try:
         if fmt == "zip":
@@ -778,12 +783,14 @@ async def _run_job_background(
         job.error = "Cancelled: server shutdown interrupted this job before it finished."
         job.status = "failed"
         raise  # the outer `finally` below still records finished_at
-    except LimitExceeded as e:  # API_JOB_TIMEOUT: the run was stopped, its workspace removed
+    except LimitExceeded as e:
+        # API_JOB_TIMEOUT, or LINDAT_TIMEOUT_S on every attempt (#41): the workspace is removed
         job.error = e.detail
         job.reason = "limit_exceeded"
         job.status = "failed"
     except HTTPException as e:
         job.error = str(e.detail)
+        job.reason = getattr(e, "reason", None)  # AtriumHTTPError: `upstream_unavailable` (#41)
         job.status = "failed"
     except Exception as e:
         job.error = str(e)
@@ -1095,8 +1102,9 @@ async def project_record(
 
     Pure XML transform (no pipeline), for a record that is complete only after this service ran:
     the page categories become ``pb/@ana`` plus a ``classDecl`` taxonomy, and keyword-extract's
-    TEATER/AMČR categories and controlled keywords become ``profileDesc/textClass/keywords``,
-    each pointing at its pages. Only the header and ``pb/@ana`` change. Re-projecting replaces
+    TEATER/AMČR categories and controlled keywords, and its statistical keywords (the record's
+    ``keywords`` block, atrium-project#73), become ``profileDesc/textClass/keywords``, each pointing
+    at its pages. Only the header and ``pb/@ana`` change. Re-projecting replaces
     an earlier projection. Refused (422) when the TEITOK is not the record's document (its
     ``<title>`` is neither ``doc_id`` nor the id of ``source.filename``), not this writer's
     ``teitok-2`` output, or not valid. Off AMČR's production chain, whose stored TEITOK keeps

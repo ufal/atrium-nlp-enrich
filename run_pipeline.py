@@ -671,8 +671,6 @@ def _project_command(
         plan["teitok_flexiconv_dir"] or str(Path(teitok_dir) / "flexiconv"),
         "--paradata-dir",
         str(paradata_dir),
-        "-l",
-        args.lang,
     ]
     if record_dir is not None:
         cmd += ["--record-dir", str(record_dir)]

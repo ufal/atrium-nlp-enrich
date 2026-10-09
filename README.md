@@ -243,12 +243,13 @@ the page category and keywords; the LINDAT dataset), atrium-project#70 item 2 ad
 projection, **off by default**. [api_util/teitok_project.py](api_util/teitok_project.py) 📎
 writes, in the header and `pb/@ana` only:
 
-| From                                                                  | Into the TEITOK file                                                                                                                                                                                                                                            |
-|-----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| page category (`pages[].category`, else `page_categories[P]`)         | `<pb ana="#pcat-DRAW"/>`, and `encodingDesc/classDecl/taxonomy[@id="tax-page-category"]/category[@id="pcat-DRAW"]` with `@corresp` = the `atrium_vocab` concept URI and the definition in `catDesc`                                                             |
-| TEATER/AMČR category (`enrichment.items[]`, as written by llm-enrich) | `profileDesc/textClass/keywords[@scheme="#tax-amcr-teater"][@resp="#app-llm-enrich"]/term[@type="teater-category"]`: `@ref` = the concept URIs of `teater_category_ids`, `@cert` = the highest confidence, `@corresp` = its pages; the meta sentinel is skipped |
-| controlled keywords, cs and en                                        | `keywords[@resp="#app-llm-enrich"][@lang]/term[@type="extracted-keyword"][@corresp]`                                                                                                                                                                            |
-| provenance                                                            | `appInfo/application` with `@id` `app-pc` or `app-llm-enrich` after the writer's own, and `revisionDesc/change[@type="enriched"]`                                                                                                                               |
+| From                                                                                     | Into the TEITOK file                                                                                                                                                                                                                                               |
+|------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| page category (`pages[].category`, else `page_categories[P]`)                            | `<pb ana="#pcat-DRAW"/>`, and `encodingDesc/classDecl/taxonomy[@id="tax-page-category"]/category[@id="pcat-DRAW"]` with `@corresp` = the `atrium_vocab` concept URI and the definition in `catDesc`                                                                |
+| TEATER/AMČR category (`enrichment.items[]`, keyword-extract's controlled kind)           | `profileDesc/textClass/keywords[@scheme="#tax-amcr-teater"][@resp="#app-kw-controlled"]/term[@type="teater-category"]`: `@ref` = the concept URIs of `teater_category_ids`, `@cert` = the highest confidence, `@corresp` = its pages; the meta sentinel is skipped |
+| controlled keywords, cs and en                                                           | `keywords[@resp="#app-kw-controlled"][@lang]/term[@type="extracted-keyword"][@corresp]`                                                                                                                                                                            |
+| statistical keywords (`keywords`, keyword-extract's statistical kind, atrium-project#73) | `keywords[@resp="#app-kw-statistical"][@scheme="#kw-<method>"]/term[@type="statistical-keyword"][@n=rank][@score]`: the document's list, and one more per page with `@corresp="#pb-K"`, at most 20 each                                                            |
+| provenance                                                                               | `appInfo/application` with `@id` `app-pc`, `app-kw-controlled` or `app-kw-statistical` after the writer's own, `@ident` the program the record's stamp names for the block, and `revisionDesc/change[@type="enriched"]`                                            |
 
 Pages resolve through `pages[].teitok_surface`, then `page_index`, then a numeric page key (`pb-K`),
 then the `<pb n>` label; an enrichment item's page (its `## Page` label) through the record's page of
@@ -257,10 +258,10 @@ Nothing inside `<s>`, `<tok>` or `<name>` changes, so `teitok_read`, `teitok_lay
 reader and ocr-postprocess read the same text, and the writer's own header lines stay as they were.
 The projection is idempotent (it replaces its own earlier output), refuses another document's
 TEITOK (the `<title>` must be the record's `doc_id` or the id of its `source.filename`), and
-validates its output with the `contract` profile before writing. (Up to v0.23.0 it could also compute
-statistical keywords per page from the TEITOK file's tokens; that went with the keyword code to
-atrium-keyword-extract. `--kw-method` and `--kw-csv` of the module still accept a ready
-`<doc>_keywords.csv`, but the in-pipeline stage no longer passes one.)
+validates its output with the `contract` profile before writing. The keywords come from the record only:
+keyword-extract writes the statistical ones as `keywords` and the controlled ones as `enrichment`
+(atrium-project#73). (Up to v1.0.0-beta the module also took a keywords.py CSV, `--kw-method` and
+`--kw-csv`, and named its applications `app-llm-enrich` and `app-kw`; a re-projection removes those.)
 
 ```bash
 # in the pipeline: a `project` stage after `stats` (reachable with --start-from project)
@@ -1346,6 +1347,9 @@ target is part of the image name, not the tag. `ATRIUM_RUNNER_REF` is the git re
 | `2`  | A required stage script was not found.                                                                                                                                      |
 | `3`  | A dependency preflight failed (`--with-flexiconv` without flexiconv).                                                                                                       |
 | `5`  | The TEITOK output failed its output contract (`api_4_stats.sh`'s gate: the XSD, unique ids, resolvable references, the page rules). A writer defect: please report it.      |
+| `6`  | LINDAT UDPipe or NameTag did not answer after `MAX_RETRIES` retries (HTTP 5xx or 429, a refused or dropped connection); the first line on stderr names the service (#41).   |
+| `7`  | Every attempt at a LINDAT call timed out (`TIMEOUT` seconds each).                                                                                                          |
+| `8`  | LINDAT refused the request (HTTP 4xx, e.g. an unknown model): a configuration or request defect, not the input.                                                             |
 | `≠0` | A stage script itself exited non-zero (its code is propagated).                                                                                                             |
 
 > [!TIP]

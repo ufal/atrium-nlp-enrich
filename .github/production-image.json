@@ -37,6 +37,7 @@
     "api_util/doc_identity.py",
     "api_util/document_hook.py",
     "api_util/flexiconv_convert.py",
+    "api_util/lindat_errors.py",
     "api_util/ner_types.py",
     "api_util/page_boxes.py",
     "api_util/page_rows.py",

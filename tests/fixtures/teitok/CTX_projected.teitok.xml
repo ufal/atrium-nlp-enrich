@@ -14,8 +14,8 @@
         <application ident="nametag"><label>NameTag NER</label><desc>Model: nametag3-czech-cnec2.0-240830</desc></application>
         <application ident="ocr"><label>DemoScanner Pro 1.0</label></application>
         <application ident="atrium-page-classification" id="app-pc"><label>ATRIUM page classification</label><desc>page categories of the record</desc></application>
-        <application ident="atrium-llm-enrich" id="app-llm-enrich"><label>ATRIUM LLM enrichment</label><desc>enrichment block of the record</desc></application>
-        <application ident="atrium-nlp-enrich-keywords" version="yake" id="app-kw"><label>atrium-nlp-enrich keywords.py</label><desc>method=yake, top_n=5</desc></application>
+        <application ident="atrium-keyword-extract" id="app-kw-controlled"><label>ATRIUM controlled-vocabulary keywords</label><desc>enrichment block of the record</desc></application>
+        <application ident="atrium-keyword-extract" id="app-kw-statistical"><label>ATRIUM statistical keywords</label><desc>keywords block of the record, method=yake</desc></application>
       </appInfo>
       <classDecl>
         <taxonomy id="tax-page-category">
@@ -31,32 +31,32 @@
           <desc>AMČR heslář and TEATER thesaurus (CC0); term/@ref holds the concept URIs (https://api.aiscr.cz/id/…, https://teater.aiscr.cz/id/…)</desc>
         </taxonomy>
         <taxonomy id="kw-yake">
-          <desc>Statistical keywords, keywords.py --method yake: @n is the rank, @score the method's score (higher = more relevant)</desc>
+          <desc>Statistical keywords (yake): @n is the rank, @score the method's own score (higher = more relevant; comparable within one list only)</desc>
         </taxonomy>
       </classDecl>
     </encodingDesc>
     <profileDesc>
       <langUsage><language ident="cs"/></langUsage>
       <textClass>
-        <keywords scheme="#tax-amcr-teater" resp="#app-llm-enrich">
+        <keywords scheme="#tax-amcr-teater" resp="#app-kw-controlled">
           <term type="teater-category" ref="https://api.aiscr.cz/id/HES-000021 https://teater.aiscr.cz/id/1333" cert="0.92" corresp="#pb-1 #pb-2">kostel</term>
         </keywords>
-        <keywords resp="#app-llm-enrich" lang="cs">
+        <keywords resp="#app-kw-controlled" lang="cs">
           <term type="extracted-keyword" corresp="#pb-1 #pb-2">gotický kostel</term>
           <term type="extracted-keyword" corresp="#pb-2">hradiště</term>
         </keywords>
-        <keywords resp="#app-llm-enrich" lang="en">
+        <keywords resp="#app-kw-controlled" lang="en">
           <term type="extracted-keyword" corresp="#pb-1">gothic church</term>
           <term type="extracted-keyword" corresp="#pb-2">hillfort</term>
         </keywords>
-        <keywords scheme="#kw-yake" resp="#app-kw">
+        <keywords scheme="#kw-yake" resp="#app-kw-statistical">
           <term type="statistical-keyword" n="1" score="1">Hradiště</term>
           <term type="statistical-keyword" n="2" score="0.5">keramika</term>
         </keywords>
-        <keywords scheme="#kw-yake" resp="#app-kw" corresp="#pb-1">
+        <keywords scheme="#kw-yake" resp="#app-kw-statistical" corresp="#pb-1">
           <term type="statistical-keyword" n="1" score="1">Hradiště</term>
         </keywords>
-        <keywords scheme="#kw-yake" resp="#app-kw" corresp="#pb-2">
+        <keywords scheme="#kw-yake" resp="#app-kw-statistical" corresp="#pb-2">
           <term type="statistical-keyword" n="1" score="1">keramika</term>
           <term type="statistical-keyword" n="2" score="0.25">středověk</term>
         </keywords>

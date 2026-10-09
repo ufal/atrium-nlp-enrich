@@ -521,6 +521,38 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 
   Files delivered in chat.
 
+## 2026-10-09 — #41: a LINDAT failure has its own code and reason; the projection reads `keywords`; v1.1.0-beta
+* **#41.** `api_util/lindat_errors.py` (new; in `.github/production-image.json`) classifies a failed request after
+  the retries and words the first stderr line: exit **6** (no answer: 5xx, 429, a refused or dropped connection),
+  **7** (every attempt timed out, also when urllib3 wraps the timeout in `MaxRetryError`), **8** (a 4xx other than
+  429). `3` is the flexiconv preflight, hence 6–8.
+  * `call_udpipe.py` and `call_nametag.py` exit with it (`call_nametag()` raises instead of returning `None`); an
+    empty result stays exit 1.
+  * `api_2_udp.sh` / `api_3_nt.sh` pass 6, 7 and 8 on and turn any other client code into 1; a failing `chunk.py`
+    stays 1; a failed NameTag leaves no empty output directory.
+  * `service/enrichment.py`: 6 → 502 `reason: upstream_unavailable`, the detail starting with the client's line;
+    7 → 504 `limit_exceeded`, `limit: lindat_timeout_s` (declared `status=504` in `tool_limits.py`); 8 → 500.
+    `service/api.py` raises `AtriumHTTPError` with the reason, and `/jobs` records it.
+  * `tests/test_lindat_failures.py`: stub servers on 127.0.0.1 (503, a sleep past `--timeout`, 400, a closed port),
+    the stage scripts with stub clients, the service mapping, the `/jobs` reason; `tests/test_remote_apis.py`.
+* **atrium-project#73.** `api_util/teitok_project.py` projects the record's `keywords` block:
+  `keywords[@resp="#app-kw-statistical"][@scheme="#kw-<method>"]/term[@type="statistical-keyword"]`, `@n` the rank,
+  at most 20 per list, per page through the record's page labels. The applications are `app-kw-controlled` and
+  `app-kw-statistical`, `@ident` from the block's stamp; a re-projection removes `app-llm-enrich` and `app-kw`. The
+  `--kw-method`, `--kw-csv`, `--kw-per-doc-dir`, `-n` and `-l` options are removed (they needed `keywords.py`), and
+  `run_pipeline.py` no longer passes `-l`. `tests/test_teitok_project.py` and the projected fixture updated.
+* **Docs:** README (exit codes 6–8; the projection table), `service/README.md` (the exit-code map, the limits, the error
+  table, `/project_record`).
+* `atrium_document.py`, `atrium_document.schema.json`, `service/atrium_service.py`,
+  `tests/test_document_originators.py` and `tests/test_schema_freeze.py` re-vendored from the hub;
+  `service/openapi.json` regenerated.
+* **Version `v1.1.0-beta`:** `CITATION.cff`, the `CONTRIBUTING.md` row, `para_config.txt`, the spec's `info.version`.
+* **Checks:** 986 passed, 9 skipped; ruff check and format clean; shellcheck clean on `api_*.sh`; spec current; image
+  closure OK.
+* **Dev logs:** the pair of #41 refreshed.
+
+  Files delivered in chat.
+
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);

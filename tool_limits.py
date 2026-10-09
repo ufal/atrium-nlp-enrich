@@ -64,10 +64,11 @@ MAX_RESCALE_DIM = limit(
 #: annotated in full (config_api.txt ``WORD_CHUNK_LIMIT``).
 WORD_CHUNK_LIMIT = limit("WORD_CHUNK_LIMIT", 900, unit="words", minimum=1)
 #: Per-request timeout of one UDPipe or NameTag call (config_api.txt ``TIMEOUT``); a
-#: timeout is retried.
-LINDAT_TIMEOUT_S = limit("LINDAT_TIMEOUT_S", 60, unit="s", minimum=1)
+#: timeout is retried. When every attempt timed out the stage fails → 504
+#: ``limit_exceeded`` naming this limit (atrium-nlp-enrich#41).
+LINDAT_TIMEOUT_S = limit("LINDAT_TIMEOUT_S", 60, unit="s", minimum=1, status=504)
 #: Attempts of one UDPipe or NameTag call (config_api.txt ``MAX_RETRIES``). Once they run
-#: out the stage fails → 502.
+#: out on server errors or lost connections the stage fails → 502 ``upstream_unavailable``.
 LINDAT_MAX_RETRIES = limit("LINDAT_MAX_RETRIES", 5, unit="retries", minimum=1)
 
 # ── the entity summary ──────────────────────────────────────────────────────────────────

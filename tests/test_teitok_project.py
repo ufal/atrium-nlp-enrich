@@ -78,12 +78,20 @@ RECORD_1 = {
     },
 }
 
-STATISTICAL = {
-    "method": "yake",
-    "params": {"method": "yake", "top_n": 5},
-    "document": [("Hradiště", 1.0), ("keramika", 0.5)],
-    "pages": {"pb-1": [("Hradiště", 1.0)], "pb-2": [("keramika", 1.0), ("středověk", 0.25)]},
+
+def _kw(keyword, score, rank, method="yake"):
+    return {"keyword": keyword, "method": method, "score": score, "rank": rank}
+
+
+#: keyword-extract's statistical kind on that record: the `keywords` block (atrium-project#73).
+KEYWORDS = {
+    "document": [_kw("Hradiště", 1.0, 1), _kw("keramika", 0.5, 2)],
+    "pages": [
+        {"page": "1", "keywords": [_kw("Hradiště", 1.0, 1)]},
+        {"page": "2", "keywords": [_kw("středověk", 0.25, 2), _kw("keramika", 1.0, 1)]},
+    ],
 }
+RECORD_KW = {**RECORD_1, "keywords": KEYWORDS}
 
 
 def _sample(name="CTX000000001"):
@@ -113,7 +121,7 @@ def _body(xml):
 
 
 def test_projection_encodes_categories_keywords_and_provenance():
-    out, report = _project(_sample(), statistical=STATISTICAL)
+    out, report = _project(_sample(), RECORD_KW)
     root = _tree(out)
     pbs = {pb.get("id"): pb.get("ana") for pb in root.iter("pb")}
     assert pbs == {"pb-1": "#pcat-TEXT_P", "pb-2": "#pcat-DRAW"}
@@ -129,33 +137,33 @@ def test_projection_encodes_categories_keywords_and_provenance():
         (k.get("resp"), k.get("scheme"), k.get("lang"), k.get("corresp")): k
         for k in root.iter("keywords")
     }
-    teater = lists[("#app-llm-enrich", "#tax-amcr-teater", None, None)]
+    teater = lists[("#app-kw-controlled", "#tax-amcr-teater", None, None)]
     (term,) = list(teater)
     assert term.text == "kostel"
     assert term.get("ref") == "https://api.aiscr.cz/id/HES-000021 https://teater.aiscr.cz/id/1333"
     assert term.get("cert") == "0.92"  # the highest confidence of the items naming it
     assert term.get("corresp") == "#pb-1 #pb-2"
 
-    cs = lists[("#app-llm-enrich", None, "cs", None)]
+    cs = lists[("#app-kw-controlled", None, "cs", None)]
     assert [(t.text, t.get("corresp")) for t in cs] == [
         ("gotický kostel", "#pb-1 #pb-2"),
         ("hradiště", "#pb-2"),
     ]
     assert all(t.get("cert") is None for t in cs)
 
-    doc_list = lists[("#app-kw", "#kw-yake", None, None)]
+    doc_list = lists[("#app-kw-statistical", "#kw-yake", None, None)]
     assert [(t.text, t.get("n"), t.get("score")) for t in doc_list] == [
         ("Hradiště", "1", "1"),
         ("keramika", "2", "0.5"),
     ]
-    page_2 = lists[("#app-kw", "#kw-yake", None, "#pb-2")]
-    assert [t.text for t in page_2] == ["keramika", "středověk"]
+    page_2 = lists[("#app-kw-statistical", "#kw-yake", None, "#pb-2")]
+    assert [t.text for t in page_2] == ["keramika", "středověk"]  # by rank, not by list order
 
     apps = {a.get("id"): a.get("ident") for a in root.iter("application") if a.get("id")}
     assert apps == {
         "app-pc": "atrium-page-classification",
-        "app-llm-enrich": "atrium-llm-enrich",
-        "app-kw": "atrium-nlp-enrich-keywords",
+        "app-kw-controlled": "atrium-keyword-extract",
+        "app-kw-statistical": "atrium-keyword-extract",
     }
     (change,) = [c for c in root.iter("change") if c.get("type") == "enriched"]
     assert change.get("when") == WHEN and change.get("who") == "atrium-nlp-enrich"
@@ -174,7 +182,7 @@ def test_the_writer_header_lines_are_kept_byte_for_byte():
     """Only whitespace next to the new elements changes: every line of the writer's own
     header is still in the output, unchanged."""
     original = _sample()
-    out, _ = _project(original, statistical=STATISTICAL)
+    out, _ = _project(original, RECORD_KW)
     header_lines = original[: original.index("<text>")].splitlines()
     out_lines = set(out.splitlines())
     changed = [ln for ln in header_lines if ln.strip() and ln not in out_lines]
@@ -191,8 +199,9 @@ def test_the_writer_header_lines_are_kept_byte_for_byte():
 @pytest.mark.parametrize("name", ["CTX000000001", "CTX000000002"])
 def test_the_body_is_unchanged_but_for_pb_ana(name, tmp_path):
     original = _sample(name)
-    record = dict(copy.deepcopy(RECORD_1), doc_id=name, source={"filename": f"{name}.alto.xml"})
-    out, _ = _project(original, record, statistical=STATISTICAL if name.endswith("1") else None)
+    base = RECORD_KW if name.endswith("1") else RECORD_1
+    record = dict(copy.deepcopy(base), doc_id=name, source={"filename": f"{name}.alto.xml"})
+    out, _ = _project(original, record)
     assert _body(out) == _body(original)
 
     before, after = tmp_path / f"a_{name}.teitok.xml", tmp_path / f"b_{name}.teitok.xml"
@@ -275,14 +284,14 @@ def test_unresolved_pages_are_reported_not_fatal():
 
 
 def test_projection_is_idempotent():
-    once, _ = _project(_sample(), statistical=STATISTICAL)
-    twice, report = _project(once, statistical=STATISTICAL)
+    once, _ = _project(_sample(), RECORD_KW)
+    twice, report = _project(once, RECORD_KW)
     assert twice == once
     assert report["changed"] is False
 
 
 def test_a_new_projection_replaces_the_old_one():
-    once, _ = _project(_sample(), statistical=STATISTICAL)
+    once, _ = _project(_sample(), RECORD_KW)
     record = copy.deepcopy(RECORD_1)
     record["pages"][1]["category"] = "PHOTO"
     del record["enrichment"]
@@ -291,7 +300,63 @@ def test_a_new_projection_replaces_the_old_one():
     assert [pb.get("ana") for pb in root.iter("pb")] == ["#pcat-TEXT_P", "#pcat-PHOTO"]
     assert root.find(".//textClass") is None  # no enrichment, no statistical: nothing to list
     assert len([c for c in root.iter("change") if c.get("type") == "enriched"]) == 1
-    assert "app-llm-enrich" not in again and "app-kw" not in again
+    assert "app-kw-controlled" not in again and "app-kw-statistical" not in again
+
+
+def test_a_projection_of_an_earlier_release_is_replaced_too():
+    """Up to v1.0.0-beta the applications were `app-llm-enrich` and `app-kw`; they are still ours."""
+    once, _ = _project(_sample(), RECORD_KW)
+    legacy = once.replace("app-kw-controlled", "app-llm-enrich").replace(
+        "app-kw-statistical", "app-kw"
+    )
+    again, _ = _project(legacy, RECORD_KW)
+    assert again == once
+    assert "app-llm-enrich" not in again and 'id="app-kw"' not in again
+
+
+def test_the_application_names_the_program_the_stamp_names():
+    """An `enrichment` block written before 1 October 2026 is llm-enrich's, and says so."""
+    record = copy.deepcopy(RECORD_KW)
+    record["assembled"] = {
+        "blocks": {
+            "enrichment": {"program": "llm-enrich", "run_id": "260925-101112"},
+            "keywords": {"program": "keyword-extract", "run_id": "261009-120000"},
+        }
+    }
+    root = _tree(_project(_sample(), record)[0])
+    apps = {
+        a.get("id"): (a.get("ident"), a.findtext("desc"))
+        for a in root.iter("application")
+        if a.get("id")
+    }
+    assert apps["app-kw-controlled"] == (
+        "atrium-llm-enrich",
+        "enrichment block of the record, run 260925-101112",
+    )
+    assert apps["app-kw-statistical"] == (
+        "atrium-keyword-extract",
+        "keywords block of the record, method=yake, run 261009-120000",
+    )
+
+
+def test_statistical_keywords_come_from_the_record_capped_and_by_rank():
+    record = copy.deepcopy(RECORD_KW)
+    record["keywords"] = {
+        "document": [_kw(f"k{i}", 1 - i / 100, i) for i in range(25, 0, -1)],
+        "pages": [{"page": "9", "keywords": [_kw("nowhere", 1.0, 1)]}],
+    }
+    out, report = _project(_sample(), record)
+    (doc_list,) = [k for k in _tree(out).iter("keywords") if k.get("resp") == "#app-kw-statistical"]
+    assert [t.text for t in doc_list] == [f"k{i}" for i in range(1, tp.KW_MAX + 1)]
+    assert [t.get("n") for t in doc_list][-1] == str(tp.KW_MAX)
+    assert {"from": "keywords", "page": "9"} in report["unresolved_pages"]
+    assert report["statistical_keywords"] == {"document": tp.KW_MAX, "pages": 0}
+
+
+def test_a_record_without_keywords_projects_no_statistical_list():
+    out, report = _project(_sample(), RECORD_1)
+    assert "app-kw-statistical" not in out and "#kw-" not in out
+    assert report["statistical_keywords"] == {"document": 0, "pages": 0}
 
 
 def test_projecting_nothing_returns_the_input_unchanged():
@@ -327,41 +392,6 @@ def test_a_foreign_teitok_is_refused_unless_forced():
         _project(xml, {"doc_id": title, "page_categories": {"1": "TEXT"}})
 
 
-# ── statistical keywords ────────────────────────────────────────────────────────────────────
-
-
-def test_page_conllu_mirrors_udpipe_output():
-    xml = (FIXTURES / "CTX_valid.teitok.xml").read_text(encoding="utf-8")
-    pages = tp._page_conllu(_tree(xml).find("text"))
-    lines = pages["pb-1"].splitlines()
-    assert lines[1].split("\t")[:4] == ["1", "Vyrocni", "vyrocni", "ADJ"]
-    # "abych" = aby + bych: a range line, then the two syntactic words
-    rng = next(ln for ln in lines if ln.split("\t")[0] == "5-6")
-    assert rng.split("\t")[1] == "abych"
-    assert [ln.split("\t")[2] for ln in lines if ln.split("\t")[0] in ("5", "6")] == ["aby", "být"]
-    assert any(ln.endswith("SpaceAfter=No") for ln in lines)
-
-
-def test_statistical_block_reads_the_per_document_csv(tmp_path):
-    csv_path = tmp_path / "CTX000000001_keywords.csv"
-    csv_path.write_text("keyword,score\nHradiště,1.0\nkeramika,0.5\n", encoding="utf-8")
-    block = tp.statistical_block(_sample(), "legacy", 50, csv_path)
-    assert block["params"]["top_n"] == tp.KW_MAX
-    assert block["document"] == [("Hradiště", 1.0), ("keramika", 0.5)]
-
-
-def test_a_missing_backend_skips_the_pages_and_keeps_the_document_list(tmp_path, monkeypatch):
-    def broken(*_a, **_k):
-        raise ImportError("no yake here")
-
-    monkeypatch.setattr(tp, "page_keywords", broken)
-    csv_path = tmp_path / "k.csv"
-    csv_path.write_text("keyword,score\nHradiště,1.0\n", encoding="utf-8")
-    block = tp.statistical_block(_sample(), "yake", 10, csv_path)
-    assert block["pages"] == {} and "no yake here" in block["params"]["pages_skipped"]
-    assert block["document"] == [("Hradiště", 1.0)]
-
-
 # ── survives the other TEITOK tools ─────────────────────────────────────────────────────────
 
 
@@ -369,7 +399,7 @@ def test_projection_survives_rescale_and_fix_teitok_bboxes(tmp_path):
     pytest.importorskip("fastapi")
     from service.rescale import rescale_teitok
 
-    out, _ = _project(_sample(), statistical=STATISTICAL)
+    out, _ = _project(_sample(), RECORD_KW)
     rescaled = rescale_teitok(out, scale=0.5)["teitok_xml"]
     assert "#pcat-TEXT_P" in rescaled and "<textClass>" in rescaled
     assert validate_xml_text(rescaled, profile="contract") == []
@@ -389,7 +419,7 @@ def test_flexiconv_still_reads_a_projected_document(tmp_path):
 
     before, after = tmp_path / "a.teitok.xml", tmp_path / "b.teitok.xml"
     before.write_text(_sample(), encoding="utf-8")
-    after.write_text(_project(_sample(), statistical=STATISTICAL)[0], encoding="utf-8")
+    after.write_text(_project(_sample(), RECORD_KW)[0], encoding="utf-8")
 
     def forms(path):
         doc = load_teitok(str(path))
@@ -403,7 +433,7 @@ def test_flexiconv_still_reads_a_projected_document(tmp_path):
 
 def test_the_committed_projected_fixture_is_what_the_projector_writes():
     """Regenerate with: python -m tests.test_teitok_project"""
-    out, _ = _project(_sample(), statistical=STATISTICAL)
+    out, _ = _project(_sample(), RECORD_KW)
     assert PROJECTED_FIXTURE.read_text(encoding="utf-8") == out
     assert validate_xml_text(out, profile="contract") == []
 
@@ -412,9 +442,9 @@ def test_the_committed_projected_fixture_is_what_the_projector_writes():
     ("old", "new", "message"),
     [
         ('ana="#pcat-DRAW"', 'ana="#pcat-NOPE"', "does not resolve"),
-        ('ana="#pcat-DRAW"', 'ana="#app-kw"', "expected a <category>"),
+        ('ana="#pcat-DRAW"', 'ana="#app-kw-statistical"', "expected a <category>"),
         ('cert="0.92"', 'cert="1.5"', "cert"),
-        ('resp="#app-kw"', 'resp="#tax-amcr-teater"', "expected a <application>"),
+        ('resp="#app-kw-statistical"', 'resp="#tax-amcr-teater"', "expected a <application>"),
         ('corresp="#pb-2"', 'corresp="#facs-2"', "expected a <pb>"),
     ],
 )
@@ -630,6 +660,6 @@ class TestService:
 
 
 if __name__ == "__main__":  # regenerate the committed fixture
-    xml, _ = _project(_sample(), statistical=STATISTICAL)
+    xml, _ = _project(_sample(), RECORD_KW)
     PROJECTED_FIXTURE.write_text(xml, encoding="utf-8")
     print(f"-> {PROJECTED_FIXTURE}")

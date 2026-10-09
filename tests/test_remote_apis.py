@@ -53,10 +53,9 @@ def test_nametag_success(mock_post):
 
 @patch("api_util.call_nametag.requests.Session.post")
 def test_nametag_permanent_failure(mock_post):
-    """Verify NameTag client gracefully returns None on permanent failure."""
+    """Verify NameTag client raises once the retries are spent, so main() can say why (#41)."""
     mock_post.side_effect = requests.exceptions.Timeout("Timed out")
 
     session = call_nametag.get_robust_session(retries=1)
-    result = call_nametag.call_nametag(session, "conllu text", "model-y", "http://fake.url", 60)
-
-    assert result is None
+    with pytest.raises(requests.exceptions.Timeout):
+        call_nametag.call_nametag(session, "conllu text", "model-y", "http://fake.url", 60)

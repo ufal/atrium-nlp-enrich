@@ -4,6 +4,10 @@ call_nametag.py  –  Send a CoNLL-U file to the NameTag 3 API, receive NER
 annotations, and write per-page TSV files. Retries automatically on network errors.
 
 Pages are the source's pages (``api_util/page_rows.py``), not UDPipe's chunks.
+
+Exit codes (``api_util/lindat_errors.py``, atrium-nlp-enrich#41): 0 written; 1 no CoNLL-U input;
+6 NameTag did not answer after the retries; 7 every attempt timed out; 8 NameTag refused the request
+(a 4xx). For 6, 7 and 8 the first line on stderr names the cause.
 """
 
 from __future__ import annotations
@@ -31,7 +35,7 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from api_util import page_rows  # noqa: E402
+from api_util import lindat_errors, page_rows  # noqa: E402
 
 NAMETAG_URL = "https://lindat.mff.cuni.cz/services/nametag/api/recognize"
 
@@ -84,24 +88,24 @@ def get_robust_session(retries: int) -> requests.Session:
 
 def call_nametag(
     session: requests.Session, conllu_text: str, model: str, url: str, timeout: int
-) -> dict | None:
-    """POST CoNLL-U text to NameTag and return the parsed JSON dict."""
-    try:
-        resp = session.post(
-            url,
-            data={
-                "model": model,
-                "input": "conllu",
-                "output": "conll",
-                "data": conllu_text,
-            },
-            timeout=timeout,
-        )
-        resp.raise_for_status()
-        return resp.json()
-    except requests.exceptions.RequestException as exc:
-        print(f"  [WARN] NameTag API failed permanently: {exc}", file=sys.stderr)
-        return None
+) -> dict:
+    """POST CoNLL-U text to NameTag and return the parsed JSON dict.
+
+    A request that still fails after the session's retries raises its ``RequestException``, like
+    ``call_udpipe.process_chunk``: ``main()`` turns it into the exit code that says why (#41).
+    """
+    resp = session.post(
+        url,
+        data={
+            "model": model,
+            "input": "conllu",
+            "output": "conll",
+            "data": conllu_text,
+        },
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 
 # ── sent_id → page mapping ────────────────────────────────────────────────────
@@ -228,7 +232,7 @@ def main() -> None:
 
     if not os.path.isfile(args.input):
         print(f"[Error] CoNLL-U file not found: {args.input}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(lindat_errors.EXIT_EMPTY)
 
     doc_id = os.path.splitext(os.path.basename(args.input))[0]
 
@@ -248,11 +252,16 @@ def main() -> None:
     print(f"  [NameTag] Sending {doc_id} ({len(word_pages)} sentences)...")
 
     session = get_robust_session(args.retries)
-    response_json = call_nametag(session, conllu_text, args.model, args.url, args.timeout)
-
-    if response_json is None:
+    try:
+        response_json = call_nametag(session, conllu_text, args.model, args.url, args.timeout)
+    except requests.exceptions.RequestException as exc:
+        # The cause first, as one line the service puts at the start of its error (#41).
+        print(
+            lindat_errors.describe("NameTag", exc, timeout=args.timeout, retries=args.retries),
+            file=sys.stderr,
+        )
         print(f"[Error] NameTag failed permanently for {doc_id}.", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(lindat_errors.classify(exc))
 
     n_pages = write_tsv_files(response_json, word_pages, args.output_dir, doc_id)
     print(f"  [NameTag] Written {n_pages} page TSV file(s) → {args.output_dir}")
