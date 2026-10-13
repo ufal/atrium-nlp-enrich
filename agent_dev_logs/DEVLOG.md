@@ -553,6 +553,26 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 
   Files delivered in chat.
 
+## 2026-10-13 — Shared modules re-vendored (atrium-project#51, atrium-nlp-enrich#41)
+* `atrium_rocrate.py`, `atrium_vocab.py`, `atrium_document.schema.json`, `service/atrium_service.py`,
+  `tests/test_atrium_rocrate.py` and `tests/test_schema_freeze.py` re-vendored from the hub:
+  * the crate names AMČR/TEATER concepts by their source URIs, from `teater_category_ids`, and no longer mints
+    `w3id.org/atrium/theme/<label>`;
+  * the schema declares `enrichment.items[].teater_category_ids`;
+  * the registry's theme maps follow keyword-extract's taxonomy;
+  * the shared 502 text says when to retry.
+* `service/openapi.json` regenerated (the record schema and its sha, the 502 description). No behaviour change, no
+  release.
+* **The keyword fields leave the frontends** (atrium-project#67 R7): `service/frontend/` and
+  `service/frontend-lindat/` no longer offer "Keyword Method" and "Keywords" or post `kw_method` / `num_keywords`,
+  which the API dropped in `v1.0.0-beta`; `service/test_api.py` neither sends them nor prints a `keywords` list the
+  response no longer has.
+* **#41 shipped as `v1.0.1-beta`**, not the `v1.1.0-beta` the 2026-10-09 entry names; its digest and plan say so.
+* **Checks:** the API-contract and vendored shared tests, 219 passed; `tests/test_lindat_failures.py`, 30 passed;
+  ruff clean; both `script.js` parse.
+
+  Files delivered in chat.
+
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);

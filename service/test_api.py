@@ -23,10 +23,6 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Smoke-test the nlp-enrich API.")
     ap.add_argument("-u", "--url", default="http://localhost:8000")
     ap.add_argument("-f", "--file", required=True, help="CSV/XLSX/TXT to enrich.")
-    ap.add_argument(
-        "-m", "--kw-method", default="keybert", choices=["keybert", "yake", "legacy", "none"]
-    )
-    ap.add_argument("-n", "--num-keywords", type=int, default=20)
     ap.add_argument("--format", default="json", choices=["json", "zip"])
     args = ap.parse_args()
 
@@ -40,11 +36,7 @@ def main() -> int:
         resp = requests.post(
             f"{args.url}/enrich",
             files={"file": (args.file.split("/")[-1], fh)},
-            data={
-                "kw_method": args.kw_method,
-                "num_keywords": str(args.num_keywords),
-                "format": args.format,
-            },
+            data={"format": args.format},
             timeout=900,
         )
 
@@ -63,11 +55,7 @@ def main() -> int:
     print("[OK] enrichment complete")
     print(f"  doc_id:         {data.get('doc_id')}")
     print(f"  pages:          {data.get('pages')}")
-    print(f"  method req/used:{data.get('method_requested')} / {data.get('method_used')}")
-    kws = data.get("keywords") or []
-    print(f"  keywords:       {len(kws)}")
-    for kw in kws[:5]:
-        print(f"     - {kw.get('keyword')}  ({kw.get('score')})")
+    print(f"  stages:         {data.get('stages')}")
 
     tt = data.get("teitok_xml") or ""
     print(f"  teitok bytes:   {len(tt)}")
