@@ -45,25 +45,26 @@ python service/test_api.py -f data_samples/DOC_LINE_CATEG/CTX000000001.csv
 
 ### `POST /enrich` (multipart form)
 
-| Field               | Default    | Notes                                                                                                                                                                                                                                              |
-|---------------------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `file`              | *required* | `.csv` (needs a `text` column; optional `page_num`, `line_num`), `.xlsx`, `.txt` (a form feed starts a new page), or a TEITOK `.xml` (`*.teitok.xml`, or any `.xml` starting with `<TEI`) — see [Layout inputs](#layout-inputs)                    |
-| `alto`              | *optional* | ALTO XML of the pages a `.csv`/`.xlsx` lists the lines of — see [Layout inputs](#layout-inputs)                                                                                                                                                    |
-| `lang`              | `cs`       | Czech-pinned in v1                                                                                                                                                                                                                                 |
-| `format`            | `json`     | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`; any other value → 422 (it silently became `json` before atrium-project#32 round 2)                                                                                                        |
-| `document_json`     | *optional* | baseline ATRIUM Document JSON (or an AMČR seed) to accrete onto — see below; not a JSON object → 422 `invalid_record`                                                                                                                              |
-| `teitok_enrichment` | `false`    | opt-in (atrium-project#70): the returned TEITOK also carries the record's page categories (`pb/@ana`) and the record's controlled keywords in its header — see [`POST /project_record`](#post-project_record-multipart-form). `/jobs` takes it too |
+| Field               | Default                 | Notes                                                                                                                                                                                                                                                                                                     |
+|---------------------|-------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `file`              | *required*, or a record | `.csv` (needs a `text` column; optional `page_num`, `line_num`), `.xlsx`, `.txt` (a form feed starts a new page), or a TEITOK `.xml` (`*.teitok.xml`, or any `.xml` starting with `<TEI`) — see [Layout inputs](#layout-inputs). Optional when `document_json` is a record whose `lines[]` carry the text |
+| `alto`              | *optional*              | ALTO XML of the pages a `.csv`/`.xlsx` lists the lines of — see [Layout inputs](#layout-inputs)                                                                                                                                                                                                           |
+| `lang`              | `cs`                    | Czech-pinned in v1                                                                                                                                                                                                                                                                                        |
+| `format`            | `json`                  | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`; any other value → 422 (it silently became `json` before atrium-project#32 round 2)                                                                                                                                                               |
+| `document_json`     | *optional*              | baseline ATRIUM Document JSON (or an AMČR seed) to accrete onto — see below; not a JSON object → 422 `invalid_record`. A born-digital record is also a layout — see [Layout inputs](#layout-inputs)                                                                                                       |
+| `teitok_enrichment` | `false`                 | opt-in (atrium-project#70): the returned TEITOK also carries the record's page categories (`pb/@ana`) and the record's controlled keywords in its header — see [`POST /project_record`](#post-project_record-multipart-form). `/jobs` takes it too                                                        |
 
 ### Layout inputs
 
 The TEITOK the service returns has the layout of what it was given (issue
 [#38](https://github.com/ufal/atrium-nlp-enrich/issues/38)); `layout_source` in the envelope says which:
 
-| Upload                                 | `layout_source` | The TEITOK                                                                                         |
-|----------------------------------------|-----------------|----------------------------------------------------------------------------------------------------|
-| `.csv`/`.xlsx`/`.txt`                  | `rows`          | one `<pb>` per page and one `<lb>` per line of the input; no boxes, no facsimile, no page images   |
-| `.csv`/`.xlsx` + `alto`                | `alto`          | as the CLI with `INPUT_ALTO_DIR`: word, line and block boxes, `<facsimile>`, `<figure>`s           |
-| a TEITOK `.xml` converted by flexiconv | `teitok`        | as the CLI with `FLEXICONV_ANNOTATE=true`: its pages, lines and word boxes, its page images' names |
+| Upload                                                          | `layout_source` | The TEITOK                                                                                                                                                   |
+|-----------------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `.csv`/`.xlsx`/`.txt`                                           | `rows`          | one `<pb>` per page and one `<lb>` per line of the input; no boxes, no facsimile, no page images                                                             |
+| `.csv`/`.xlsx` + `alto`                                         | `alto`          | as the CLI with `INPUT_ALTO_DIR`: word, line and block boxes, `<facsimile>`, `<figure>`s                                                                     |
+| a TEITOK `.xml` converted by flexiconv                          | `teitok`        | as the CLI with `FLEXICONV_ANNOTATE=true`: its pages, lines and word boxes, its page images' names                                                           |
+| a born-digital record as `document_json`, alone or with a table | `record`        | a `<surface>` per page sized by `pages[].canvas`, the `lines[].bbox` boxes on `<lb>`, token boxes shared out from them, page images named `<doc_id>-<N>.png` |
 
 * A **TEITOK upload** is text and layout at once: its rows (`teitok_read`) go through the
   pipeline as the document's table, and the file itself becomes that document's layout — the
@@ -74,7 +75,23 @@ The TEITOK the service returns has the layout of what it was given (issue
 * An **`alto` part** goes with a `.csv`/`.xlsx` (e.g. ocr-postprocess's `DOC_LINE_CATEG` table and
   the ALTO it was made from); with a `.txt` or a TEITOK file it is refused (422). A PAGE XML or
   hOCR file in its place is refused with the hint to convert it with `api_flexiconv.sh`.
-* The `doc_id` is the file name without `.teitok.xml`, `.alto.xml` or the table extension.
+* A **born-digital record** (digital-convert's `POST /reformat` of a PDF, issue
+  [#42](https://github.com/ufal/atrium-nlp-enrich/issues/42)) sent as `document_json` (also to
+  `/enrich_text`) is a layout when its pages have a `canvas` and its lines a `bbox`; an `alto` or
+  TEITOK upload wins over it.
+  Sent **without `file`**, the record is the text as well: its `lines[]` (less `Garbage`,
+  `Inverted` and `Trash` lines) are the table, so text and boxes come from the same lines. A
+  table sent with the record is aligned to it character by character: it should list the
+  record's lines as they are, because lines left out (running footers, say) shift the alignment,
+  and on a long document the boxes then stop matching. A record with no text in `lines[]` (a
+  scanned PDF) and no `file` is refused with 422, as is an `alto` part without a table.
+* The record's boxes are in its canvas unit, PDF **points**, and the service answers in them
+  (`<surface lrx="612" lry="792">` for a Letter page). For pixels, `POST /rescale` with `scale` =
+  the page images' DPI / 72; the CLI scales them itself with `IMAGE_DPI` or `INPUT_PAGES_DIR`. The
+  record has line boxes only, so a token's box is its share of the line box by character offset
+  — approximate, and the header says so. A DOCX record has no geometry: `layout_source` is `rows`.
+* The `doc_id` is the file name without `.teitok.xml`, `.alto.xml` or the table extension; for a
+  record sent alone, the record's `doc_id`.
 
 ### `POST /enrich_text` (JSON)
 
@@ -148,7 +165,7 @@ is `null` only for a run that left no paradata. An error response carries no act
 [`docs/rocrate_export.md`](https://github.com/ufal/atrium-project/blob/main/docs/rocrate_export.md) §5
 describes it.
 
-`layout_source` is `rows`, `alto` or `teitok` ([Layout inputs](#layout-inputs)).
+`layout_source` is `rows`, `alto`, `teitok` or `record` ([Layout inputs](#layout-inputs)).
 `teitok_schema_valid`/`teitok_schema_errors` are the output-contract verdict on `teitok_xml`
 (`validate_teitok_xml.py`'s default `contract` profile); a run whose TEITOK fails the contract
 never gets here — stage 4 stops with exit code 5, answered as 500.

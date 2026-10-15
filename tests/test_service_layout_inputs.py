@@ -4,15 +4,20 @@
 so the service's TEITOK never had a box, and every page carried an invented page image.
 Now ``file`` may be a TEITOK document -- flexiconv's conversion of a PDF, DOCX or PAGE XML,
 made with the CLI (no GPL code in the service) -- and a table may come with an ``alto`` part.
+A born-digital record sent as ``document_json`` is a layout too, with or without a table
+(issue #42).
 
 The end-to-end test runs the real stage-1 and stage-4 scripts inside the service's own
-workspace; only UDPipe and NameTag (LINDAT) are stood in for by a prepared CoNLL-U.
+workspace, and run_pipeline.py's own document-json bridge; only UDPipe and NameTag (LINDAT)
+are stood in for by a prepared CoNLL-U.
 """
 
+import json
 import os
 import shutil
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,9 +30,18 @@ pytest.importorskip("lxml")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+import run_pipeline  # noqa: E402
 import service.enrichment as enr  # noqa: E402
+from api_util.record_layout import record_rows  # noqa: E402
 from service.api import app  # noqa: E402
 from service.enrichment import is_teitok_upload, normalize_upload, sanitize_doc_id  # noqa: E402
+from tests.record_layout_data import (  # noqa: E402
+    conllu_for,
+    ne_tsv_for,
+    record,
+    record_lines,
+    record_path,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PAGE_TEITOK = REPO_ROOT / "tests" / "fixtures" / "teitok" / "flexiconv" / "page.teitok.xml"
@@ -63,6 +77,15 @@ _NE = "Word\tTag\tNE\n" + "".join(
         (".", "O"),
     ]
 )
+#: What UDPipe + NameTag would return for the records' lines (issue #42), by doc_id.
+_ENTITIES = [(("Horni", "Mezi"), "gu")]
+_STAND_INS = {
+    doc: (
+        conllu_for(record_lines(name), _ENTITIES, ner=False),
+        ne_tsv_for(record_lines(name), _ENTITIES),
+    )
+    for doc, name in (("two_column", "two_column"), ("minimal", "minimal_docx"))
+}
 
 
 def _stage_env(cfg):
@@ -71,8 +94,13 @@ def _stage_env(cfg):
     return env
 
 
+def _arg(cmd, flag):
+    return cmd[cmd.index(flag) + 1] if flag in cmd else None
+
+
 def _pipeline(cmd, **_kwargs):
-    """run_pipeline.py with the LINDAT stages stood in for: real stage 1 and stage 4."""
+    """run_pipeline.py with the LINDAT stages stood in for: real stage 1 and stage 4, and
+    run_pipeline's own bridge for ``--document-json``/``--document-json-out``."""
     cfg = Path(cmd[cmd.index("--config") + 1])
     out = cfg.parent / "out"
     env = _stage_env(cfg)
@@ -92,14 +120,20 @@ def _pipeline(cmd, **_kwargs):
             shutil.copy(SAMPLES / "UDP" / f"{doc}.conllu", out / "UDP")
             shutil.copytree(SAMPLES / "NE" / doc, out / "NE" / doc)
             continue
-        (out / "UDP" / f"{doc}.conllu").write_text(_CONLLU, encoding="utf-8")
+        conllu, ne = _STAND_INS.get(doc, (_CONLLU, _NE))
+        (out / "UDP" / f"{doc}.conllu").write_text(conllu, encoding="utf-8")
         (out / "NE" / doc).mkdir(parents=True, exist_ok=True)
-        (out / "NE" / doc / f"{doc}-1.tsv").write_text(_NE, encoding="utf-8")
-    fourth = _REAL_RUN(
-        ["bash", str(REPO_ROOT / "api_4_stats.sh")],
-        cwd=REPO_ROOT, env=env, capture_output=True, text=True,
-    )  # fmt: skip
+        (out / "NE" / doc / f"{doc}-1.tsv").write_text(ne, encoding="utf-8")
+    stats = ["bash", str(REPO_ROOT / "api_4_stats.sh")]
+    doc_json, doc_json_out = _arg(cmd, "--document-json"), _arg(cmd, "--document-json-out")
+    if doc_json:
+        doc_id = run_pipeline._pipeline_doc_id(str(cfg.parent / "in"))
+        scratch = run_pipeline._prepare_document_json_bridge(doc_json, doc_id)
+        stats += ["--document-json-dir", str(scratch)]
+    fourth = _REAL_RUN(stats, cwd=REPO_ROOT, env=env, capture_output=True, text=True)
     logs.append(fourth.stdout + fourth.stderr)
+    if doc_json and doc_json_out and fourth.returncode == 0:
+        run_pipeline._collect_document_json_output(scratch, doc_json_out, doc_id)
     return SimpleNamespace(returncode=fourth.returncode, stdout="", stderr="\n".join(logs))
 
 
@@ -191,6 +225,157 @@ def test_layout_part_rules(client):
         response = client.post("/enrich", files=files, data={"kw_method": "none"})
         assert response.status_code == 422, (upload[0], response.text)
         assert message in response.json()["detail"], response.json()["detail"]
+
+
+# ── a born-digital record (issue #42) ─────────────────────────────────────────────────
+
+
+def _record_part(name, data=None):
+    raw = json.dumps(data).encode("utf-8") if data is not None else record_path(name).read_bytes()
+    return ("record.document.json", raw, "application/json")
+
+
+def _boxed_two_column(body):
+    assert body["layout_source"] == "record"
+    assert body["teitok_schema_valid"] is True, body["teitok_schema_errors"]
+    root = ET.fromstring(body["teitok_xml"])
+    assert [(s.get("id"), s.get("lrx"), s.get("lry")) for s in root.iter("surface")] == [
+        ("facs-1", "612", "792"),
+        ("facs-2", "612", "792"),
+    ]
+    assert [pb.get("n") for pb in root.iter("pb")] == ["i", "ii"]
+    lbs = list(root.iter("lb"))
+    assert len(lbs) == 17 and all(lb.get("bbox") for lb in lbs)
+    assert all(t.get("bbox") for t in root.iter("tok") if t.get("type") == "w")
+    assert root.find(".//note[@n='orgfile']").text == "two_column.pdf"
+    return root
+
+
+def test_a_record_alone_is_text_and_layout(client):
+    """digital-convert's record of a born-digital PDF, and nothing else."""
+    response = client.post(
+        "/enrich",
+        files={"document_json": _record_part("two_column")},
+        data={"kw_method": "none"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["doc_id"] == "two_column"
+    _boxed_two_column(body)
+    doc = body["document_json"]
+    assert [(p["page"], p.get("teitok_surface")) for p in doc["pages"]] == [
+        ("i", "facs-1"),
+        ("ii", "facs-2"),
+    ]
+    (entity,) = doc["entities"]
+    assert (entity["surface"], entity["page"]) == ("Horni Mezi", "i") and len(entity["bbox"]) == 4
+
+
+def test_an_empty_file_part_is_no_file(client):
+    """A form sends an empty, unnamed `file` part when nothing was chosen."""
+    response = client.post(
+        "/enrich",
+        files={
+            "file": ("", b"", "application/octet-stream"),
+            "document_json": _record_part("two_column"),
+        },
+        data={"kw_method": "none"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["doc_id"] == "two_column"
+
+
+def test_enrich_text_takes_the_records_layout_too(client):
+    """/enrich_text's inline record reaches stage 4 the same way."""
+    response = client.post(
+        "/enrich_text",
+        json={
+            "doc_id": "two_column",
+            "lines": record_rows(record_path("two_column")),
+            "document_json": record("two_column"),
+        },
+    )
+    assert response.status_code == 200, response.text
+    _boxed_two_column(response.json())
+
+
+def test_a_table_with_its_record_takes_the_records_layout(client):
+    rows = record_rows(record_path("two_column"))
+    csv = "text,page_num,line_num\n" + "".join(
+        f'"{r["text"]}",{r["page_num"]},{r["line_num"]}\n' for r in rows
+    )
+    response = client.post(
+        "/enrich",
+        files={
+            "file": ("two_column.csv", csv.encode("utf-8"), "text/csv"),
+            "document_json": _record_part("two_column"),
+        },
+        data={"kw_method": "none"},
+    )
+    assert response.status_code == 200, response.text
+    _boxed_two_column(response.json())
+
+
+def test_a_docx_record_keeps_the_rows_layout(client):
+    response = client.post(
+        "/enrich",
+        files={"document_json": _record_part("minimal_docx")},
+        data={"kw_method": "none"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["doc_id"], body["layout_source"]) == ("minimal", "rows")
+    root = ET.fromstring(body["teitok_xml"])
+    assert root.find("facsimile") is None
+    assert [pb.get("id") for pb in root.iter("pb")] == ["pb-1", "pb-2"]
+
+
+def test_an_alto_part_wins_over_the_record(client):
+    data = record("two_column")
+    data["doc_id"] = SAMPLE
+    response = client.post(
+        "/enrich",
+        files={
+            "file": (f"{SAMPLE}.csv", (SAMPLES / "DOC_LINE_CATEG" / f"{SAMPLE}.csv").read_bytes()),
+            "alto": (f"{SAMPLE}.alto.xml", (SAMPLES / "ALTO" / f"{SAMPLE}.alto.xml").read_bytes()),
+            "document_json": _record_part(None, data),
+        },
+        data={"kw_method": "none"},
+    )  # fmt: skip
+    assert response.status_code == 200, response.text
+    assert response.json()["layout_source"] == "alto"
+
+
+def test_record_input_rules(client):
+    no_text = record("image_only")
+    no_text["lines"] = []
+    alto = (SAMPLES / "ALTO" / f"{SAMPLE}.alto.xml").read_bytes()
+    cases = [
+        ({}, "Send the text as `file`"),
+        ({"document_json": _record_part(None, no_text)}, "no text in lines[]"),
+        (
+            {"document_json": _record_part("two_column"), "alto": ("a.alto.xml", alto)},
+            "goes with a .csv or .xlsx",
+        ),
+    ]
+    for files, message in cases:
+        response = client.post("/enrich", files=files, data={"kw_method": "none"})
+        assert response.status_code == 422, (message, response.text)
+        assert message in response.json()["detail"], response.json()["detail"]
+
+
+def test_a_job_takes_a_record_alone(client):
+    with TestClient(app) as jobs:  # one event loop for the request and the job it starts
+        accepted = jobs.post("/jobs", files={"document_json": _record_part("two_column")})
+        assert accepted.status_code == 200, accepted.text
+        job_id = accepted.json()["job_id"]
+        deadline = time.monotonic() + 120
+        while jobs.get(f"/jobs/{job_id}").json()["status"] in ("queued", "running"):
+            assert time.monotonic() < deadline, "the job did not finish"
+            time.sleep(0.2)
+        result = jobs.get(f"/jobs/{job_id}/result")
+    assert result.status_code == 200, result.text
+    _boxed_two_column(result.json())
 
 
 def test_exit_5_is_its_own_error(tmp_path, monkeypatch):

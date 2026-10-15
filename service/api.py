@@ -74,6 +74,7 @@ from .rescale import RescaleError, RescaleTooLarge, rescale_teitok
 # The repo root is on sys.path from here on (service/enrichment.py puts it there, for the
 # `python api.py` start from service/), so the repo-root modules are imported below it.
 import atrium_rocrate  # noqa: E402
+from api_util.record_layout import record_rows  # noqa: E402
 from atrium_limits import LimitExceeded  # noqa: E402
 from tool_limits import (  # noqa: E402
     API_JOB_TIMEOUT,
@@ -173,7 +174,10 @@ class EnrichResponse(BaseModel):
         description="Every limit that shaped the result without refusing it."
     )
     layout_source: str = Field(
-        description="Where the pages and boxes came from: `alto`, `teitok` or `rows`."
+        description=(
+            "Where the pages and boxes came from: `alto`, `teitok`, `record` (a born-digital "
+            "record's page canvases and line boxes) or `rows`."
+        )
     )
     teitok_schema_valid: Optional[bool] = Field(
         description="The TEITOK XSD verdict; null when it could not be checked."
@@ -546,6 +550,45 @@ async def _read_layout(filename: str, data: bytes, alto: UploadFile | None) -> L
         raise HTTPException(422, str(exc)) from exc
 
 
+async def _read_text_input(
+    file: UploadFile | None, alto: UploadFile | None, document_json: UploadFile | None
+):
+    """What a call enriches, as ``(rows, doc_id, layout, baseline, sent)``: the ``file`` upload
+    with its layout, or -- without one -- the ``document_json`` record's own ``lines[]`` (issue
+    #42). The record is then the text, the baseline and, when it has page geometry, the layout
+    stage 4 finds (``layout_source: "record"``). An empty, unnamed ``file`` part is the one a
+    form sends when nothing was chosen: no file, as for ``document_json``."""
+    data = b""
+    if file is not None:
+        data = await read_upload_bounded(file, MAX_UPLOAD.get(), "Upload")
+    if file is not None and (data or file.filename):
+        filename = file.filename or "upload.csv"
+        layout = await _read_layout(filename, data, alto)
+        rows = _normalize(filename, data)
+        baseline = await _read_document_json(document_json)
+        sent = _sent(filename, data, file.content_type, alto, layout)
+        return rows, file.filename or "document", layout, baseline, sent
+    baseline = await _read_document_json(document_json)
+    if baseline is None:
+        raise HTTPException(
+            422, "Send the text as `file`, or a `document_json` record whose lines[] carry it."
+        ) from None
+    if alto is not None and await read_upload_bounded(alto, MAX_UPLOAD.get(), "alto"):
+        raise HTTPException(
+            422, "An alto part goes with a .csv or .xlsx table of that page's lines."
+        ) from None
+    record = parse_record_part(baseline, "document_json")
+    rows = record_rows(record)
+    if not rows:
+        raise HTTPException(
+            422,
+            "The document_json record has no text in lines[] to enrich (e.g. a scanned PDF "
+            "whose pages need OCR); send the text as `file`.",
+        ) from None
+    # Nothing but the record was sent, and _run_action() lists the record as the call's object.
+    return rows, str(record.get("doc_id") or "document"), None, baseline, []
+
+
 def _run_pipeline_sync(
     rows,
     doc_id,
@@ -886,7 +929,10 @@ _FILE_HELP = (
     "The text: a .csv/.xlsx table (`text`, optional `page_num`/`line_num`), a .txt (one "
     "line per row; a form feed starts a new page), or a TEITOK .xml -- e.g. flexiconv's "
     "conversion of a PDF, DOCX or PAGE XML (api_flexiconv.sh) -- whose text is annotated "
-    "and whose pages, lines and boxes become the output's layout."
+    "and whose pages, lines and boxes become the output's layout. Optional when "
+    "`document_json` is a record whose `lines[]` carry the text (e.g. digital-convert's "
+    "record of a born-digital PDF): the record is then the text and, with page canvases and "
+    "line boxes, the layout."
 )
 
 
@@ -919,7 +965,7 @@ def _normalize(filename: str, data: bytes):
     responses={200: _enrich_200(), **error_responses(415, *_ENRICH_ERRORS)},
 )
 async def enrich(
-    file: UploadFile = File(..., description=_FILE_HELP),  # noqa: B008
+    file: UploadFile = File(None, description=_FILE_HELP),  # noqa: B008
     lang: Lang = Form("cs"),  # noqa: B008
     format: EnrichFormat = Form("json"),  # noqa: B008
     document_json: UploadFile = File(  # noqa: B008
@@ -930,12 +976,7 @@ async def enrich(
     alto: UploadFile = File(None, description=_ALTO_HELP),  # noqa: B008
     teitok_enrichment: bool = Form(False, description=_TEITOK_ENRICHMENT_HELP),
 ):
-    data = await read_upload_bounded(file, MAX_UPLOAD.get(), "Upload")
-    filename = file.filename or "upload.csv"
-    layout = await _read_layout(filename, data, alto)
-    rows = _normalize(filename, data)
-    doc_id = file.filename or "document"
-    baseline = await _read_document_json(document_json)
+    rows, doc_id, layout, baseline, sent = await _read_text_input(file, alto, document_json)
     return await _enrich_common(
         rows,
         doc_id,
@@ -944,7 +985,7 @@ async def enrich(
         baseline,
         layout,
         teitok_enrichment,
-        _sent(filename, data, file.content_type, alto, layout),
+        sent,
     )
 
 
@@ -1156,7 +1197,7 @@ async def project_record(
     },
 )
 async def submit_job(
-    file: UploadFile = File(..., description=_FILE_HELP),  # noqa: B008
+    file: UploadFile = File(None, description=_FILE_HELP),  # noqa: B008
     lang: Lang = Form("cs"),  # noqa: B008
     document_json: UploadFile = File(  # noqa: B008
         None,
@@ -1167,18 +1208,12 @@ async def submit_job(
     teitok_enrichment: bool = Form(False, description=_TEITOK_ENRICHMENT_HELP),
 ):
     _validate_params(lang)
-    data = await read_upload_bounded(file, MAX_UPLOAD.get(), "Upload")
-    filename = file.filename or "upload.csv"
-    # Read here, not in the background task, like document_json below.
-    layout = await _read_layout(filename, data, alto)
-    rows = _normalize(filename, data)
+    # Read here, not in the background task: the UploadFile's spooled temp file is tied
+    # to the request and is closed once this handler returns (#10 J3).
+    rows, doc_id, layout, baseline, sent = await _read_text_input(file, alto, document_json)
     # Refused now, with the synchronous endpoints' answer, rather than accepted as a job
     # that the pipeline then fails or runs over MAX_WORDS (atrium-project#53).
     _check_rows(rows)
-    doc_id = file.filename or "document"
-    # Read here, not in the background task: the UploadFile's spooled temp file is tied
-    # to the request and is closed once this handler returns (#10 J3).
-    baseline = await _read_document_json(document_json)
 
     _evict_finished_jobs()
     # The queue is bounded (atrium-project#53): jobs waiting for a slot may fill the slots
@@ -1210,7 +1245,7 @@ async def submit_job(
             baseline,
             layout,
             teitok_enrichment,
-            _sent(filename, data, file.content_type, alto, layout),
+            sent,
         )
     )
     return {"job_id": job.job_id, "status": "queued"}

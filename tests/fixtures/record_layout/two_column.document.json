@@ -1,0 +1,358 @@
+{
+  "schema_version": "1.0",
+  "record_type": "atrium-document",
+  "doc_id": "two_column",
+  "source": {
+    "filename": "two_column.pdf",
+    "media_type": "application/pdf",
+    "origin": "digital-born-pdf",
+    "page_count": 2,
+    "sha256": "a9c19d72c8a13ab5f5c8761beb39cd88c6d8abba80f566ee57f11361de107310"
+  },
+  "provenance": {
+    "license": "MIT",
+    "license_url": "https://opensource.org/license/mit/",
+    "license_detail": {
+      "effective_license": "MIT",
+      "effective_license_url": "https://opensource.org/license/mit/",
+      "is_non_commercial": false,
+      "is_share_alike": false,
+      "determined_by": [
+        "pdfplumber",
+        "pdfminer.six",
+        "pypdfium2",
+        "jsonschema"
+      ],
+      "components": [
+        {
+          "name": "pdfplumber",
+          "license": "MIT",
+          "license_url": "https://opensource.org/license/mit/",
+          "rank": 1
+        },
+        {
+          "name": "pdfminer.six",
+          "license": "MIT",
+          "license_url": "https://opensource.org/license/mit/",
+          "rank": 1
+        },
+        {
+          "name": "pypdfium2",
+          "license": "Apache-2.0",
+          "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+          "rank": 1
+        },
+        {
+          "name": "jsonschema",
+          "license": "MIT",
+          "license_url": "https://opensource.org/license/mit/",
+          "rank": 1
+        }
+      ],
+      "unknown_licenses": [],
+      "notes": "Effective output license is MIT, the most restrictive among 4 component(s) used."
+    },
+    "contributors": [
+      {
+        "program": "digital-convert",
+        "run_id": "261015-120000",
+        "paradata_ref": "",
+        "blocks": "pages,lines,content",
+        "at": "2026-10-15T16:42:27.074640+00:00"
+      }
+    ]
+  },
+  "assembled": {
+    "blocks": {
+      "pages": {
+        "program": "digital-convert",
+        "run_id": "261015-120000",
+        "paradata_ref": "",
+        "updated_at": "2026-10-15T16:42:26.961806+00:00"
+      },
+      "lines": {
+        "program": "digital-convert",
+        "run_id": "261015-120000",
+        "paradata_ref": "",
+        "updated_at": "2026-10-15T16:42:26.961975+00:00"
+      },
+      "content": {
+        "program": "digital-convert",
+        "run_id": "261015-120000",
+        "paradata_ref": "",
+        "updated_at": "2026-10-15T16:42:26.962011+00:00"
+      }
+    },
+    "had_baseline": false,
+    "note": "Blocks reflect CONTRIBUTED steps only; a block is absent until its tool has run."
+  },
+  "pages": [
+    {
+      "page": "i",
+      "page_index": 1,
+      "quality_score": 1.0,
+      "quality_band": "Clear",
+      "canvas": {
+        "width": 612.0,
+        "height": 792.0,
+        "unit": "pt"
+      },
+      "text_layer": "digital"
+    },
+    {
+      "page": "ii",
+      "page_index": 2,
+      "quality_score": 1.0,
+      "quality_band": "Clear",
+      "canvas": {
+        "width": 612.0,
+        "height": 792.0,
+        "unit": "pt"
+      },
+      "text_layer": "digital"
+    }
+  ],
+  "content": {
+    "text": "Hradiste u Horni Mezi: zachranny vyzkum\nSonda II odkryla val.\nVrstva ornice byla tenka.\nPod ni lezela hlina.\nDruhy odstavec vlevo.\nKonec leveho sloupce.\nPravy sloupec zacina zde.\nNalezy keramiky a mazanice.\nKonec praveho sloupce.\nStrana dve, levy sloupec.\nDalsi radek vlevo.\nStrana dve, pravy sloupec.\nDalsi radek vpravo.",
+    "reading_order": "layout"
+  },
+  "lines": [
+    {
+      "page": "i",
+      "line": 0,
+      "text": "Zprava o vyzkumu Horni Mez",
+      "bbox": [
+        72.0,
+        19.863,
+        189.027,
+        28.863
+      ],
+      "group_id": "p1-0",
+      "quality_score": 1.0,
+      "style": {
+        "region": "page_header"
+      }
+    },
+    {
+      "page": "i",
+      "line": 1,
+      "text": "Hradiste u Horni Mezi: zachranny vyzkum",
+      "bbox": [
+        72.0,
+        64.312,
+        387.632,
+        80.312
+      ],
+      "group_id": "p1-1",
+      "quality_score": 1.0,
+      "style": {
+        "bold": true,
+        "heading_level": 1
+      }
+    },
+    {
+      "page": "i",
+      "line": 2,
+      "text": "Sonda II odkryla val.",
+      "bbox": [
+        72.0,
+        102.484,
+        185.112,
+        114.484
+      ],
+      "group_id": "p1-2",
+      "quality_score": 1.0
+    },
+    {
+      "page": "i",
+      "line": 3,
+      "text": "Vrstva ornice byla tenka.",
+      "bbox": [
+        72.0,
+        116.484,
+        203.388,
+        128.484
+      ],
+      "group_id": "p1-2",
+      "quality_score": 1.0
+    },
+    {
+      "page": "i",
+      "line": 4,
+      "text": "Pod ni lezela hlina.",
+      "bbox": [
+        72.0,
+        130.484,
+        172.716,
+        142.484
+      ],
+      "group_id": "p1-2",
+      "quality_score": 1.0
+    },
+    {
+      "page": "i",
+      "line": 5,
+      "text": "Druhy odstavec vlevo.",
+      "bbox": [
+        72.0,
+        162.484,
+        190.044,
+        174.484
+      ],
+      "group_id": "p1-3",
+      "quality_score": 1.0
+    },
+    {
+      "page": "i",
+      "line": 6,
+      "text": "Konec leveho sloupce.",
+      "bbox": [
+        72.0,
+        176.484,
+        192.732,
+        188.484
+      ],
+      "group_id": "p1-3",
+      "quality_score": 1.0
+    },
+    {
+      "page": "i",
+      "line": 7,
+      "text": "Pravy sloupec zacina zde.",
+      "bbox": [
+        324.0,
+        102.484,
+        463.392,
+        114.484
+      ],
+      "group_id": "p1-4",
+      "quality_score": 1.0
+    },
+    {
+      "page": "i",
+      "line": 8,
+      "text": "Nalezy keramiky a mazanice.",
+      "bbox": [
+        324.0,
+        116.484,
+        480.036,
+        128.484
+      ],
+      "group_id": "p1-4",
+      "quality_score": 1.0
+    },
+    {
+      "page": "i",
+      "line": 9,
+      "text": "Konec praveho sloupce.",
+      "bbox": [
+        324.0,
+        130.484,
+        452.736,
+        142.484
+      ],
+      "group_id": "p1-4",
+      "quality_score": 1.0
+    },
+    {
+      "page": "i",
+      "line": 10,
+      "text": "1",
+      "bbox": [
+        300.0,
+        744.863,
+        305.004,
+        753.863
+      ],
+      "group_id": "p1-5",
+      "quality_score": 1.0,
+      "style": {
+        "region": "page_footer"
+      }
+    },
+    {
+      "page": "ii",
+      "line": 0,
+      "text": "Zprava o vyzkumu Horni Mez",
+      "bbox": [
+        72.0,
+        19.863,
+        189.027,
+        28.863
+      ],
+      "group_id": "p2-0",
+      "quality_score": 1.0,
+      "style": {
+        "region": "page_header"
+      }
+    },
+    {
+      "page": "ii",
+      "line": 1,
+      "text": "Strana dve, levy sloupec.",
+      "bbox": [
+        72.0,
+        67.484,
+        206.064,
+        79.484
+      ],
+      "group_id": "p2-1",
+      "quality_score": 1.0
+    },
+    {
+      "page": "ii",
+      "line": 2,
+      "text": "Dalsi radek vlevo.",
+      "bbox": [
+        72.0,
+        81.484,
+        166.692,
+        93.484
+      ],
+      "group_id": "p2-1",
+      "quality_score": 1.0
+    },
+    {
+      "page": "ii",
+      "line": 3,
+      "text": "Strana dve, pravy sloupec.",
+      "bbox": [
+        324.0,
+        67.484,
+        466.068,
+        79.484
+      ],
+      "group_id": "p2-2",
+      "quality_score": 1.0
+    },
+    {
+      "page": "ii",
+      "line": 4,
+      "text": "Dalsi radek vpravo.",
+      "bbox": [
+        324.0,
+        81.484,
+        426.696,
+        93.484
+      ],
+      "group_id": "p2-2",
+      "quality_score": 1.0
+    },
+    {
+      "page": "ii",
+      "line": 5,
+      "text": "2",
+      "bbox": [
+        300.0,
+        744.863,
+        305.004,
+        753.863
+      ],
+      "group_id": "p2-3",
+      "quality_score": 1.0,
+      "style": {
+        "region": "page_footer"
+      }
+    }
+  ]
+}

@@ -518,14 +518,16 @@ def note_summary_trimmed(para_state, pages):
     )
 
 
-# ── layout source: ALTO, or a flexiconv TEITOK file (FLEXICONV_ANNOTATE) ──────
+# ── layout source: ALTO, a flexiconv TEITOK file (FLEXICONV_ANNOTATE), or the record ──
 
 
-def layout_source(doc_name, alto_dir=None, flexiconv_dir=None):
+def layout_source(doc_name, alto_dir=None, flexiconv_dir=None, record_dir=None):
     """The file stage 4 takes a document's page layout from, or None: its ALTO, else its
-    converted flexiconv file. The rules live in ``api_util/doc_identity.py`` so stage 1
-    (which converted files a table claims) and stage 4 cannot disagree (issue #38, B)."""
-    return _doc_identity.layout_source(doc_name, alto_dir, flexiconv_dir)
+    converted flexiconv file, else its ATRIUM record in ``record_dir`` (the document-json
+    directory) when the record has page geometry (issue #42). The rules live in
+    ``api_util/doc_identity.py`` so stage 1 (which converted files a table claims) and stage 4
+    cannot disagree (issue #38, B)."""
+    return _doc_identity.layout_source(doc_name, alto_dir, flexiconv_dir, record_dir)
 
 
 # ── per-document entry point (called from api_4_stats.sh) ────────────────────
@@ -613,7 +615,7 @@ def process_single_document(
             trimmed = _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv)
             note_summary_trimmed(para_state, trimmed)
 
-    layout = layout_source(doc_name, alto_dir, flexiconv_dir)
+    layout = layout_source(doc_name, alto_dir, flexiconv_dir, document_json_dir)
     if save_teitok and teitok_out_path and not teitok_out_path.exists():
         write_teitok_merged(
             doc_out_conllu,

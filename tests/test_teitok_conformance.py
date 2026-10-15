@@ -16,13 +16,16 @@ comparing it with the CoNLL-U it came from:
   ``@sameAs`` lists the tokens.
 
 Lane (a) is stdlib-only and always runs. Lane (b) repeats the round trip through the
-pinned flexiconv (``requirements_flexiconv.txt``) when it is installed.
+pinned flexiconv (``requirements_flexiconv.txt``) when it is installed. Every check runs on two
+layouts of the same page: an ALTO file, and the ATRIUM record of a born-digital document with
+the same lines and boxes (issue #42).
 
 Before 2026-09 every one of these failed: each ``<tok>`` sat on its own line, so upstream
 readers saw a space after every token ("č . 1 / 2024"), and "abych" was written as two
 tokens, "aby" and "bych".
 """
 
+import json
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -149,15 +152,42 @@ def _upstream_read(path):
     return root, ids, sentences
 
 
-@pytest.fixture
-def written(tmp_path):
+#: The ALTO page as digital-convert would record it: the same lines and line boxes, in pixels.
+RECORD = {
+    "schema_version": "1.0",
+    "record_type": "atrium-document",
+    "doc_id": "CTX",
+    "source": {"filename": "CTX.pdf", "origin": "digital-born-pdf"},
+    "provenance": {"contributors": [{"program": "digital-convert", "blocks": "pages,lines"}]},
+    "pages": [
+        {"page": "1", "page_index": 1, "canvas": {"width": 2000, "height": 3000, "unit": "px"}}
+    ],
+    "lines": [
+        {"page": "1", "line": n, "text": text, "bbox": [100, y, 1500, y + 40], "lang": "cs"}
+        for n, (y, text) in enumerate(
+            [
+                (100, "Karel Novák přijel do Prahy,"),
+                (160, "abych viděl hrad."),
+                (220, "Hrad stál v roce 1998."),
+            ]
+        )
+    ],
+}
+
+
+@pytest.fixture(params=["alto", "record"])
+def written(tmp_path, request):
     conllu = tmp_path / "CTX.conllu"
     conllu.write_text(CONLLU, encoding="utf-8")
-    alto = tmp_path / "CTX.alto.xml"
-    alto.write_text(ALTO, encoding="utf-8")
+    if request.param == "alto":
+        layout = tmp_path / "CTX.alto.xml"
+        layout.write_text(ALTO, encoding="utf-8")
+    else:
+        layout = tmp_path / "CTX.document.json"
+        layout.write_text(json.dumps(RECORD), encoding="utf-8")
     out = tmp_path / "CTX.teitok.xml"
     assert write_teitok_merged(
-        str(conllu), str(out), str(alto), doc_id="CTX", model_nametag="nametag3-multilingual-onto"
+        str(conllu), str(out), str(layout), doc_id="CTX", model_nametag="nametag3-multilingual-onto"
     )
     return out
 
@@ -259,13 +289,17 @@ def test_line_break_after_a_space_keeps_the_space(written):
     assert re.search(r">,</tok>\s+<lb id=\"lb-1\.2\"", text)
 
 
-def test_header_names_the_workflow_phases(written):
+def test_header_names_the_workflow_phases(written, request):
     root = ET.parse(str(written)).getroot()
     changes = {(c.get("who"), c.get("type"), c.get("subtype")) for c in root.iter("change")}
-    assert ("altoconvert", "converted", None) in changes
+    converter, orgfile = {
+        "alto": ("altoconvert", "CTX.alto.xml"),
+        "record": ("digital-convert", "CTX.pdf"),
+    }[request.node.callspec.params["written"]]
+    assert (converter, "converted", None) in changes
     assert ("udpipe", "tagged", "parsed") in changes
     assert ("nametag", "ner", None) in changes
-    assert root.find(".//notesStmt/note[@n='orgfile']").text == "CTX.alto.xml"
+    assert root.find(".//notesStmt/note[@n='orgfile']").text == orgfile
     app = root.find(".//application[@ident='atrium-nlp-enrich']")
     assert app is not None and app.get("version") == "teitok-2"
     assert root.get("lang") == "cs"

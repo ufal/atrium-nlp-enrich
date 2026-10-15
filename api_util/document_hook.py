@@ -188,6 +188,20 @@ def _augment_tokens_with_position(tokens: List[dict]) -> None:
         prev = tok
 
 
+def _page_keys(pages: Optional[list]) -> Dict[str, str]:
+    """``{page index: page key}`` from the record's ``pages[]``: the label (``pages[].page``) of
+    the row whose ``page_index`` is that index. A page no row gives a ``page_index`` keeps its
+    index as its key, as before (an ALTO record's labels are its numbers)."""
+    keys: Dict[str, str] = {}
+    for row in pages or []:
+        if not isinstance(row, dict) or row.get("page") is None:
+            continue
+        index = row.get("page_index")
+        if isinstance(index, int) and not isinstance(index, bool):
+            keys.setdefault(str(index), str(row["page"]))
+    return keys
+
+
 def _surface_text(span_tokens: List[dict]) -> str:
     """The entity's text as the document shows it: real spacing (``SpaceAfter=No`` kept,
     e.g. "č.") and multi-word tokens as their one surface form."""
@@ -232,10 +246,10 @@ def run_document_hook(
     ``run_uuid`` (atrium-project#71) is stamped with every block and the contributor entry,
     and it is the ``@id`` of the run's CreateAction.
 
-    ``alto_path`` (ALTO or a converted TEITOK layout) gives each token its page, line and
-    bbox; ``rows`` (stage 1's rows file, ``api_util/page_rows.py``) gives page and line where
-    there is no layout -- the same pages the TEITOK writer uses (issue #38, A). With
-    neither, every token is on page "1", on one synthetic line per page.
+    ``alto_path`` (ALTO, a converted TEITOK layout or the record itself, issue #42) gives each
+    token its page, line and bbox; ``rows`` (stage 1's rows file, ``api_util/page_rows.py``)
+    gives page and line where there is no layout -- the same pages the TEITOK writer uses
+    (issue #38, A). With neither, every token is on page "1", on one synthetic line per page.
     """
     # 1. Parse tokens & bboxes (reusing the unified teitok_alto refactor). This
     # returns {"sentences": [...], ...} — NOT a flat token list — so it must be
@@ -351,6 +365,12 @@ def run_document_hook(
         if teitok_path:
             doc.add_derived_from("teitok", teitok_path)
 
+        # The tokens know their page by index, the record keys its rows by page label
+        # (`pages[].page`): a born-digital PDF's /PageLabels make them "i", "ii" (issue #42).
+        page_key = _page_keys(doc.get_block("pages"))
+        for entity in entities:
+            entity["page"] = page_key.get(entity["page"], entity["page"])
+
         # entities[] is field-split (llm-enrich writes pid; the translator's
         # translation_en is granted but reserved and unwritten, atrium-project#70) —
         # merge_block(), never set_block(), or a re-run of nlp-enrich alone erases
@@ -366,12 +386,15 @@ def run_document_hook(
         doc.assert_fields_survived("entities", entities)
 
         pages_present = sorted({t.get("_page", "1") for t in tokens})
-        # The <surface id> the writer gives each page (TEITOK-local, "facs-P"). The writer
-        # only has surfaces for ALTO pages -- a text-only document (no ALTO, e.g. /enrich)
-        # has no <facsimile>, and a teitok_surface there would point at nothing.
+        # The <surface id> the writer gives each page (TEITOK-local, "facs-P", P the index).
+        # The writer only has surfaces for layout pages (ALTO, a converted TEITOK, a record's
+        # canvases) -- a text-only document (no layout, e.g. /enrich with a table) has no
+        # <facsimile>, and a teitok_surface there would point at nothing.
         surfaces = {str(pg["idx"]) for pg in (parsed or {}).get("alto_pages", [])}
         page_updates = [
-            {"page": p, "teitok_surface": f"facs-{p}"} for p in pages_present if p in surfaces
+            {"page": page_key.get(p, p), "teitok_surface": f"facs-{p}"}
+            for p in pages_present
+            if p in surfaces
         ]
         doc.merge_block("pages", page_updates)
         # nlp-enrich owns exactly one field in pages[] — teitok_surface — so this is
@@ -389,6 +412,9 @@ def run_document_hook(
             # two blocks above do — nlp-enrich's lines[] grant is
             # ["lemma", "upos", "feats", "teitok_ref", "bbox"] and `text` is
             # alto-postprocess's, which merge_block() would drop in silence (#10 D8).
+            # And it must never write `bbox` on a digital-born record (source.origin): there
+            # `lines[].bbox` is digital-convert's, the very boxes the TEITOK layout was read
+            # from (issue #42; atrium_document.schema.json lines[].bbox).
             pass
 
         # Layer D on the way out (#10 D4). Before finalize(), inside the `with` body:

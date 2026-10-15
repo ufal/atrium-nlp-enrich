@@ -39,7 +39,11 @@ flexiconv, teitok-tools, xmltokenizer). ``appInfo`` stamps it as ``teitok-2``, a
   (``api_flexiconv.sh``, ``FLEXICONV_ANNOTATE=true``). The latter is read by
   ``api_util/teitok_layout.py`` into the same structures: its ``<pb facs>``, ``<lb bbox>``,
   ``<tok bbox>`` and text blocks take the place of ALTO pages, lines, strings and blocks, and
-  the header names flexiconv and the original document.
+  the header names flexiconv and the original document. A third source is the ATRIUM record
+  of a born-digital document (``*.document.json``, issue #42), read by
+  ``api_util/record_layout.py``: its ``pages[].canvas`` size the ``<surface>``s, its
+  ``lines[].bbox`` box the ``<lb>``s, and the token boxes are apportioned from the line boxes
+  (the header says so).
 """
 
 import bisect
@@ -123,6 +127,7 @@ def _build_page_scale_map(
     dpi=None,
     alto_dpi=None,
     bbox_origin="page",
+    layout="alto",
 ):
     """Per page: ``(sx, sy, surface_w, surface_h, dx, dy, image_ext)``.
 
@@ -137,12 +142,17 @@ def _build_page_scale_map(
     the overlay on the page image without breaking the file (issue #38, pitfalls R1/R2): an
     image folder with no ``{doc_id}-{N}.<ext>`` for a page (its boxes stay unscaled and its
     ``facs`` name is a guess), and tier 3 with a ``MeasurementUnit`` other than pixels.
+
+    A page's own ``unit`` (a record's ``pages[].canvas.unit``, issue #42) wins over
+    ``measurement_unit``; ``layout`` ("alto" or "record") words the tier-3 warning.
     """
     printspace = bbox_origin == "printspace"
     scale_map = {}
     missing_images, unreadable_images, raw_unit_pages = [], [], []
+    raw_units = set()
     for pg in alto_pages:
         idx = pg["idx"]
+        unit = pg.get("unit") or measurement_unit
         try:
             page_w = float(pg.get("width") or 0)
             page_h = float(pg.get("height") or 0)
@@ -182,18 +192,19 @@ def _build_page_scale_map(
 
         # Tier 2: User-set DPI -> math delegated to bbox_scale
         elif dpi and ref_w > 0 and ref_h > 0:
-            sx, sy = dpi_scale(measurement_unit, dpi, alto_dpi)
+            sx, sy = dpi_scale(unit, dpi, alto_dpi)
             scale_map[idx] = (sx, sy, round(ref_w * sx), round(ref_h * sy), dx, dy, img_ext)
 
         # Tier 3: Fallback
         else:
-            if (measurement_unit or "pixel").lower() != "pixel":
+            if (unit or "pixel").lower() != "pixel":
                 raw_unit_pages.append(idx)
+                raw_units.add(unit)
             scale_map[idx] = (
                 1.0,
                 1.0,
-                int(ref_w) if ref_w else None,
-                int(ref_h) if ref_h else None,
+                round(ref_w) if ref_w else None,
+                round(ref_h) if ref_h else None,
                 dx,
                 dy,
                 img_ext,
@@ -214,7 +225,14 @@ def _build_page_scale_map(
             " (PNG, JPEG and TIFF are read); those pages keep unscaled layout coordinates",
             file=sys.stderr,
         )
-    if raw_unit_pages:
+    if raw_unit_pages and layout == "record":
+        print(
+            f"  [Warn] {doc_id}: the record's page canvases are in {', '.join(sorted(raw_units))} "
+            "and there is no page image or IMAGE_DPI, so bboxes stay in those units, not image "
+            "pixels (set INPUT_PAGES_DIR, or IMAGE_DPI to the DPI the page images are rendered at)",
+            file=sys.stderr,
+        )
+    elif raw_unit_pages:
         print(
             f"  [Warn] {doc_id}: ALTO MeasurementUnit is {measurement_unit} and there is no page "
             "image or IMAGE_DPI, so bboxes stay in ALTO units, not image pixels (set "
@@ -364,6 +382,13 @@ def _parse_alto(alto_path):
 
     if not (alto_path and Path(alto_path).exists()):
         return alto_strings, alto_pages, alto_graphics, alto_blocks, alto_meta
+
+    if Path(alto_path).suffix.lower() == ".json":
+        # The ATRIUM record of a born-digital document stands in for ALTO: same result shape,
+        # its page canvases and line boxes (issue #42).
+        from api_util.record_layout import parse_record_layout
+
+        return parse_record_layout(alto_path)
 
     try:
         tree = ET.parse(alto_path)
@@ -865,6 +890,7 @@ def parse_and_align_conllu(
         dpi=dpi,
         alto_dpi=alto_dpi,
         bbox_origin=bbox_origin,
+        layout=alto_meta.get("layout_source") or "alto",
     )
 
     sentences = []
@@ -995,7 +1021,7 @@ def parse_and_align_conllu(
     _assign_ids(sentences)
 
     matched = sum(1 for b in all_bboxes if b is not None)
-    if alto_meta.get("layout_source") == "teitok":
+    if alto_meta.get("layout_source") in ("teitok", "record"):
         boxed = sum(1 for u in all_units if has_coords(u.get("_bbox")))
         print(f"  [layout] placed {matched}/{len(all_units)} tokens, {boxed} with a bbox")
     elif has_layout:
@@ -1071,7 +1097,11 @@ class _Coords:
         parts = (raw or "").split()
         if len(parts) != 4:
             return ""
-        return self.fmt(*(int(p) for p in parts))
+        try:  # ALTO boxes are integers, a record's (issue #42) are floats
+            values = [float(p) for p in parts]
+        except ValueError:
+            return ""
+        return self.fmt(*values)
 
 
 def _word_attrs(word, head_ids, with_form=False):
@@ -1138,9 +1168,11 @@ def _header_xml(
     alto_meta = parsed["alto_meta"]
     today = datetime.date.today().isoformat()
     converted = alto_meta.get("layout_source") == "teitok"
-    has_alto = bool(parsed["alto_pages"]) and not converted
-    if converted:
-        # the original document flexiconv converted; the TEITOK file only relayed it
+    # a born-digital document's ATRIUM record (issue #42): the converter read the original
+    record = alto_meta.get("layout_source") == "record"
+    has_alto = bool(parsed["alto_pages"]) and not converted and not record
+    if converted or record:
+        # the original document the converter read; the layout file only relays it
         orgfile = alto_meta.get("orgfile") or Path(alto_path).name
     elif has_alto:
         orgfile = Path(alto_path).name
@@ -1153,19 +1185,26 @@ def _header_xml(
     h.append("      <publicationStmt><p>Unpublished</p></publicationStmt>")
     h.append(f'      <notesStmt><note n="orgfile">{escape(orgfile)}</note></notesStmt>')
     source_info = alto_meta.get("source_image", "")
-    h.append(
-        f"      <sourceDesc><p>Source image: {escape(source_info)}</p></sourceDesc>"
-        if source_info
-        else "      <sourceDesc><p>Unknown source</p></sourceDesc>"
-    )
+    record_file = escape(alto_meta.get("record_file") or Path(alto_path or "").name)
+    if record:
+        h.append(
+            f"      <sourceDesc><p>Born-digital {escape(orgfile)}; page layout from the ATRIUM "
+            f"record {record_file}</p></sourceDesc>"
+        )
+    elif source_info:
+        h.append(f"      <sourceDesc><p>Source image: {escape(source_info)}</p></sourceDesc>")
+    else:
+        h.append("      <sourceDesc><p>Unknown source</p></sourceDesc>")
     h.append("    </fileDesc>")
 
     h.append("    <encodingDesc>")
     h.append("      <appInfo>")
+    # A record has line boxes only: token boxes are the line's, shared out by character offset.
+    approximate = "; token boxes apportioned from line boxes (approximate)" if record else ""
     h.append(
         f'        <application ident="atrium-nlp-enrich" version="{WRITER_FORMAT}">'
         f"<label>atrium-nlp-enrich TEITOK writer</label>"
-        f"<desc>bbox origin: {escape(parsed['bbox_origin'])}</desc></application>"
+        f"<desc>bbox origin: {escape(parsed['bbox_origin'])}{approximate}</desc></application>"
     )
     udpipe_model = conllu_meta.get("udpipe_model") or model_udpipe or ""
     generator = conllu_meta.get("generator", "")
@@ -1180,13 +1219,18 @@ def _header_xml(
             f'        <application ident="nametag"><label>NameTag NER</label>'
             f"<desc>Model: {escape(model_nametag)}</desc></application>"
         )
-    if converted and alto_meta.get("converter"):
+    if (converted or record) and alto_meta.get("converter"):
         version = alto_meta.get("converter_version")
         version_attr = f' version="{escape(version)}"' if version else ""
+        source = (
+            f"page canvases and line boxes in {record_file}"
+            if record
+            else f"text and layout from {escape(Path(alto_path).name)}"
+        )
         h.append(
             f'        <application ident="{escape(alto_meta["converter"])}"{version_attr}>'
             f"<label>{escape(alto_meta['converter'])}</label>"
-            f"<desc>text and layout from {escape(Path(alto_path).name)}</desc></application>"
+            f"<desc>{source}</desc></application>"
         )
     if alto_meta.get("ocr_software"):
         h.append(
@@ -1209,6 +1253,13 @@ def _header_xml(
         who = escape(alto_meta.get("converter") or "flexiconv")
         h.append(
             f'      <change when="{today}" who="{who}" type="converted">'
+            f"Converted from {escape(orgfile)} by {who}</change>"
+        )
+    elif record:
+        who = escape(alto_meta.get("converter") or "digital-convert")
+        when = escape(alto_meta.get("converted_on") or today)
+        h.append(
+            f'      <change when="{when}" who="{who}" type="converted">'
             f"Converted from {escape(orgfile)} by {who}</change>"
         )
     elif has_alto:

@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 3 open issues: #7 and #18 (deferred past the pilot, atrium-project#67) and #42 (TEITOK layout from a born-digital record, W5 of atrium-digital-convert#4; designed, not started); #41 closed 2026-10-13. The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `4f6ea4b` (2026-10-14) · **v1.0.1-beta** (2026-10-09, `e1b6dcf`; its GitHub release is not immutable, atrium-project#72). TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 3 open issues: #7 and #18 (deferred past the pilot, atrium-project#67) and #42 (TEITOK layout from a born-digital record, W5 of atrium-digital-convert#4; implemented 2026-10-15, not yet pushed); #41 closed 2026-10-13. The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `4f6ea4b` (2026-10-14) · **v1.0.1-beta** (2026-10-09, `e1b6dcf`; its GitHub release is not immutable, atrium-project#72). TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). The #6 saga (April→September) is condensed below; its full record moved with the issue to atrium-keyword-extract (`agent_dev_logs/digests/2.digest.md`). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -589,6 +589,39 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
   `pages[].canvas` in `pt` and `lines[].bbox`, but they are real AMČR text, and atrium-project#16 has yet to say
   whether such copies may be public. They serve as the manual end-to-end check on the cluster.
 * **Dev logs:** this header (open issues, `test`, the release); "pushed as" notes on the entries of 10-05 to 10-13.
+
+  Files delivered in chat.
+
+## 2026-10-15 (evening) — #42: TEITOK layout from a born-digital record
+* **Decisions (K4TEL):** word boxes apportioned from the line box; `pt` in `bbox_scale`; page images named as for
+  ALTO; and `/enrich` takes the record alone.
+* **`api_util/record_layout.py` (new):** the record as the writer's third layout source, after ALTO and a flexiconv
+  TEITOK. `doc_identity.layout_source()` picks it from the document-json directory when a canvas page has a boxed
+  line. The TEITOK gets:
+  * a `<surface>` per canvas page and `<pb n>` from the page label;
+  * `lines[].bbox` on `<lb>` and token boxes by character offset;
+  * `group_id` blocks, with the running header and footer as `subtype`;
+  * a header that names digital-convert and the record.
+* **Found on the way:**
+  * float boxes broke `_Coords.fmt_str()`;
+  * the header called a record ALTO;
+  * hybrid records (W3) have unboxed lines, so every line is a string;
+  * the hook keyed `entities[]`/`pages[]` by page index instead of the record's label (`i`, `ii`).
+* **Service:** `layout_source: "record"`; `file` is optional on `/enrich` and `/jobs` when `document_json` carries
+  `lines[]`. It answers in points, because `IMAGE_DPI` is a batch knob only (env contract); `/rescale` converts.
+* **Tests:**
+  * fixtures converted by digital-convert from its synthetic PDFs and DOCX;
+  * `tests/test_record_layout.py`;
+  * the conformance suite over ALTO and record;
+  * the service harness through `run_pipeline.py`'s record bridge.
+* **Checks:**
+  * fast lane 1032 passed, 10 skipped;
+  * ruff clean;
+  * the OpenAPI check is current and `compare` says compatible;
+  * hub `image_closure.py` clean.
+* **Left:** release (suggested `v1.1.0-beta`, row in `plans/42.plan.md`), re-vendoring `bbox_scale.py` into
+  digital-convert, and the cluster check with a dc#5 record.
+* **Dev logs:** the #42 pair; Stage 8 of `plans/teitok_conformance_plan.md`.
 
   Files delivered in chat.
 

@@ -92,13 +92,23 @@ def claimed_by(converted_path, table_ids) -> str:
     return ""
 
 
-def layout_source(doc_name, alto_dir=None, flexiconv_dir=None):
+def layout_source(doc_name, alto_dir=None, flexiconv_dir=None, record_dir=None):
     """The file stage 4 takes a document's page layout from, or None: the document's
     ``{alto_dir}/{doc}.alto.xml`` first, else (``FLEXICONV_ANNOTATE=true``) its converted
-    flexiconv file by ``find_converted()``. The same file then serves the writer
-    (``teitok_layout.py``) and the document hook."""
+    flexiconv file by ``find_converted()``, else its ATRIUM record
+    ``{record_dir}/{doc}.document.json`` when that has page geometry -- a born-digital PDF's
+    canvases and line boxes (``record_layout.py``, issue #42). The same file then serves the
+    writer (``teitok_layout.py``, ``record_layout.py``) and the document hook."""
     if alto_dir:
         alto = Path(alto_dir) / f"{doc_name}.alto.xml"
         if alto.exists():
             return alto
-    return find_converted(doc_name, flexiconv_dir)
+    converted = find_converted(doc_name, flexiconv_dir)
+    if converted is not None or not record_dir:
+        return converted
+    from api_util.record_layout import RECORD_SUFFIX, record_has_geometry
+
+    record = Path(record_dir) / f"{doc_name}{RECORD_SUFFIX}"
+    if record.is_file() and record_has_geometry(record):
+        return record
+    return None

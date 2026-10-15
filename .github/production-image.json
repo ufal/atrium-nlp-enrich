@@ -41,6 +41,7 @@
     "api_util/ner_types.py",
     "api_util/page_boxes.py",
     "api_util/page_rows.py",
+    "api_util/record_layout.py",
     "api_util/summarize_nt_udp.py",
     "api_util/teitok_alto.py",
     "api_util/teitok_layout.py",

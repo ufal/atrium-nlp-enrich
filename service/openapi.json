@@ -144,8 +144,7 @@
                 "$ref": "#/components/schemas/Body_enrich"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -507,8 +506,7 @@
                 "$ref": "#/components/schemas/Body_submit_job"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -2080,7 +2078,7 @@
             "type": "string",
             "contentMediaType": "application/octet-stream",
             "title": "File",
-            "description": "The text: a .csv/.xlsx table (`text`, optional `page_num`/`line_num`), a .txt (one line per row; a form feed starts a new page), or a TEITOK .xml -- e.g. flexiconv's conversion of a PDF, DOCX or PAGE XML (api_flexiconv.sh) -- whose text is annotated and whose pages, lines and boxes become the output's layout."
+            "description": "The text: a .csv/.xlsx table (`text`, optional `page_num`/`line_num`), a .txt (one line per row; a form feed starts a new page), or a TEITOK .xml -- e.g. flexiconv's conversion of a PDF, DOCX or PAGE XML (api_flexiconv.sh) -- whose text is annotated and whose pages, lines and boxes become the output's layout. Optional when `document_json` is a record whose `lines[]` carry the text (e.g. digital-convert's record of a born-digital PDF): the record is then the text and, with page canvases and line boxes, the layout."
           },
           "lang": {
             "type": "string",
@@ -2117,9 +2115,6 @@
           }
         },
         "type": "object",
-        "required": [
-          "file"
-        ],
         "title": "Body_enrich"
       },
       "Body_project_record": {
@@ -2221,7 +2216,7 @@
             "type": "string",
             "contentMediaType": "application/octet-stream",
             "title": "File",
-            "description": "The text: a .csv/.xlsx table (`text`, optional `page_num`/`line_num`), a .txt (one line per row; a form feed starts a new page), or a TEITOK .xml -- e.g. flexiconv's conversion of a PDF, DOCX or PAGE XML (api_flexiconv.sh) -- whose text is annotated and whose pages, lines and boxes become the output's layout."
+            "description": "The text: a .csv/.xlsx table (`text`, optional `page_num`/`line_num`), a .txt (one line per row; a form feed starts a new page), or a TEITOK .xml -- e.g. flexiconv's conversion of a PDF, DOCX or PAGE XML (api_flexiconv.sh) -- whose text is annotated and whose pages, lines and boxes become the output's layout. Optional when `document_json` is a record whose `lines[]` carry the text (e.g. digital-convert's record of a born-digital PDF): the record is then the text and, with page canvases and line boxes, the layout."
           },
           "lang": {
             "type": "string",
@@ -2249,9 +2244,6 @@
           }
         },
         "type": "object",
-        "required": [
-          "file"
-        ],
         "title": "Body_submit_job"
       },
       "CreateAction": {
@@ -2514,7 +2506,7 @@
           "layout_source": {
             "type": "string",
             "title": "Layout Source",
-            "description": "Where the pages and boxes came from: `alto`, `teitok` or `rows`."
+            "description": "Where the pages and boxes came from: `alto`, `teitok`, `record` (a born-digital record's page canvases and line boxes) or `rows`."
           },
           "teitok_schema_valid": {
             "anyOf": [

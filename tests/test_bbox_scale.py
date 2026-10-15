@@ -38,6 +38,12 @@ def test_dpi_scale_known_unit():
     assert dpi_scale("inch1200", 600) == (0.5, 0.5)
 
 
+def test_points_are_a_72nd_of_an_inch():
+    """A born-digital record's canvas unit (issue #42): IMAGE_DPI turns points into pixels."""
+    assert unit_per_inch("pt") == 72.0
+    assert dpi_scale("pt", 144) == (2.0, 2.0)
+
+
 def test_dpi_scale_pixel_uses_alto_dpi():
     assert dpi_scale("pixel", 300, alto_dpi=600) == (0.5, 0.5)
 

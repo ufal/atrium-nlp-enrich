@@ -51,7 +51,8 @@ SAVE_TEITOK=true
 #   are scaled to the image size (sx = image width / ALTO Page WIDTH, or / PrintSpace WIDTH
 #   under BBOX_ORIGIN=printspace).
 # IMAGE_DPI / ALTO_DPI: with no image, derive the scale from the ALTO MeasurementUnit
-#   (inch1200, mm10) or from ALTO_DPI for pixel units. Empty = no scaling.
+#   (inch1200, mm10) or from ALTO_DPI for pixel units, or from a born-digital record's canvas
+#   unit (pt, 1/72 inch; issue #42). Empty = no scaling.
 # BBOX_ORIGIN: "page" (default) keeps ALTO page coordinates; "printspace" subtracts the ALTO
 #   PrintSpace origin and declares a PrintSpace-sized <surface> — only for page images that
 #   were cropped to the print space. Written as ${BBOX_ORIGIN:-page} so it can be set for one

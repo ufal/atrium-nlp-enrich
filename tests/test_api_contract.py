@@ -352,6 +352,25 @@ def test_an_amcr_seed_keeps_its_identity_and_the_run_is_returned(pipeline_run):
     assert "doc.teitok.xml" in {e["name"] for e in action["result"]}
 
 
+def test_a_record_alone_is_the_calls_only_object(pipeline_run):
+    """issue #42: `file` is optional when `document_json` carries the text in lines[]; the
+    record is then everything the call was sent, listed once."""
+    from atrium_rocrate import action_problems
+    from tests.record_layout_data import record_path
+
+    files = {
+        "document_json": (
+            "two_column.document.json",
+            record_path("two_column").read_bytes(),
+            "application/json",
+        )
+    }
+    body = _conforms("post", "/enrich", 200, client.post("/enrich", files=files, data={}))
+    record, action = body["document_json"], body["paradata"]
+    assert action_problems(action) == []
+    assert [e["name"] for e in action["object"]] == [f"{record['doc_id']}.document.json"]
+
+
 def test_without_a_record_the_action_is_the_merged_runs(pipeline_run):
     from atrium_rocrate import action_problems
 

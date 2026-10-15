@@ -36,6 +36,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 import tool_limits  # noqa: E402
 from api_util import lindat_errors  # noqa: E402
+from api_util.record_layout import record_has_geometry  # noqa: E402
 from atrium_document import FILE_SUFFIX, load_document  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -120,9 +121,20 @@ class EnrichmentResult:
     #: which is the only way api.py can tell "not requested" from "requested and missing".
     document_json_out: Optional[Path] = None
     #: Where the TEITOK's page layout came from: "alto" (an uploaded ALTO file), "teitok"
-    #: (an uploaded, flexiconv-converted TEITOK file) or "rows" (the input's own pages and
-    #: lines, no coordinates) -- issue #38, F.
+    #: (an uploaded, flexiconv-converted TEITOK file), "record" (the document_json record's
+    #: page canvases and line boxes, issue #42) or "rows" (the input's own pages and lines,
+    #: no coordinates) -- issue #38, F.
     layout_source: str = "rows"
+
+
+def layout_kind(layout: Optional["Layout"], document_json: Optional[bytes]) -> str:
+    """The ``layout_source`` of a call, by stage 4's precedence (``doc_identity.layout_source``):
+    an uploaded layout, else the record when it has page geometry (issue #42), else the rows."""
+    if layout is not None:
+        return layout.kind
+    if document_json is not None and record_has_geometry(document_json):
+        return "record"
+    return "rows"
 
 
 @dataclass
@@ -700,7 +712,7 @@ class PipelineManager:
                 stages=self._read_stage_records(workspace / "out" / "paradata"),
                 stdout_tail=tail,
                 document_json_out=document_json_out,
-                layout_source=layout.kind if layout is not None else "rows",
+                layout_source=layout_kind(layout, document_json),
             )
 
         except Exception:
