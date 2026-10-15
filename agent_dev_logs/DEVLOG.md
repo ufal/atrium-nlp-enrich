@@ -1,6 +1,6 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines. 5 open issues (#6, #7, #10, #18, #38); #8/#9/#11/#19/#28/#35 closed. AMČR baseline (atrium-project#67, 2026-09-26): #10, #38 close · #6, #7, #18 defer; the flexiconv route stays off the AMČR production chain. `test` = `40c48f0` (2026-09-26: the `doc-schema-v1` freeze files) · **v0.22.0** (2026-09-25). TEITOK/flexi* work (#10/#38, formerly #9/#28) is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
-> _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). #6's saga (April→September) is condensed below; `digests/6.digest.md` is the authoritative 13-phase record. Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
+> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 3 open issues: #7 and #18 (deferred past the pilot, atrium-project#67) and #42 (TEITOK layout from a born-digital record, W5 of atrium-digital-convert#4; designed, not started); #41 closed 2026-10-13. The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `4f6ea4b` (2026-10-14) · **v1.0.1-beta** (2026-10-09, `e1b6dcf`; its GitHub release is not immutable, atrium-project#72). TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). The #6 saga (April→September) is condensed below; its full record moved with the issue to atrium-keyword-extract (`agent_dev_logs/digests/2.digest.md`). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
 - **#6 Extract keywords via LLM (TEATER topics)** — Opened by K4TEL: a local LLM takes the document + topic thesaurus + JSON template and returns thesaurus terms linked to the text.
@@ -490,7 +490,7 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 * atrium-digital-convert#4 W5 belongs to this repository and has no issue here yet: TEITOK from `pages[].canvas` and
   `lines[].bbox`, for records without ALTO.
 
-  Files delivered in chat.
+  Files delivered in chat; pushed as `0a84655`.
 
 ## 2026-10-07 (evening) — #18: the annotation kit's housekeeping
 * `annotation/achaeo_labels.xml` is now `archaeo_labels.xml`, the name the README tells annotators to paste. The
@@ -506,7 +506,7 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 * **Checks:** fast lane 941 passed, 9 skipped; ruff check and format clean.
 * **Dev logs:** the pairs of #7 and #18 refreshed.
 
-  Files delivered in chat.
+  Files delivered in chat; pushed as `283fed9`.
 
 ## 2026-10-08 — Digest and plan for the two new issues (#41, #42)
 * **#41** (a LINDAT timeout or outage is reported as an empty run): the chain read on `86b0277`, from the clients'
@@ -519,7 +519,7 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
   `layout_source: "record"`, `pt` in `bbox_scale`.
 * **Dev logs:** `digests/41.digest.md`, `plans/41.plan.md`, `digests/42.digest.md`, `plans/42.plan.md`.
 
-  Files delivered in chat.
+  Files delivered in chat; pushed as `e84bc82`.
 
 ## 2026-10-09 — #41: a LINDAT failure has its own code and reason; the projection reads `keywords`; v1.1.0-beta
 * **#41.** `api_util/lindat_errors.py` (new; in `.github/production-image.json`) classifies a failed request after
@@ -551,7 +551,7 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
   closure OK.
 * **Dev logs:** the pair of #41 refreshed.
 
-  Files delivered in chat.
+  Files delivered in chat; pushed as `9549bdb`; tagged as `v1.0.1-beta` (not `v1.1.0-beta`) at `e1b6dcf`.
 
 ## 2026-10-13 — Shared modules re-vendored (atrium-project#51, atrium-nlp-enrich#41)
 * `atrium_rocrate.py`, `atrium_vocab.py`, `atrium_document.schema.json`, `service/atrium_service.py`,
@@ -570,6 +570,25 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 * **#41 shipped as `v1.0.1-beta`**, not the `v1.1.0-beta` the 2026-10-09 entry names; its digest and plan say so.
 * **Checks:** the API-contract and vendored shared tests, 219 passed; `tests/test_lindat_failures.py`, 30 passed;
   ruff clean; both `script.js` parse.
+
+  Files delivered in chat; pushed as `81f4066`.
+
+## 2026-10-15 — The #42 pair consolidated
+* **No code since 10-08.** `layout_source` still knows `alto`, `teitok` and `rows`. The code references in the pair
+  are re-anchored to `4f6ea4b`:
+  * `service/enrichment.py:703`;
+  * `service/openapi.json:2514-2518`;
+  * `service/api.py:925`/`:938`;
+  * the record bridge `run_pipeline.py:342-388`;
+  * the `lines[]` grant `api_util/document_hook.py:382-392`.
+* **Two points added to the plan:**
+  * `bbox_scale.unit_per_inch` knows `inch1200` and `mm10` only, so `pt` falls through to 1.0;
+  * a `record_type` can also be `atrium-document-merged`.
+* **The test fixture stays synthetic,** from digital-convert's `tests/fixtures/digital/make_fixtures.py`
+  (`two_column_pdf()`). The records of digital-convert#5 (Dana's 15 AMČR PDFs, `data_samples/records/`) carry
+  `pages[].canvas` in `pt` and `lines[].bbox`, but they are real AMČR text, and atrium-project#16 has yet to say
+  whether such copies may be public. They serve as the manual end-to-end check on the cluster.
+* **Dev logs:** this header (open issues, `test`, the release); "pushed as" notes on the entries of 10-05 to 10-13.
 
   Files delivered in chat.
 
