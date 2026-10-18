@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 3 open issues: #7 and #18 (deferred past the pilot, atrium-project#67) and #42 (TEITOK layout from a born-digital record, W5 of atrium-digital-convert#4; implemented 2026-10-15, not yet pushed); #41 closed 2026-10-13. The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `4f6ea4b` (2026-10-14) · **v1.0.1-beta** (2026-10-09, `e1b6dcf`; its GitHub release is not immutable, atrium-project#72). TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 3 open issues: #7 and #18 (deferred past the pilot, atrium-project#67) and #42 (TEITOK layout from a born-digital record, W5 of atrium-digital-convert#4; on `test` since 2026-10-15, `v1.1.0-beta` prepared 2026-10-18); #41 closed 2026-10-13. The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `4724e99` (2026-10-16) · **v1.0.1-beta** (2026-10-09, `e1b6dcf`; its GitHub release is not immutable, atrium-project#72). TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). The #6 saga (April→September) is condensed below; its full record moved with the issue to atrium-keyword-extract (`agent_dev_logs/digests/2.digest.md`). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -622,6 +622,22 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 * **Left:** release (suggested `v1.1.0-beta`, row in `plans/42.plan.md`), re-vendoring `bbox_scale.py` into
   digital-convert, and the cluster check with a dc#5 record.
 * **Dev logs:** the #42 pair; Stage 8 of `plans/teitok_conformance_plan.md`.
+
+  Files delivered in chat.
+
+## 2026-10-18 — #42: the conformance tests on a born-digital record; v1.1.0-beta prepared
+* **`tests/test_teitok_conformance.py`:** a third arm, `two_column`: digital-convert's record of its two-column
+  fixture (two labelled pages, running header and footer), with the stand-in UDPipe and NameTag of
+  `tests/record_layout_data.py` and `model_udpipe` set. The eight checks any document passes run on all three arms
+  (`arm` fixture); the five about the synthetic page's content stay on `written`. 34 tests pass, flexiconv's
+  round trip included (0.3.10).
+* **Release `v1.1.0-beta`** (the tag waits for immutable releases, atrium-project#72): `para_config.txt`,
+  `CITATION.cff`, the spec (compare: compatible), the CONTRIBUTING row: #42, and `81f4066`'s unreleased items
+  (the shared modules of 13 October; the frontends without keyword fields).
+* **The AMČR check** is stage 20 of digital-convert#5's `issue5_extras_job.sh`: one record alone through `/enrich`,
+  then `/rescale`; counts only come back.
+* **Checks:** 1048 passed, 4 skipped; ruff clean; `check_version` OK.
+* **Dev logs:** `{42}` refreshed (pushed, re-vendored, Phase E).
 
   Files delivered in chat.
 
