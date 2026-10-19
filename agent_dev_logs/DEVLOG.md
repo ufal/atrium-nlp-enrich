@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 3 open issues: #7 and #18 (deferred past the pilot, atrium-project#67) and #42 (TEITOK layout from a born-digital record, W5 of atrium-digital-convert#4; on `test` since 2026-10-15, `v1.1.0-beta` prepared 2026-10-18); #41 closed 2026-10-13. The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `4724e99` (2026-10-16) · **v1.0.1-beta** (2026-10-09, `e1b6dcf`; its GitHub release is not immutable, atrium-project#72). TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 3 open issues: #7 and #18 (deferred past the pilot, atrium-project#67) and #42 (TEITOK layout from a born-digital record, W5 of atrium-digital-convert#4; released in `v1.1.0-beta` on 2026-10-18; the record's return fixed in `v1.1.1-beta`, 2026-10-19); #41 closed 2026-10-13. The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `75d6dfc` (2026-10-18) · **v1.1.0-beta** (2026-10-18, `9c126a5`; published mutable, and the tag name was used once before, on 10-09). Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). The #6 saga (April→September) is condensed below; its full record moved with the issue to atrium-keyword-extract (`agent_dev_logs/digests/2.digest.md`). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -640,6 +640,34 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 * **Dev logs:** `{42}` refreshed (pushed, re-vendored, Phase E).
 
   Files delivered in chat.
+
+## 2026-10-19 — #42: the AMČR check; the runner's exit code; v1.1.1-beta
+* **The AMČR check (digital-convert#5's extras job E3, 7147054):** CTX201100348's record alone through `/enrich`,
+  then `/rescale` at 300/72. The TEITOK passed:
+  - `layout_source: "record"`, valid;
+  - 90 surfaces;
+  - `<lb>` 89/89 boxed, `<tok>` 164/179 boxed, 19 names;
+  - 353 boxes rescaled ×4.166, 0 clamped.
+
+  **`document_json` came back `null`.**
+* **The cause, reproduced exactly:**
+  - The service ran from `venv-nlp` without the venv on PATH. The stage scripts' `python3` was the cluster's module Python, and stage 4's TEITOK gate stopped on a missing `lxml` (exit 5).
+  - `run_pipeline.py` ended with a bare `main()`, so it exited 0, and the service answered 200 without the record.
+  - The same bug turned every LINDAT failure into a "silent empty run" instead of #41's `upstream_unavailable` / `lindat_timeout_s`.
+* **Fix:**
+  - `sys.exit(main())`;
+  - a venv's `bin` first on the stages' PATH;
+  - a preflight for `requests`/`lxml` (exit 3, naming the interpreter and the `pip install`);
+  - the service answers exit 3 as a 500 that says what is missing.
+
+  README and service README; 8 tests.
+* **Release `v1.1.1-beta`:** `para_config.txt`, `CITATION.cff`, the spec (version only), the CONTRIBUTING row. Immutable
+  releases are on since 10-19 (atrium-project#72), so this is nlp-enrich's first immutable release; `v1.1.0-beta`
+  stays mutable.
+* **Checks:** 1056 passed, 4 skipped; ruff clean; spec current and compatible; `check_version` OK.
+* **Dev logs:** `{42}` refreshed (the check, its finding, Phase F).
+
+  Files delivered in chat; E4 (the same check on `v1.1.1-beta`) to close #42.
 
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit

@@ -1234,6 +1234,13 @@ While each stage can be launched manually (see [Workflow Stages](#workflow-stage
 [run_pipeline.py](run_pipeline.py) 📎 chains them end-to-end and merges every per-stage paradata JSON
 produced during the run into a single `pipeline-run-merged` record.
 
+The stage scripts run `python3` from `PATH`. Started from a virtual environment
+(`venv/bin/python run_pipeline.py`, no activation needed), the runner puts that environment's
+`bin` first for them. Before the first stage it checks that this `python3` can import what the
+stages need (`requests` for UDPipe and NameTag, `lxml` for the TEITOK gate). If it cannot, the
+runner stops with exit code `3`, names the interpreter and the missing package, and gives the
+`pip install` that fixes it (atrium-nlp-enrich#42).
+
 ```bash
 # Full core run: api_1 → api_2 → api_3 → api_4
 python3 run_pipeline.py
@@ -1348,7 +1355,7 @@ target is part of the image name, not the tag. `ATRIUM_RUNNER_REF` is the git re
 | `0`  | All requested stages completed; nothing flagged.                                                                                                                            |
 | `1`  | A stage processed **nothing** despite having input and no resume, and `FAIL_ON_EMPTY=true` (the default). Also: `--with-flexiconv` could not convert at least one document. |
 | `2`  | A required stage script was not found.                                                                                                                                      |
-| `3`  | A dependency preflight failed (`--with-flexiconv` without flexiconv).                                                                                                       |
+| `3`  | A dependency preflight failed: `--with-flexiconv` without flexiconv, or the stages' `python3` cannot import `requests` or `lxml` (the message names it and the fix).        |
 | `5`  | The TEITOK output failed its output contract (`api_4_stats.sh`'s gate: the XSD, unique ids, resolvable references, the page rules). A writer defect: please report it.      |
 | `6`  | LINDAT UDPipe or NameTag did not answer after `MAX_RETRIES` retries (HTTP 5xx or 429, a refused or dropped connection); the first line on stderr names the service (#41).   |
 | `7`  | Every attempt at a LINDAT call timed out (`TIMEOUT` seconds each).                                                                                                          |

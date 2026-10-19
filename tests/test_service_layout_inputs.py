@@ -406,3 +406,26 @@ def test_upload_helpers():
         (1, 2, "two"),
         (2, 1, "three"),
     ]
+
+
+def test_exit_3_says_what_the_deployment_lacks(tmp_path, monkeypatch):
+    """The runner's dependency preflight (atrium-nlp-enrich#42): a 500 that leads with its line."""
+    monkeypatch.setattr(enr, "_API_JOBS_ROOT", tmp_path)
+    line = (
+        "[ERROR] The stage scripts run `python3` from PATH (/usr/bin/python3), which cannot "
+        "import lxml. Run the pipeline with the Python that has requirements.txt installed"
+    )
+    monkeypatch.setattr(
+        enr.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(returncode=3, stdout="", stderr=line),
+    )
+    response = TestClient(app).post(
+        "/enrich",
+        files={"file": ("a.csv", b"text\nPraha\n", "text/csv")},
+        data={"kw_method": "none"},
+    )
+    assert response.status_code == 500
+    detail = response.json()["detail"]
+    assert detail.startswith("The stage scripts run `python3` from PATH (/usr/bin/python3)")
+    assert "A deployment defect, not the input (exit 3)." in detail

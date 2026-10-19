@@ -137,7 +137,74 @@ def _build_stage_env(config_path: Optional[Path] = None) -> Dict[str, str]:
     env.setdefault("ATRIUM_RUNNER_REPO", "https://github.com/ufal/atrium-nlp-enrich")
     if config_path is not None:
         env["ATRIUM_CONFIG"] = str(config_path.resolve())
+    # The stage scripts call `python3` from PATH. Run from a virtual environment that is not
+    # activated (`venv/bin/python run_pipeline.py`, or the service started as
+    # `venv/bin/python -m service.api`), that found another interpreter, without the
+    # environment's packages (atrium-nlp-enrich#42). A virtual environment's bin always has
+    # its own `python3`, so it goes first.
+    if sys.prefix != sys.base_prefix:
+        bindir = str(Path(sys.executable).parent)
+        path = env.get("PATH", "")
+        if path.split(os.pathsep)[0] != bindir:
+            env["PATH"] = bindir + os.pathsep + path if path else bindir
     return env
+
+
+#: What the stage scripts' own `python3` cannot run without: the LINDAT clients of stages 2
+#: and 3, and stage 4's TEITOK output gate (only when it writes TEITOK). Without them a stage
+#: stopped halfway, and before the exit code was passed on, the run was reported as a
+#: success with no document record (atrium-nlp-enrich#42).
+_STAGE_MODULES: Dict[str, Tuple[str, ...]] = {
+    "udp": ("requests",),
+    "nt": ("requests",),
+    "stats": ("lxml",),
+}
+
+_MISSING_MODULES_PROBE = (
+    "import importlib.util, sys; "
+    "print(' '.join(m for m in sys.argv[1:] if importlib.util.find_spec(m) is None))"
+)
+
+
+def _stage_python_problem(
+    env: Dict[str, str], stages: List[str], values: Dict[str, str]
+) -> Optional[str]:
+    """Why the ``python3`` the stage scripts will run cannot run them, or None."""
+    needed = sorted(
+        {
+            module
+            for stage in stages
+            for module in _STAGE_MODULES.get(stage, ())
+            if not (module == "lxml" and not _config_bool(values, "SAVE_TEITOK", True))
+        }
+    )
+    if not needed:
+        return None
+    python = shutil.which("python3", path=env.get("PATH"))
+    if python is None:
+        return (
+            "The stage scripts run `python3`, and there is none on PATH. Run the pipeline "
+            "with the Python that has requirements.txt installed."
+        )
+    try:
+        proc = subprocess.run(
+            [python, "-c", _MISSING_MODULES_PROBE, *needed],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"The stage scripts run `python3` from PATH ({python}), which did not start: {exc}."
+    missing = proc.stdout.split() if proc.returncode == 0 else needed
+    if not missing:
+        return None
+    return (
+        f"The stage scripts run `python3` from PATH ({python}), which cannot import "
+        f"{', '.join(missing)}. Run the pipeline with the Python that has requirements.txt "
+        f"installed (a virtual environment's bin is put first on the stages' PATH), or "
+        f"install it there: {python} -m pip install -r requirements.txt"
+    )
 
 
 def _snapshot_paradata_dir(paradata_dir: Path) -> set:
@@ -547,6 +614,15 @@ def main(argv=None):
         # config_api.txt writes it as ${FLEXICONV_ANNOTATE:-false}, so this survives `source`
         env["FLEXICONV_ANNOTATE"] = "true"
 
+    problem = _stage_python_problem(
+        env, [s["name"] for s in plan["stage_plan"] if not s["skip"]], values
+    )
+    if problem:
+        print(f"[ERROR] {problem}", file=sys.stderr, flush=True)
+        if not args.force:
+            return 3
+        print("[WARN] --force: running the stages anyway.", file=sys.stderr, flush=True)
+
     doc_json_scratch_dir: Optional[Path] = None
     doc_json_doc_id: Optional[str] = None
     if args.document_json or args.document_json_out:
@@ -715,4 +791,6 @@ def _finalize_merge(
 
 
 if __name__ == "__main__":
-    main()
+    # The exit code is the contract (README, "Exit codes"; the service maps it to HTTP). A bare
+    # main() exited 0 for every run, so a stage that failed was reported as a success.
+    sys.exit(main())

@@ -5,6 +5,9 @@ Unit tests for the pure helper functions in ``run_pipeline.py``.
 """
 
 import argparse
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import run_pipeline as rp
@@ -175,3 +178,98 @@ def test_is_empty_failure_strict():
 
     # strict=True: processed == 0 means it IS an empty failure
     assert rp._is_empty_failure(stats_all_skipped, strict=True) is True
+
+
+# ── the stages' Python and the exit code (atrium-nlp-enrich#42) ───────────────
+
+
+def _stage_python(tmp_path, missing=()):
+    """A `python3` on its own PATH that cannot import ``missing`` (it answers the probe)."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    exe = bindir / "python3"
+    # Called as `python3 -c <probe> <module>...`: print the asked modules that are missing.
+    script = (
+        "#!/bin/sh\n"
+        "shift 2\n"
+        'for m in "$@"; do\n'
+        "  case ' MISSING ' in *\" $m \"*) printf '%s ' \"$m\" ;; esac\n"
+        "done\n"
+        "echo\n"
+    )
+    exe.write_text(script.replace("MISSING", " ".join(missing)), encoding="utf-8")
+    exe.chmod(0o755)
+    return bindir
+
+
+def test_a_stage_python_without_lxml_is_named_with_the_fix(tmp_path):
+    bindir = _stage_python(tmp_path, missing=("lxml",))
+    problem = rp._stage_python_problem(
+        {"PATH": str(bindir)}, ["manifest", "udp", "nt", "stats"], {}
+    )
+    assert f"({bindir / 'python3'})" in problem
+    assert "cannot import lxml." in problem
+    assert "-m pip install -r requirements.txt" in problem
+
+
+def test_a_stage_python_with_the_packages_passes(tmp_path):
+    bindir = _stage_python(tmp_path)
+    assert rp._stage_python_problem({"PATH": str(bindir)}, ["udp", "stats"], {}) is None
+
+
+def test_lxml_is_not_asked_for_when_stage_4_writes_no_teitok(tmp_path):
+    bindir = _stage_python(tmp_path, missing=("lxml",))
+    env = {"PATH": str(bindir)}
+    assert rp._stage_python_problem(env, ["stats"], {"SAVE_TEITOK": "false"}) is None
+    assert rp._stage_python_problem(env, ["manifest"], {}) is None
+
+
+def test_no_python3_on_path_is_said(tmp_path):
+    problem = rp._stage_python_problem({"PATH": str(tmp_path)}, ["udp"], {})
+    assert "there is none on PATH" in problem
+
+
+def test_a_virtual_environment_s_bin_goes_first_on_the_stages_path(monkeypatch):
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.setattr(rp.sys, "executable", "/opt/venv/bin/python")
+    monkeypatch.setattr(rp.sys, "prefix", "/opt/venv")
+    monkeypatch.setattr(rp.sys, "base_prefix", "/usr")
+    assert rp._build_stage_env()["PATH"] == "/opt/venv/bin" + os.pathsep + "/usr/bin"
+
+    monkeypatch.setattr(rp.sys, "base_prefix", "/opt/venv")  # not a virtual environment
+    assert rp._build_stage_env()["PATH"] == "/usr/bin"
+
+
+def test_a_failed_preflight_stops_before_any_stage(tmp_path, monkeypatch, capsys):
+    from service.enrichment import _derive_config
+
+    cfg = _derive_config(tmp_path)
+    ran = []
+    monkeypatch.setattr(rp, "_run_subprocess", lambda cmd, env, cwd: ran.append(cmd) or 0)
+    monkeypatch.setattr(rp, "_stage_python_problem", lambda env, stages, values: "no lxml")
+
+    assert rp.main(["--config", str(cfg), "--stages", "stats"]) == 3
+    assert ran == []
+    assert "[ERROR] no lxml" in capsys.readouterr().err
+
+    # --force overrides exit 3 (README, "Exit codes")
+    assert rp.main(["--config", str(cfg), "--stages", "stats", "--force"]) == 0
+    assert len(ran) == 1
+
+
+def test_the_command_line_exits_with_the_runner_s_code(tmp_path):
+    """A bare main() exited 0 whatever it returned: a failed stage read as a success to the
+    service and to every script (atrium-nlp-enrich#42)."""
+    from service.enrichment import _derive_config
+
+    cfg = _derive_config(tmp_path)  # no input: --strict-empty makes the empty manifest fail
+    proc = subprocess.run(
+        [sys.executable, str(rp._REPO_ROOT / "run_pipeline.py"), "--config", str(cfg)]
+        + ["--stages", "manifest", "--strict-empty"],
+        cwd=str(rp._REPO_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "[FAIL] Stage(s) processed nothing" in proc.stderr
