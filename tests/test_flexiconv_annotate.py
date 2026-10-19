@@ -387,6 +387,8 @@ def test_runner_with_flexiconv_honours_start_from(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(rp, "_run_subprocess", lambda cmd, env, cwd: calls.append(cmd) or 0)
     monkeypatch.setattr(rp, "_space_stages", lambda last: 0.0)
+    # No stage script runs here, so the stages' Python is not under test (TEITOK lane: no requests).
+    monkeypatch.setattr(rp, "_stage_python_problem", lambda env, stages, values: None)
     argv = ["--config", str(cfg), "--with-flexiconv", "--stages", "manifest", "udp"]
     assert rp.main(argv + ["--start-from", "udp"]) == 0
     assert [Path(cmd[1]).name for cmd in calls] == ["api_2_udp.sh"]

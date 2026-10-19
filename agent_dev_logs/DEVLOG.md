@@ -690,6 +690,21 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 
   Files delivered in chat; E4 on the cluster closes #42.
 
+## 2026-10-19 (night) — CI after `v1.1.2-beta`: the TEITOK lane and the hub's matrix
+* **`v1.1.2-beta` published** on `06b4b0e` (Release and Docker green, image `:1.1.2-beta`). `v1.1.1-beta` has
+  no image: its Docker run failed at `build / test` (the 502 ≠ 500 test), so `build-and-push` never ran.
+* **TEITOK Schema Contract red** on `06b4b0e` (run 39312195378):
+  `test_runner_with_flexiconv_honours_start_from` got exit 3. The lane installs only `lxml pytest`, and the
+  stage-Python preflight of `v1.1.1-beta` probed the lane's `python3` for `requests` although the test stubs
+  every stage. The test now stubs the preflight too, as `test_run_pipeline.py` does; nothing else in the lane
+  reaches it (the other runner tests run `manifest`, which needs no module). Test-only: no release.
+* **The hub's Cross-Repo Fast-Lane Matrix red** (atrium-project run 39313795926): it tests the default branch,
+  and `master` was still `353aa59` (`v1.1.1-beta`, without the service half). Reproduced: `master` 1 failed,
+  `test` 1,057 passed. Fixed by fast-forwarding `master` to `test`, which the weekly scheduled smoke (also on
+  `master`) needs as well.
+* **Checks:** the lane's own steps in a venv with only `lxml pytest` (225 passed, 13 skipped; with flexiconv
+  90 passed); the full fast suite 1,057 passed; ruff clean.
+
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);
