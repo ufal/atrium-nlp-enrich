@@ -466,7 +466,10 @@ DOC_JSON_NOT_WRITTEN_MARKER = "[document-json] NOT WRITTEN"
 
 
 def _collect_document_json_output(
-    scratch_dir: Path, document_json_out: str, doc_id: Optional[str] = None
+    scratch_dir: Path,
+    document_json_out: str,
+    doc_id: Optional[str] = None,
+    baseline: Optional[str] = None,
 ) -> bool:
     """Copy the 'stats' stage's accreted record out to the caller's requested path.
 
@@ -481,6 +484,11 @@ def _collect_document_json_output(
     files found means the stage never reached the document-json hook (e.g. no CoNLL-U was
     produced upstream, or the hook itself raised and summarize_nt_udp.py warned and carried
     on) -- reported, not silently swallowed either way.
+
+    A record byte-identical to ``baseline`` (the caller's --document-json, which seeded the
+    scratch directory) is the seed the hook never rewrote: the hook raised and summarize_nt_udp.py
+    warned and carried on. It is not copied out either, so the caller is not handed its own
+    record back as if nlp-enrich had enriched it (atrium-nlp-enrich#42).
     """
     if doc_id:
         record = scratch_dir / f"{doc_id}.document.json"
@@ -507,6 +515,14 @@ def _collect_document_json_output(
                 "(this bridge is single-document only) — using the first",
                 file=sys.stderr,
             )
+    if baseline and Path(baseline).is_file():
+        if Path(records[0]).read_bytes() == Path(baseline).read_bytes():
+            print(
+                f"[document] the document hook did not update the record (see its "
+                f"'document-json hook failed' line above) — {document_json_out} was NOT written",
+                file=sys.stderr,
+            )
+            return False
     out_path = Path(document_json_out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(records[0], out_path)
@@ -674,7 +690,7 @@ def main(argv=None):
     doc_json_written: Optional[bool] = None
     if doc_json_scratch_dir is not None and args.document_json_out:
         doc_json_written = _collect_document_json_output(
-            doc_json_scratch_dir, args.document_json_out, doc_json_doc_id
+            doc_json_scratch_dir, args.document_json_out, doc_json_doc_id, args.document_json
         )
 
     if plan["teitok_enrichment"]:

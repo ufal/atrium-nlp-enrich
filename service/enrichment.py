@@ -105,6 +105,14 @@ def _lindat_line(tail: str) -> Optional[str]:
     return found[-1] if found else None
 
 
+def _error_line(tail: str) -> Optional[str]:
+    """The first ``[ERROR]`` line of the run's output (a preflight's reason), without the tag."""
+    for line in tail.splitlines():
+        if line.strip().startswith("[ERROR]"):
+            return line.strip()[len("[ERROR]") :].strip()
+    return None
+
+
 @dataclass
 class EnrichmentResult:
     job_id: str
@@ -678,6 +686,15 @@ class PipelineManager:
                 raise PipelineError(
                     f"Required stage script missing (exit 2).\n{tail}",
                     http_status=502,
+                    returncode=rc,
+                )
+            if rc == 3:
+                # A dependency preflight (run_pipeline.py): the stages' Python lacks a package,
+                # or flexiconv is missing. A deployment defect; its own line says what to do.
+                cause = _error_line(tail) or "A dependency of the pipeline's stages is missing."
+                raise PipelineError(
+                    f"{cause} A deployment defect, not the input (exit 3).\n{tail}",
+                    http_status=500,
                     returncode=rc,
                 )
             if rc == 5:

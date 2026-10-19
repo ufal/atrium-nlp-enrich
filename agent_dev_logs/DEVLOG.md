@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 3 open issues: #7 and #18 (deferred past the pilot, atrium-project#67) and #42 (TEITOK layout from a born-digital record, W5 of atrium-digital-convert#4; released in `v1.1.0-beta` on 2026-10-18; the record's return fixed in `v1.1.1-beta`, 2026-10-19); #41 closed 2026-10-13. The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `75d6dfc` (2026-10-18) · **v1.1.0-beta** (2026-10-18, `9c126a5`; published mutable, and the tag name was used once before, on 10-09). Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 3 open issues: #7 and #18 (deferred past the pilot, atrium-project#67) and #42 (TEITOK layout from a born-digital record, W5 of atrium-digital-convert#4; released in `v1.1.0-beta` on 2026-10-18; the record's return fixed in `v1.1.1-beta` and `v1.1.2-beta`, 2026-10-19); #41 closed 2026-10-13. The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `75d6dfc` (2026-10-18) · **v1.1.0-beta** (2026-10-18, `9c126a5`; published mutable, and the tag name was used once before, on 10-09). Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). The #6 saga (April→September) is condensed below; its full record moved with the issue to atrium-keyword-extract (`agent_dev_logs/digests/2.digest.md`). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -668,6 +668,27 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 * **Dev logs:** `{42}` refreshed (the check, its finding, Phase F).
 
   Files delivered in chat; E4 (the same check on `v1.1.1-beta`) to close #42.
+
+## 2026-10-19 (evening) — #42: v1.1.2-beta, the service half of v1.1.1-beta
+* **`v1.1.1-beta`** (immutable, `353aa59`) was pushed without `service/enrichment.py` and `service/README.md`.
+  The service answered the runner's exit 3 as a generic 502, and CI's `build / test` failed on the exit-3 test.
+  An immutable tag stays where it is, so a patch release follows.
+* **Stale record:** when the document hook raised, the runner copied the caller's own seed out as the enriched
+  record. A record identical to `--document-json` is now not written (`[document-json] NOT WRITTEN`; the
+  service returns `document_json: null`). Test added.
+* **`service/README.md` as a runbook** (atrium-project#77 A.3):
+  - Start with the image;
+  - Models and caches;
+  - "What to do" on every error row;
+  - Partial results;
+  - Known limits.
+
+  The hub's `runbook_check.py` passes.
+* **Release `v1.1.2-beta`:** `para_config.txt`, `CITATION.cff`, the spec (version only; compatible), the
+  CONTRIBUTING row.
+* **Dev logs:** `{42}` (Phase G).
+
+  Files delivered in chat; E4 on the cluster closes #42.
 
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit

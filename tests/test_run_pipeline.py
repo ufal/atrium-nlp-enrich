@@ -158,6 +158,26 @@ class TestDocumentJsonOutReporting:
         assert out_json.exists()
         assert rp.DOC_JSON_NOT_WRITTEN_MARKER not in captured.out
 
+    def test_a_seed_the_hook_never_rewrote_is_not_handed_back(self, tmp_path, monkeypatch, capsys):
+        """The hook raised (summarize_nt_udp.py warns and carries on): the scratch record is still
+        the caller's own seed. Copying it out returned the caller's record as if enriched."""
+        cfg = self._config(tmp_path)
+        baseline = tmp_path / "baseline.document.json"
+        baseline.write_text('{"schema_version": "1.0", "doc_id": "CTX000000001"}', encoding="utf-8")
+        out_json = tmp_path / "asked_for.document.json"
+        monkeypatch.setattr(rp, "_run_subprocess", lambda cmd, env, cwd: 0)
+
+        rc = rp.main(
+            ["--config", str(cfg), "--stages", "stats"]
+            + ["--document-json", str(baseline), "--document-json-out", str(out_json)]
+        )
+
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert not out_json.exists()
+        assert rp.DOC_JSON_NOT_WRITTEN_MARKER in captured.out
+        assert "the document hook did not update the record" in captured.err
+
     def test_no_marker_when_the_flag_was_never_passed(self, tmp_path, monkeypatch, capsys):
         """No promise, nothing to report — the marker must not appear for the majority of
         runs that never ask for a document record."""
