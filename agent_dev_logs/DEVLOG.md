@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 3 open issues: #7 and #18 (deferred past the pilot, atrium-project#67) and #42 (TEITOK layout from a born-digital record, W5 of atrium-digital-convert#4; released in `v1.1.0-beta` on 2026-10-18; the record's return fixed in `v1.1.1-beta` and `v1.1.2-beta`, 2026-10-19); #41 closed 2026-10-13. The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `75d6dfc` (2026-10-18) · **v1.1.0-beta** (2026-10-18, `9c126a5`; published mutable, and the tag name was used once before, on 10-09). Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-10-21). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `75d6dfc` (2026-10-18) · **v1.1.0-beta** (2026-10-18, `9c126a5`; published mutable, and the tag name was used once before, on 10-09). Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). The #6 saga (April→September) is condensed below; its full record moved with the issue to atrium-keyword-extract (`agent_dev_logs/digests/2.digest.md`). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -721,6 +721,14 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
   on a usage error, `server.sh` on `/ready`; `service/README.md` and the frontend are `test`'s.
 * **Checks:** the client against a stub answering the documented shape (LINDAT is unreachable from the sandbox);
   skill-validate steps 1–4a; drift check aligned. Delivered as `atrium-nlp-enrich-agent-skill.zip`, not pushed.
+
+## 2026-10-21 (round 3) — v1.1.3-beta prepared: the release the TEITOK consumers adopt (atrium-project#82)
+* **v1.1.3-beta prepared:** `para_config.txt`, `CITATION.cff`, `service/openapi.json` (version only); the runbook's
+  image example. It releases `477f68c` (the owner headers of `teitok_read.py` and `flexiconv_convert.py`), which
+  digital-convert and keyword-extract then name in `ADOPTED`; their adoption is prepared as separate archives, to
+  push after this release. The GitHub notes and the CONTRIBUTING row are drafted in chat.
+* `api_util/__init__` (empty, no `.py`, read by nothing) is removed from `test` and `agent-skill`.
+* **Dev logs:** #42 was closed today, #41 on 10-13; both pairs are removed.
 
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
