@@ -710,6 +710,18 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
   in `v1.1.2-beta`; E4 is the same check on that release. Closing #42 is proposed.
 * Dev logs only.
 
+## 2026-10-21 (round 2) — The owner-side headers (atrium-project#82); the skill without keywords (#77 C)
+* `api_util/teitok_read.py`, `api_util/flexiconv_convert.py`: the headers name the consumers that vendor them
+  (digital-convert, keyword-extract) instead of the archived llm-enrich. The consumers keep `ADOPTED` = `6726124`,
+  so their advisory report lists the two files as changed in the owner. **Checks:** 285 passed, 8 skipped.
+* **The agent-skill branch** still offered keywords, which left this service in 1.0.0: the client sent
+  `kw_method` and printed keyword rows that no longer come back. Now it prints the named entities of each page
+  (`DOC, PAGE, ENTITY, TYPE, COUNT`, CSV through the csv module); `SKILL.md` and the branch README describe the four
+  stages without keywords. `keywords.py` and `ker_data/` (27 MB) are removed from the branch. The 502 rule, exit 1
+  on a usage error, `server.sh` on `/ready`; `service/README.md` and the frontend are `test`'s.
+* **Checks:** the client against a stub answering the documented shape (LINDAT is unreachable from the sandbox);
+  skill-validate steps 1–4a; drift check aligned. Delivered as `atrium-nlp-enrich-agent-skill.zip`, not pushed.
+
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);
