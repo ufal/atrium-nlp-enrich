@@ -1,7 +1,5 @@
 import argparse
 import csv
-import glob
-import json
 import os
 import re
 import sys
@@ -13,8 +11,12 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+import tool_limits  # noqa: E402
+from api_util import doc_identity as _doc_identity  # noqa: E402
+from api_util import page_rows as _page_rows  # noqa: E402
 from api_util.teitok_alto import write_teitok_merged  # noqa: E402
 from atrium_document import canonical_doc_id  # noqa: E402
+from atrium_paradata import ParadataLogger  # noqa: E402
 
 # Increase CSV field size limit just in case
 csv.field_size_limit(sys.maxsize)
@@ -213,21 +215,6 @@ def bool_from_str(s, default=False):
     return s in ("1", "true", "yes", "y", "on")
 
 
-def load_config(config_path="api_config.txt"):
-    if not os.path.exists(config_path):
-        return
-    with open(config_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            if key not in os.environ:
-                os.environ[key] = value
-
-
 def sanitize_filename(name):
     return re.sub(r'[\\/*?:"<>|]', "_", name)
 
@@ -371,54 +358,53 @@ def write_document_csv(rows, out_path):
 # ── FIX #8: single-pass reader ───────────────────────────────────────────────
 
 
-def _collect_merged_rows(merged_filepath):
+def _collect_merged_rows(merged_filepath, rows=None, doc_id=""):
+    """The per-token rows of ``<doc>.csv`` and the entities of each page.
+
+    A token's ``page_id`` is the page of the line it came from, by the document's rows file
+    (``page_rows.word_pages``); an entity counts on the page of its ``B-`` token. Without a
+    rows file, only an old per-page CoNLL-U (``# sent_id = 1`` restarting) has more than one
+    page. UDPipe chunk starts (``# chunk_start``, formerly ``# page_break = true``) are never
+    pages -- they used to be, which made "pages" of ~900-word chunks (issue #38, A)."""
     all_rows = []
     entities_by_page: dict = {}
-    page_counter = 0
-    pending_page_break = False
+    word_pages = [
+        page for sent in _page_rows.word_pages(merged_filepath, rows, doc_id) for page in sent
+    ]
+    word_no = 0
+    page = 1
     current_entity_toks: list = []
     current_entity_type = None
+    current_entity_page = 1
 
-    def _flush_entity(page):
+    def _flush_entity():
         nonlocal current_entity_toks, current_entity_type
         if current_entity_toks and current_entity_type:
             text = " ".join(current_entity_toks)
-            entities_by_page.setdefault(page, []).append((text, current_entity_type))
+            entities_by_page.setdefault(current_entity_page, []).append((text, current_entity_type))
         current_entity_toks, current_entity_type = [], None
 
     try:
         with open(merged_filepath, "r", encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
-
-                if line == "# page_break = true":
-                    pending_page_break = True
-                    continue
-
-                if line.startswith("# sent_id"):
-                    parts = line.split("=", 1)
-                    if len(parts) > 1:
-                        val = parts[1].strip()
-                        if val == "1" or pending_page_break:
-                            _flush_entity(page_counter)
-                            page_counter += 1
-                            pending_page_break = False
-
                 if line.startswith("#") or not line:
                     continue
 
                 cols = line.split("\t")
                 if len(cols) < 10 or "-" in cols[0]:
                     continue
-                if page_counter == 0:
-                    page_counter = 1
+                if "." not in cols[0]:  # an empty node stays on the page of the word before it
+                    if word_no < len(word_pages):
+                        page = word_pages[word_no]
+                    word_no += 1
 
                 misc = parse_misc(cols[9])
                 feats = parse_features(cols[5])
                 ner_tag = misc.get("NER", "")
 
                 row = {
-                    "page_id": page_counter,
+                    "page_id": page,
                     "token": cols[1],
                     "lemma": cols[2],
                     "position": cols[0],
@@ -433,15 +419,16 @@ def _collect_merged_rows(merged_filepath):
                 all_rows.append(row)
 
                 if ner_tag.startswith("B-"):
-                    _flush_entity(page_counter)
+                    _flush_entity()
                     current_entity_toks = [cols[1]]
                     current_entity_type = get_ne_explanation(ner_tag)
+                    current_entity_page = page
                 elif ner_tag.startswith("I-") and current_entity_toks:
                     current_entity_toks.append(cols[1])
                 else:
-                    _flush_entity(page_counter)
+                    _flush_entity()
 
-            _flush_entity(page_counter)
+            _flush_entity()
 
     except Exception as exc:
         print(f"  [Warn] collecting merged rows from {merged_filepath}: {exc}", file=sys.stderr)
@@ -450,18 +437,26 @@ def _collect_merged_rows(merged_filepath):
     return all_rows, entities_by_page
 
 
-def process_merged_file(merged_filepath, output_csv_path):
-    rows, _ = _collect_merged_rows(merged_filepath)
-    if rows:
-        write_document_csv(rows, output_csv_path)
+def process_merged_file(merged_filepath, output_csv_path, rows=None, doc_id=""):
+    csv_rows, _ = _collect_merged_rows(merged_filepath, rows, doc_id)
+    if csv_rows:
+        write_document_csv(csv_rows, output_csv_path)
 
 
 def _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv_path):
+    """Append one summary row per page: its NE_SUMMARY_TOP_N most frequent entities.
+
+    Returns how many pages had more distinct entities than that, which the caller
+    records as a ``trimmed`` note (atrium-project#53; the TEITOK and the document record
+    carry every entity). The top N was the literal 20 before it became a setting; a CSV
+    written under another N keeps its own header, so write one file per setting.
+    """
     from collections import Counter
 
     if not summary_csv_path or not entities_by_page:
-        return
-    top_n = 20
+        return 0
+    top_n = tool_limits.NE_SUMMARY_TOP_N.get()
+    trimmed = 0
     write_header = not os.path.isfile(summary_csv_path)
     try:
         with open(summary_csv_path, "a", newline="", encoding="utf-8-sig") as fh:
@@ -472,7 +467,9 @@ def _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv_path):
                 ]
                 w.writerow(header)
             for page_num, ents in sorted(entities_by_page.items()):
-                c = Counter(ents).most_common(top_n)
+                counts = Counter(ents)
+                trimmed += len(counts) > top_n
+                c = counts.most_common(top_n)
                 row = [doc_name, page_num]
                 for (ne_text, ne_type), cnt in c:
                     row.extend([ne_text, ne_type, cnt])
@@ -482,11 +479,55 @@ def _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv_path):
                 w.writerow(row)
     except Exception as exc:
         print(f"  [Warn] writing summary CSV: {exc}", file=sys.stderr)
+    return trimmed
 
 
-def append_summary_row(doc_name, merged_conllu_path, summary_csv_path):
-    _, entities_by_page = _collect_merged_rows(merged_conllu_path)
-    _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv_path)
+def append_summary_row(doc_name, merged_conllu_path, summary_csv_path, rows=None):
+    _, entities_by_page = _collect_merged_rows(merged_conllu_path, rows, doc_name)
+    return _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv_path)
+
+
+def note_summary_trimmed(para_state, pages):
+    """Record in the stage's paradata (the ``atrium_paradata.py start`` state file) that
+    ``pages`` pages kept only their NE_SUMMARY_TOP_N most frequent entities."""
+    if not para_state or not pages:
+        return
+    import subprocess
+
+    top_n = tool_limits.NE_SUMMARY_TOP_N.get()
+    subprocess.run(
+        [
+            sys.executable,
+            str(_project_root / "atrium_paradata.py"),
+            "note-limit",
+            "--state",
+            str(para_state),
+            "--limit",
+            "ne_summary_top_n",
+            "--value",
+            str(top_n),
+            "--effect",
+            "trimmed",
+            "--count",
+            str(pages),
+            "--detail",
+            f"page(s) with more than {top_n} distinct entities kept their {top_n} most frequent "
+            "in the entity summary (the TEITOK and the document record carry every entity)",
+        ],
+        check=False,
+    )
+
+
+# ── layout source: ALTO, a flexiconv TEITOK file (FLEXICONV_ANNOTATE), or the record ──
+
+
+def layout_source(doc_name, alto_dir=None, flexiconv_dir=None, record_dir=None):
+    """The file stage 4 takes a document's page layout from, or None: its ALTO, else its
+    converted flexiconv file, else its ATRIUM record in ``record_dir`` (the document-json
+    directory) when the record has page geometry (issue #42). The rules live in
+    ``api_util/doc_identity.py`` so stage 1 (which converted files a table claims) and stage 4
+    cannot disagree (issue #38, B)."""
+    return _doc_identity.layout_source(doc_name, alto_dir, flexiconv_dir, record_dir)
 
 
 # ── per-document entry point (called from api_4_stats.sh) ────────────────────
@@ -510,8 +551,13 @@ def process_single_document(
     document_json_dir=None,
     document_run_id=None,
     document_paradata_ref="",
+    document_run_uuid=None,
     document_license_detail=None,
     include_lines=False,
+    bbox_origin="page",
+    flexiconv_dir=None,
+    text_dir=None,
+    para_state=None,
 ):
     conllu_path = Path(conllu_file)
     # canonical_doc_id(), not Path.stem (issue atrium-project#10, D3): `.conllu` is this
@@ -528,19 +574,8 @@ def process_single_document(
     if save_teitok and teitok_out_path:
         teitok_out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if save_teitok and teitok_out_path and not teitok_out_path.exists():
-        doc_in_alto = Path(alto_dir) / f"{doc_name}.alto.xml" if alto_dir else None
-        write_teitok_merged(
-            doc_out_conllu,
-            teitok_out_path,
-            doc_in_alto,
-            doc_id=doc_name,
-            model_udpipe=model_udpipe,
-            model_nametag=model_nametag,
-            image_dir=pages_dir or None,
-            dpi=dpi,
-            alto_dpi=alto_dpi,
-        )
+    # TEITOK is written below, from the NER-merged CoNLL-U -- never before the merge, when
+    # the file it reads may not exist yet (or, on a resumed run, be stale).
 
     # Merge NER tags into CoNLL-U if not already done
     merged_conllu_ready = doc_out_conllu.exists()
@@ -558,30 +593,43 @@ def process_single_document(
             print(f"  [Error] Failed to create merged CoNLL-U for {doc_name}", file=sys.stderr)
             return False
 
+    # The lines the text came from, with their pages (stage 1's rows file, frozen next to the
+    # CoNLL-U by stage 2; issue #38, A).
+    rows_path = _page_rows.find_rows(conllu_path, text_dir)
+    rows = _page_rows.read_rows(rows_path) if rows_path else None
+    if not rows:
+        print(
+            f"  [pages] {doc_name}: no rows file next to {conllu_path.name}; page numbers of "
+            f"the CSV and the summary fall back to 1 (re-run from stage 1 to get them)",
+            file=sys.stderr,
+        )
+
     need_csv = save_csv and not doc_out_csv.exists()
     need_summary = bool(summary_csv)
 
     if need_csv or need_summary:
-        rows, entities_by_page = _collect_merged_rows(doc_out_conllu)
+        csv_rows, entities_by_page = _collect_merged_rows(doc_out_conllu, rows, doc_name)
         if need_csv:
-            write_document_csv(rows, doc_out_csv)
+            write_document_csv(csv_rows, doc_out_csv)
         if need_summary:
-            _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv)
-    elif save_csv and not doc_out_csv.exists():
-        process_merged_file(doc_out_conllu, doc_out_csv)
+            trimmed = _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv)
+            note_summary_trimmed(para_state, trimmed)
 
+    layout = layout_source(doc_name, alto_dir, flexiconv_dir, document_json_dir)
     if save_teitok and teitok_out_path and not teitok_out_path.exists():
-        doc_in_alto = Path(alto_dir) / f"{doc_name}.alto.xml" if alto_dir else None
         write_teitok_merged(
             doc_out_conllu,
             teitok_out_path,
-            doc_in_alto,
+            layout,
             doc_id=doc_name,
             model_udpipe=model_udpipe,
             model_nametag=model_nametag,
             image_dir=pages_dir or None,
             dpi=dpi,
             alto_dpi=alto_dpi,
+            bbox_origin=bbox_origin,
+            rows=rows,
+            source_file=_page_rows.rows_source(rows_path) if rows_path else None,
         )
 
     if document_json_dir:
@@ -592,8 +640,6 @@ def process_single_document(
         if not os.path.exists(baseline_json):
             baseline_json = None  # Graceful fallback to rule 3 (own part only)
 
-        doc_in_alto = Path(alto_dir) / f"{doc_name}.alto.xml" if alto_dir else None
-
         try:
             run_document_hook(
                 doc_id=doc_name,
@@ -602,10 +648,12 @@ def process_single_document(
                 baseline_json=baseline_json,
                 out_json=out_json,
                 run_id=document_run_id,
+                run_uuid=document_run_uuid,
                 paradata_ref=document_paradata_ref,
                 license_detail=document_license_detail,
                 include_lines=include_lines,
-                alto_path=str(doc_in_alto) if doc_in_alto and doc_in_alto.exists() else None,
+                alto_path=str(layout) if layout else None,
+                rows=rows,
             )
         except Exception as exc:
             print(f"  [Warn] document-json hook failed for {doc_name}: {exc}", file=sys.stderr)
@@ -642,6 +690,9 @@ def process_pipeline(
     alto_dpi=None,
     document_json_dir=None,
     include_lines=False,
+    bbox_origin="page",
+    flexiconv_dir=None,
+    text_dir=None,
 ):
     conllu_path_obj = Path(conllu_dir)
     if not conllu_path_obj.exists():
@@ -688,6 +739,9 @@ def process_pipeline(
             alto_dpi=alto_dpi,
             document_json_dir=document_json_dir,
             include_lines=include_lines,
+            bbox_origin=bbox_origin,
+            flexiconv_dir=flexiconv_dir,
+            text_dir=text_dir,
         )
 
     print("\nPipeline Complete.")
@@ -727,10 +781,33 @@ def build_parser():
         default=os.environ.get("ALTO_DPI"),
         help="Source ALTO DPI",
     )
+    parser.add_argument(
+        "--bbox-origin",
+        choices=("page", "printspace"),
+        default=os.environ.get("BBOX_ORIGIN") or "page",
+        help="TEITOK bbox origin: page (default, the TEITOK norm: ALTO page coordinates) or "
+        "printspace (coordinates relative to the ALTO PrintSpace, for cropped page images).",
+    )
+    # api_4_stats.sh sources config_api.txt without exporting it, so the model names are
+    # passed explicitly; the environment is only the fallback for standalone runs.
+    parser.add_argument(
+        "--model-udpipe",
+        default=os.environ.get("MODEL_UDPIPE"),
+        help="UDPipe model name, recorded in the TEITOK header.",
+    )
+    parser.add_argument(
+        "--model-nametag",
+        default=os.environ.get("MODEL_NAMETAG"),
+        help="NameTag model name, recorded in the TEITOK header.",
+    )
 
     # --- Document Hook specific args ---
     parser.add_argument(
-        "--state-dir", default=None, help="Directory containing paradata state files"
+        "--para-state",
+        default=None,
+        help="The stage's paradata state file (atrium_paradata.py start): its run stamps the "
+        "document record (atrium-project#71), and limits that shaped the summary are recorded "
+        "in it (atrium-project#53).",
     )
     parser.add_argument(
         "--document-json-dir",
@@ -747,7 +824,27 @@ def build_parser():
     parser.add_argument("--tsv-dir", default=os.getenv("TSV_INPUT_DIR"))
     parser.add_argument("--out-dir", default=os.getenv("SUMMARY_OUTPUT_DIR"))
     parser.add_argument("--tt-dir", default=os.getenv("TEITOK_OUTPUT_DIR"))
-    parser.add_argument("--alto-dir", default=os.getenv("ALTO_DIR"))
+    parser.add_argument(
+        "--alto-dir",
+        default=os.getenv("INPUT_ALTO_DIR") or os.getenv("ALTO_DIR"),
+        help="Directory of <doc>.alto.xml page layouts (INPUT_ALTO_DIR).",
+    )
+    parser.add_argument(
+        "--flexiconv-dir",
+        default=(
+            os.getenv("TEITOK_FLEXICONV_DIR")
+            if bool_from_str(os.getenv("FLEXICONV_ANNOTATE"), default=False)
+            else None
+        ),
+        help="FLEXICONV_ANNOTATE: flexiconv TEITOK output (TEITOK_FLEXICONV_DIR). A document "
+        "without ALTO takes its page layout from its converted file there.",
+    )
+    parser.add_argument(
+        "--text-dir",
+        default=os.getenv("TEMP_TXT_DIR"),
+        help="Stage 1's text directory (TEMP_TXT_DIR): where a document's <doc>.rows.tsv is "
+        "looked for when there is none next to its CoNLL-U.",
+    )
     parser.add_argument(
         "--pages-dir",
         default=os.getenv("INPUT_PAGES_DIR"),
@@ -775,26 +872,28 @@ def build_parser():
 
 
 def main(argv=None):
-    load_config("api_config.env")
     args = build_parser().parse_args(argv)
 
     save_conllu = bool_from_str(args.save_conllu_ne, default=True)
     save_csv = bool_from_str(args.save_csv, default=True)
     save_teitok = bool_from_str(args.save_teitok, default=False)
 
-    # Resolve Paradata State for Document JSON Accretion
+    # The record is stamped with the stage's own run: its `atrium_paradata.py start` state,
+    # --para-state (atrium-project#71). This used to take the FIRST .state_*.json of a
+    # --state-dir (now gone), which in a shared paradata directory may be another stage's,
+    # and read keys no state file has (`_run_id`, `paradata_path`, `license_detail`): every
+    # record said run "unknown-nlp-enrich-run", with no paradata reference and no licence.
     document_run_id = "unknown-nlp-enrich-run"
+    document_run_uuid = None
     document_paradata_ref = ""
     document_license_detail = {}
 
-    if args.document_json_dir and args.state_dir:
-        state_files = glob.glob(os.path.join(args.state_dir, ".state_*.json"))
-        if state_files:
-            with open(state_files[0], "r") as sf:
-                state_dict = json.load(sf)
-                document_run_id = state_dict.get("_run_id", document_run_id)
-                document_license_detail = state_dict.get("license_detail", {})
-                document_paradata_ref = state_dict.get("paradata_path", "")
+    if args.document_json_dir and args.para_state and os.path.exists(args.para_state):
+        stage_run = ParadataLogger.from_state_file(args.para_state)
+        document_run_id = stage_run.run_id
+        document_run_uuid = stage_run.run_uuid
+        document_paradata_ref = stage_run.paradata_ref
+        document_license_detail = stage_run.get_license_block()
 
     # ── per-document mode (invoked by api_4_stats.sh with --conllu) ──
     if args.conllu:
@@ -815,13 +914,22 @@ def main(argv=None):
             teitok_out=args.tt_dir,
             pages_dir=args.pages_dir,
             summary_csv=args.summary_csv,
-            model_udpipe=os.getenv("MODEL_UDPIPE"),
-            model_nametag=os.getenv("MODEL_NAMETAG"),
+            model_udpipe=args.model_udpipe or None,
+            model_nametag=args.model_nametag or None,
+            # --dpi/--alto-dpi were parsed but never passed on in this mode, so tier-2
+            # (IMAGE_DPI) scaling silently never applied to api_4_stats.sh runs.
+            dpi=args.dpi,
+            alto_dpi=args.alto_dpi,
             document_json_dir=args.document_json_dir,
             document_run_id=document_run_id,
             document_paradata_ref=document_paradata_ref,
+            document_run_uuid=document_run_uuid,
             document_license_detail=document_license_detail,
             include_lines=args.include_lines,
+            bbox_origin=args.bbox_origin,
+            flexiconv_dir=args.flexiconv_dir or None,
+            text_dir=args.text_dir or None,
+            para_state=args.para_state,
         )
         sys.exit(0 if ok else 1)
 
@@ -834,14 +942,18 @@ def main(argv=None):
         sys.exit(1)
 
     if save_teitok:
-        if not args.alto_dir:
-            print("[Warn] --alto-dir not set; TEITOK output will have no bboxes.", file=sys.stderr)
-        elif not Path(args.alto_dir).exists():
+        if args.alto_dir and not Path(args.alto_dir).exists():
             print(
                 f"[Error] A valid --alto-dir is required when save-teitok=true ('{args.alto_dir}' not found).",
                 file=sys.stderr,
             )
             sys.exit(1)
+        if not args.alto_dir and not args.flexiconv_dir:
+            print(
+                "[Warn] neither --alto-dir nor --flexiconv-dir set; TEITOK output will have "
+                "no bboxes.",
+                file=sys.stderr,
+            )
 
         if args.tt_dir:
             Path(args.tt_dir).mkdir(parents=True, exist_ok=True)
@@ -856,13 +968,16 @@ def main(argv=None):
         save_csv=save_csv,
         save_teitok=save_teitok,
         pages_dir=args.pages_dir,
-        model_udpipe=os.getenv("MODEL_UDPIPE"),
-        model_nametag=os.getenv("MODEL_NAMETAG"),
+        model_udpipe=args.model_udpipe or None,
+        model_nametag=args.model_nametag or None,
         summary_csv=args.summary_csv,
         dpi=args.dpi,
         alto_dpi=args.alto_dpi,
         document_json_dir=args.document_json_dir,
         include_lines=args.include_lines,
+        bbox_origin=args.bbox_origin,
+        flexiconv_dir=args.flexiconv_dir or None,
+        text_dir=args.text_dir or None,
     )
 
 

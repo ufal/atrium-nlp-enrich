@@ -1,14 +1,15 @@
 ---
 name: atrium-nlp-enrich
-description: Enriches OCR/HTR text lines (CSV/XLSX/TXT or inline JSON) with Czech NLP annotations - UDPipe morphology, NameTag named entities, KeyBERT/YAKE keywords - producing TEITOK XML plus a keywords-and-entities envelope. Use this skill to linguistically enrich digitized archival documents after OCR and quality filtering, or to rescale TEITOK page coordinates to a new image size.
+description: Enriches OCR/HTR text lines (CSV/XLSX/TXT or inline JSON) with Czech NLP annotations - UDPipe morphology and NameTag named entities - producing TEITOK XML, the named entities of each page, and (with a record) the record's entities block. Use this skill to linguistically enrich digitized archival documents after OCR and quality filtering, or to rescale TEITOK page coordinates to a new image size.
 ---
 
 # ATRIUM NLP Enrichment Skill 📖
 
 This skill provides agent access to the **ATRIUM NLP Enrichment** service - a
-UDPipe + NameTag + keyword-extraction pipeline that turns plain text lines from
-digitized documents into enriched **TEITOK XML** with morphology, named
-entities, and document keywords. It follows a **server-client** design: a
+UDPipe + NameTag pipeline that turns plain text lines from digitized documents
+into enriched **TEITOK XML** with morphology and named entities. Keywords are
+not part of it since 1.0.0: they come from the atrium-keyword-extract skill. It
+follows a **server-client** design: a
 FastAPI server (in `service/`) runs the heavy pipeline, and a zero-dependency
 client script (`scripts/atrium_enrich.py`) is the only thing the agent calls
 directly.
@@ -21,17 +22,16 @@ directly.
   Python 3 standard library.
 - **Server dependencies**: Docker (recommended, compose `api` profile) or a
   Python venv provisioned by `setup_api_service.sh` (installs repo +
-  `service/requirements.txt`, prefetches the KeyBERT embedding model).
-- **First launch**: the KeyBERT sentence-transformer
-  (`paraphrase-multilingual-MiniLM-L12-v2`, ~500 MB) is downloaded into the HF
-  cache; UDPipe/NameTag run against LINDAT web services. Warmup takes minutes,
-  not seconds - do **not** treat a slow first start as failure.
+  `service/requirements.txt`).
+- **First launch**: nothing is downloaded; the image has no model. Every request
+  calls the LINDAT UDPipe and NameTag services, so the server needs outbound
+  HTTPS to them (`UDPIPE_URL`, `NAMETAG_URL`).
 - **Limits**: 5 MB per upload, 30 000 words per synchronous request, 2
   concurrent pipeline runs (HTTP 429 when busy - use `--jobs` or retry later).
 - **Readiness**: `GET /health` is liveness (stays 200 while draining); `GET /ready` is the
   orchestrator-facing readiness probe — 503 while warming up or shutting down.
 
-## Pipeline & keyword methods 📖
+## Pipeline 📖
 
 Stage plan (always runs in full; LLM enrichment is excluded from the API):
 
@@ -40,19 +40,8 @@ Stage plan (always runs in full; LLM enrichment is excluded from the API):
 | `manifest` | normalize input lines into per-document processing manifests   |
 | `udp`      | UDPipe tokenization, lemmatization, morphology (LINDAT)        |
 | `nt`       | NameTag named-entity recognition (LINDAT)                      |
-| `stats`    | keyword extraction + summary statistics + TEITOK XML assembly  |
+| `stats`    | summary statistics + TEITOK XML assembly                       |
 
-Keyword backends (`--kw-method`):
-
-| Method    | Character                                                       |
-|-----------|------------------------------------------------------------------|
-| `keybert` | best quality; embedding-based; GPU-capable (default)            |
-| `yake`    | fast CPU statistical extraction                                 |
-| `legacy`  | stdlib KER lemma-frequency baseline                             |
-| `none`    | skip keyword extraction (TEITOK + entities only)                |
-
-If the KeyBERT preflight fails at runtime the service degrades once to `yake`
-and reports `method_requested` vs `method_used` instead of failing the run.
 Input language is Czech-pinned (`lang=cs`) in v1.
 
 ## Workflows 🪄
@@ -64,7 +53,7 @@ bash scripts/server.sh          # Docker Compose api profile (or local fallback)
 bash scripts/server.sh --local  # force local uvicorn (no Docker)
 ```
 
-Idempotent: exits immediately if `GET /info` already answers; waits for
+Idempotent: exits immediately if `GET /ready` already answers 200; waits for
 first-run warmup.
 
 ### 2. Enrich
@@ -73,13 +62,13 @@ first-run warmup.
 # CSV/XLSX with a `text` column, or plain TXT lines - synchronous
 python3 scripts/atrium_enrich.py small_data_samples/CTX000000001.csv
 
-# Different keyword backend, fewer keywords, machine-readable CSV
-python3 scripts/atrium_enrich.py notes.txt --kw-method yake --num-keywords 10 --format csv
+# Plain TXT lines, the entities as machine-readable CSV
+python3 scripts/atrium_enrich.py small_data_samples/lines_sample.txt --format csv
 
 # Long-running input: async jobs API (submit → poll → result; 429-safe)
 python3 scripts/atrium_enrich.py lines.csv --jobs
 
-# Full workspace ZIP (TEITOK/, UDP_NE/, keyword CSVs, paradata/)
+# Full workspace ZIP (TEITOK/, UDP_NE/, paradata/)
 python3 scripts/atrium_enrich.py lines.csv --zip enriched.zip
 
 # Inline lines from stdin (no file needed)
@@ -109,19 +98,21 @@ passes through unchanged.
 
 ### 4. Interpret output
 
-- `table` (default): `DOC, RANK, KEYWORD, SCORE` rows plus a one-line summary
-  (`doc_id`, `pages`, `kw_method` used, entity count) on stderr.
+- `table` (default): `DOC, PAGE, ENTITY, TYPE, COUNT` rows, the most frequent
+  named entities of each page, plus a one-line summary (`doc_id`, `pages`,
+  entity count, layout source, TEITOK validity) on stderr.
 - `csv`: same rows for downstream tabular processing.
 - `json`: the full envelope - `doc_id`, `pages`, `stages`, `teitok_xml`,
-  `keywords`, `ne_summary`, `paradata`, `method_requested`/`method_used`.
+  `ne_summary`, `layout_source`, `teitok_schema_valid`, `paradata`, and
+  `document_json` when a record was sent.
 - `--zip` saves the complete pipeline workspace instead (TEITOK XML files,
-  UDPipe/NameTag outputs, keyword CSVs, paradata records).
+  UDPipe/NameTag outputs, paradata records).
 
 ## Agent Guidelines 🤖
 
-1. **Method selection**: keep the default `keybert` unless the user asks for
-   speed (`yake`) or a no-model baseline (`legacy`). Report `method_used` when
-   it differs from the requested method (automatic degradation).
+1. **Keywords are another skill's job.** For keywords, send the record this
+   skill returns (`--document-json-out-file`) to atrium-keyword-extract; its
+   `legacy` method uses the lemmas written here.
 2. Prefer `--format json` when the result feeds further processing; the
    TEITOK XML is in the envelope's `teitok_xml` field, and `--zip` materializes
    the whole workspace as files.
@@ -129,8 +120,10 @@ passes through unchanged.
    running server (Swagger UI at `/docs`).
 4. Exit code `2` (unreachable): start the server (`bash scripts/server.sh`)
    and retry once. Exit code `3` (server error): the client already retried
-   502/503/504 three times - check `GET /health?deep=true` (verifies the
-   LINDAT UDPipe/NameTag upstreams) and server logs; do not loop.
+   a 503 or 504, and a 502 that is not final (`upstream_unavailable`: LINDAT
+   did not answer), three times; a 502 with `reason: null` is final and is
+   reported at once - check `GET /health?deep=true` (verifies the LINDAT
+   UDPipe/NameTag upstreams) and server logs; do not loop.
 5. **Busy handling**: HTTP 429 means the concurrent-run limit is reached -
    switch to `--jobs` (async submit/poll) or retry later; do not hammer the
    sync endpoint.

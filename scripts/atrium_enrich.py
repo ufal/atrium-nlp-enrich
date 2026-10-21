@@ -3,15 +3,16 @@
 
 Uploads ordered text lines (CSV/XLSX/TXT file, or plain lines on stdin) to a
 running instance of the FastAPI service in `service/api.py` and returns the
-enriched result: keywords, named-entity summary, and TEITOK XML
-(local server by default, remote via --base-url or the ATRIUM_NE_URL env
-variable).
+enriched result: UDPipe morphology and NameTag named entities as TEITOK XML, and the
+named entities of each page (local server by default, remote via --base-url or the
+ATRIUM_NE_URL env variable). Keywords are not part of this service since 1.0.0: they
+come from atrium-keyword-extract.
 
 Only the Python 3 standard library is used - no pip installs required.
 
 Usage:
     python3 scripts/atrium_enrich.py lines.csv
-    python3 scripts/atrium_enrich.py notes.txt --kw-method yake --num-keywords 10
+    python3 scripts/atrium_enrich.py notes.txt --format csv
     python3 scripts/atrium_enrich.py lines.csv --jobs           # async jobs API
     python3 scripts/atrium_enrich.py lines.csv --zip out.zip    # full workspace
     python3 scripts/atrium_enrich.py - --doc-id CTX1 < lines.txt
@@ -25,6 +26,7 @@ Exit codes:
 """
 
 import argparse
+import csv
 import json
 import mimetypes
 import os
@@ -39,8 +41,10 @@ from typing import Optional
 DEFAULT_BASE_URL = os.environ.get("ATRIUM_NE_URL", "http://localhost:8000")
 INPUT_SUFFIXES = {".csv", ".txt", ".xlsx"}
 MAX_UPLOAD_MB = 5  # mirrors the server's MAX_UPLOAD_MB default
-KW_METHODS = ("keybert", "yake", "legacy", "none")
 RETRY_STATUS = {502, 503, 504}
+# A 502 is retried only with one of these reasons (atrium_service.REASON_CODES); without one,
+# `detail` names a cause that a retry does not change (atrium-nlp-enrich#41).
+RETRY_502_REASONS = {"upstream_unavailable"}
 RETRY_ATTEMPTS = 3
 RETRY_WAIT_S = 10
 JOB_POLL_INTERVAL_S = 5
@@ -78,6 +82,20 @@ def build_multipart(fields: dict, files: dict) -> tuple[bytes, str]:
     return body, content_type
 
 
+def is_retryable(status: int, body: str) -> bool:
+    """A 503/504 is. A 502 in the service's error body is retried only with a reason in
+    RETRY_502_REASONS; a 502 without that body came from a proxy in front of the service and is."""
+    if status != 502:
+        return True
+    try:
+        error = json.loads(body)
+    except ValueError:
+        return True  # not the service's answer: a proxy or gateway page
+    if not isinstance(error, dict) or "reason" not in error:
+        return True
+    return error["reason"] in RETRY_502_REASONS
+
+
 def http_raw(url: str, data: bytes = None, content_type: str = None, timeout: int = 900) -> bytes:
     """POST (or GET when data is None) and return raw bytes, with retry on 502/503/504."""
     last_error = None
@@ -90,7 +108,7 @@ def http_raw(url: str, data: bytes = None, content_type: str = None, timeout: in
                 return response.read()
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")
-            if e.code in RETRY_STATUS and attempt < RETRY_ATTEMPTS:
+            if e.code in RETRY_STATUS and attempt < RETRY_ATTEMPTS and is_retryable(e.code, detail):
                 print(
                     f"[retry {attempt}/{RETRY_ATTEMPTS}] HTTP {e.code}, waiting {RETRY_WAIT_S}s...",
                     file=sys.stderr,
@@ -139,14 +157,12 @@ def check_input(path: Path) -> None:
 def enrich_file(
     base_url: str,
     path: Path,
-    kw_method: str,
-    num_keywords: int,
     lang: str,
     fmt: str,
     document_json: Optional[Path] = None,
 ) -> dict:
     """Synchronous enrichment of one uploaded file via POST /enrich."""
-    fields = {"kw_method": kw_method, "num_keywords": num_keywords, "lang": lang, "format": fmt}
+    fields = {"lang": lang, "format": fmt}
     files = {"file": path}
     if document_json is not None:
         files["document_json"] = document_json
@@ -159,8 +175,6 @@ def enrich_file(
 def enrich_stdin(
     base_url: str,
     doc_id: str,
-    kw_method: str,
-    num_keywords: int,
     lang: str,
     document_json: Optional[Path] = None,
 ) -> dict:
@@ -169,16 +183,16 @@ def enrich_stdin(
     if not lines:
         print("No text lines on stdin.", file=sys.stderr)
         sys.exit(1)
-    payload_dict = {"doc_id": doc_id, "lines": lines, "kw_method": kw_method, "num_keywords": num_keywords, "lang": lang}
+    payload_dict = {"doc_id": doc_id, "lines": lines, "lang": lang}
     if document_json is not None:
         payload_dict["document_json"] = json.loads(document_json.read_text(encoding="utf-8"))
     payload = json.dumps(payload_dict).encode("utf-8")
     return http_json(f"{base_url}/enrich_text", data=payload, content_type="application/json")
 
 
-def enrich_via_jobs(base_url: str, path: Path, kw_method: str, num_keywords: int, lang: str) -> dict:
+def enrich_via_jobs(base_url: str, path: Path, lang: str) -> dict:
     """Asynchronous enrichment: submit to POST /jobs, poll, fetch the result."""
-    fields = {"kw_method": kw_method, "num_keywords": num_keywords, "lang": lang}
+    fields = {"lang": lang}
     body, content_type = build_multipart(fields, {"file": path})
     submitted = http_json(f"{base_url}/jobs", data=body, content_type=content_type)
     job_id = submitted.get("job_id")
@@ -214,46 +228,53 @@ def http_raw_delete(url: str) -> None:
 
 
 def result_rows(name: str, envelope: dict) -> list[tuple]:
-    """Flatten an enrichment envelope into (doc, rank, keyword, score) rows."""
+    """Flatten an enrichment envelope into (doc, page, entity, type, count) rows."""
     rows = []
-    for rank, kw in enumerate(envelope.get("keywords") or [], start=1):
-        rows.append((envelope.get("doc_id", name), rank, kw.get("keyword", ""), kw.get("score")))
+    doc = envelope.get("doc_id", name)
+    for page in envelope.get("ne_summary") or []:
+        for entity in page.get("entities") or []:
+            rows.append((doc, page.get("page") or "", entity.get("text", ""), entity.get("type") or "", entity.get("count") or ""))
     return rows
 
 
 def print_table(rows: list[tuple], as_csv: bool) -> None:
-    header = ("DOC", "RANK", "KEYWORD", "SCORE")
+    """Aligned table, or CSV through the csv module (entity texts can hold commas)."""
+    header = ("DOC", "PAGE", "ENTITY", "TYPE", "COUNT")
     if as_csv:
-        print(",".join(header))
-        for row in rows:
-            score = "" if row[3] is None else f"{row[3]:.4f}"
-            print(f"{row[0]},{row[1]},{row[2]},{score}")
-    else:
-        print(f"{header[0]:<32} {header[1]:>4} {header[2]:<32} {header[3]:>7}")
-        for row in rows:
-            score = "      -" if row[3] is None else f"{row[3]:>7.4f}"
-            print(f"{row[0]:<32} {row[1]:>4} {row[2]:<32} {score}")
+        writer = csv.writer(sys.stdout)
+        writer.writerow(header)
+        writer.writerows(rows)
+        return
+    widths = [max(len(str(value)) for value in column) for column in zip(header, *rows)]
+    for row in (header, *rows):
+        print("  ".join(str(value).ljust(width) for value, width in zip(row, widths)).rstrip())
 
 
 def summarize(envelope: dict) -> None:
+    entities = sum(len(p.get("entities") or []) for p in envelope.get("ne_summary") or [])
+    valid = envelope.get("teitok_schema_valid")
     print(
-        f"# doc_id={envelope.get('doc_id')} pages={envelope.get('pages')} "
-        f"kw_method={envelope.get('method_used')} (requested {envelope.get('method_requested')}) "
-        f"entities={sum(len(p.get('entities', [])) for p in envelope.get('ne_summary') or [])}",
+        f"# doc_id={envelope.get('doc_id')} pages={envelope.get('pages')} entities={entities} "
+        f"layout={envelope.get('layout_source')} teitok_valid={'unknown' if valid is None else valid}",
         file=sys.stderr,
     )
 
 
+class UsageParser(argparse.ArgumentParser):
+    """argparse exits 2 on a usage error; the client contract keeps 2 for "server unreachable"."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: error: {message}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = UsageParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("files", nargs="*", help="CSV/XLSX/TXT line file(s) to enrich, or '-' for stdin lines")
     parser.add_argument(
         "--base-url", default=DEFAULT_BASE_URL, help=f"API base URL (default: {DEFAULT_BASE_URL}, env: ATRIUM_NE_URL)"
     )
-    parser.add_argument(
-        "--kw-method", choices=KW_METHODS, default="keybert", help="keyword extraction backend (default: keybert)"
-    )
-    parser.add_argument("--num-keywords", type=int, default=20, help="keywords per document, 1-100 (default: 20)")
     parser.add_argument("--lang", default="cs", help="text language (default: cs; Czech-pinned in v1)")
     parser.add_argument("--doc-id", default="document", help="document id for stdin input (default: document)")
     parser.add_argument(
@@ -306,9 +327,7 @@ def main() -> None:
     document_record = None
     for name in args.files:
         if name == "-":
-            envelope = enrich_stdin(
-                base_url, args.doc_id, args.kw_method, args.num_keywords, args.lang, document_json_path
-            )
+            envelope = enrich_stdin(base_url, args.doc_id, args.lang, document_json_path)
         else:
             path = Path(name)
             if not path.is_file():
@@ -316,9 +335,9 @@ def main() -> None:
                 sys.exit(1)
             check_input(path)
             if args.jobs:
-                envelope = enrich_via_jobs(base_url, path, args.kw_method, args.num_keywords, args.lang)
+                envelope = enrich_via_jobs(base_url, path, args.lang)
             elif args.zip:
-                result = enrich_file(base_url, path, args.kw_method, args.num_keywords, args.lang, fmt="zip")
+                result = enrich_file(base_url, path, args.lang, fmt="zip")
                 Path(args.zip).write_bytes(result["_zip_bytes"])
                 print(f"Workspace ZIP saved to {args.zip}")
                 return
@@ -326,8 +345,6 @@ def main() -> None:
                 envelope = enrich_file(
                     base_url,
                     path,
-                    args.kw_method,
-                    args.num_keywords,
                     args.lang,
                     fmt="json",
                     document_json=document_json_path,
@@ -346,7 +363,7 @@ def main() -> None:
         print(json.dumps(envelopes if len(envelopes) > 1 else next(iter(envelopes.values())), indent=2))
     else:
         if not rows:
-            print("No keywords returned (kw_method=none?). Use --format json for the full envelope.", file=sys.stderr)
+            print("No named entities found. Use --format json for the TEITOK XML and the full envelope.", file=sys.stderr)
             return
         print_table(rows, as_csv=(args.format == "csv"))
 

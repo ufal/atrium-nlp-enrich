@@ -17,12 +17,12 @@ with a **Skill for coding agents** (Claude Code, Codex, Gemini/Antigravity). The
 follows a strict server-client split:
 
 - **Server** 🖥️ - the FastAPI service in [`service/`](service/) runs the
-  UDPipe + NameTag + keyword pipeline (Docker Compose `api` profile or local venv).
+  UDPipe + NameTag pipeline (Docker Compose `api` profile or local venv).
 - **Client** 🪶 - [`scripts/atrium_enrich.py`](scripts/atrium_enrich.py), a
   **zero-dependency** stdlib-only script that agents call directly (sync, async
   jobs, stdin lines, and workspace-ZIP modes).
 - **Skill contract** 📜 - [`SKILL.md`](SKILL.md) tells the agent when and how to use
-  it: pipeline stages, keyword-method selection, busy/error playbooks.
+  it: pipeline stages, inputs, busy/error playbooks.
 
 For pipeline development, batch workflows, and full project documentation, see the
 [`test`](https://github.com/ufal/atrium-nlp-enrich/tree/test) branch - this branch
@@ -51,8 +51,9 @@ python3 scripts/atrium_enrich.py small_data_samples/CTX000000001.csv   # enrich 
 ```
 
 > [!NOTE]
-> The first server start prefetches the KeyBERT embedding model (~500 MB) into
-> the HF cache - be patient. ⏳
+> The server calls the LINDAT UDPipe and NameTag services on every request, so it
+> needs outbound HTTPS to them. Keywords are a separate skill since nlp-enrich
+> 1.0.0: [atrium-keyword-extract](https://github.com/ufal/atrium-keyword-extract/tree/agent-skill).
 
 ## Skill installation 🔧
 
@@ -82,7 +83,7 @@ Clone the branch into your project and point `AGENTS.md` at it:
 
 ```
 Use the ATRIUM NLP enrichment skill from `atrium-nlp-enrich/SKILL.md` for
-enriching OCR/HTR text lines with morphology, named entities, and keywords.
+enriching OCR/HTR text lines with morphology and named entities.
 Start the server with `bash atrium-nlp-enrich/scripts/server.sh`, then run
 `python3 atrium-nlp-enrich/scripts/atrium_enrich.py [FILES...]`.
 ```
@@ -101,21 +102,21 @@ bash scripts/server.sh          # auto: Docker Compose api profile, else local u
 bash scripts/server.sh --local  # force local uvicorn via setup_api_service.sh
 ```
 
-The script is idempotent and health-waits on `/info`. Port defaults to `8000`
+The script is idempotent and waits on `/ready` (readiness). Port defaults to `8000`
 (`ATRIUM_NE_PORT` to change).
 
 ## Client usage 🪶
 
 ```bash
 python3 scripts/atrium_enrich.py lines.csv                          # sync enrichment
-python3 scripts/atrium_enrich.py notes.txt --kw-method yake         # different backend
+python3 scripts/atrium_enrich.py notes.txt --format csv             # entities as CSV
 python3 scripts/atrium_enrich.py lines.csv --jobs                   # async jobs API
 python3 scripts/atrium_enrich.py lines.csv --zip out.zip            # workspace ZIP
 python3 scripts/atrium_enrich.py - --doc-id CTX1 < lines.txt        # stdin lines
 python3 scripts/atrium_enrich.py --info                             # capabilities
 ```
 
-Output rows: `DOC, RANK, KEYWORD, SCORE` (`--format table|csv|json`). The full
+Output rows: `DOC, PAGE, ENTITY, TYPE, COUNT` (`--format table|csv|json`). The full
 envelope (TEITOK XML, entities, paradata) is available via `--format json`; the
 complete pipeline workspace via `--zip`. Semantics are documented in
 [`SKILL.md`](SKILL.md).

@@ -15,29 +15,20 @@
 <body>
     <div class="container">
         <h2>ATRIUM NLP Document Enrichment</h2>
-        <p>Upload a CSV, XLSX, or TXT file containing text lines to generate NLP-enriched TEITOK XML and keywords.</p>
+        <p>Upload a CSV, XLSX, or TXT file containing text lines, or a TEITOK XML file converted by flexiconv (e.g. from a PDF, DOCX or PAGE XML), to generate NLP-enriched TEITOK XML. A table can come with the ALTO XML of its pages, for bounding boxes. Keywords are extracted by atrium-keyword-extract.</p>
         <form id="enrichForm">
             <fieldset>
                 <div class="row">
                     <div class="column">
                         <label for="file">Document Upload</label>
-                        <input type="file" id="file" name="file" accept=".csv,.xlsx,.txt" required>
+                        <input type="file" id="file" name="file" accept=".csv,.xlsx,.txt,.xml" required>
+                    </div>
+                    <div class="column">
+                        <label for="alto">Page layout (optional ALTO XML, with a .csv/.xlsx)</label>
+                        <input type="file" id="alto" name="alto" accept=".xml">
                     </div>
                 </div>
                 <div class="row">
-                    <div class="column column-50">
-                        <label for="kw_method">Keyword Method</label>
-                        <select id="kw_method" name="kw_method">
-                            <option value="keybert" selected>KeyBERT (Best quality, GPU)</option>
-                            <option value="yake">YAKE (Fast CPU statistical)</option>
-                            <option value="legacy">Legacy (KER lemma-freq)</option>
-                            <option value="none">None (Skip extraction)</option>
-                        </select>
-                    </div>
-                    <div class="column column-25">
-                        <label for="num_keywords">Keywords</label>
-                        <input type="number" id="num_keywords" name="num_keywords" value="20" min="1" max="100">
-                    </div>
                     <div class="column">
                         <label for="format">Output Format</label>
                         <select id="format" name="format">

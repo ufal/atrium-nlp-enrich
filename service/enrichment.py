@@ -14,7 +14,9 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -32,12 +34,22 @@ _REPO_ROOT = _SERVICE_DIR.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+import tool_limits  # noqa: E402
+from api_util import lindat_errors  # noqa: E402
+from api_util.record_layout import record_has_geometry  # noqa: E402
 from atrium_document import FILE_SUFFIX, load_document  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 _CONFIG_TEMPLATE = _REPO_ROOT / "config_api.txt"
 _RUN_PIPELINE = _REPO_ROOT / "run_pipeline.py"
+#: Runs the pipeline in a process group of its own and stops the whole group at
+#: API_JOB_TIMEOUT (atrium-project#53); exits with _TIMED_OUT when it had to.
+_BOUNDED_RUN = _SERVICE_DIR / "bounded_run.py"
+_TIMED_OUT = 124
+#: Extra seconds the service waits for bounded_run.py itself, past API_JOB_TIMEOUT, before
+#: it gives up on it (its SIGTERM grace is 5 s).
+_SUPERVISOR_GRACE_S = 30
 
 _API_JOBS_ROOT = Path(os.environ.get("API_JOBS_ROOT", _REPO_ROOT / "TEMP" / "api_jobs"))
 
@@ -54,22 +66,51 @@ _RUNNER_ENV_VARS = (
     "ATRIUM_RUNNER_REF",
 )
 
-_KW_METHODS = ("keybert", "yake", "legacy", "none")
 _DOC_ID_RE = re.compile(r"[^A-Za-z0-9._-]")
 _DEFAULT_DOC_ID = "document"
 
 
+class UnsupportedUploadType(ValueError):
+    """An upload of a type the pipeline does not read (atrium-project#32 round 2).
+
+    A ``ValueError`` still, so every caller that caught the old one keeps working; the API
+    answers it with 415 ``unsupported_media_type`` and ``accepted``, where any other
+    ``ValueError`` of an upload stays a 422.
+    """
+
+    accepted = (".csv", ".xlsx", ".txt", ".xml")
+
+
 # ── exit-code → HTTP mapping ──────────────────────────────────────────────────
 class PipelineError(Exception):
-    def __init__(self, message: str, http_status: int, returncode: int) -> None:
+    """A pipeline run that failed: its HTTP status, the runner's exit code and, when one is
+    registered for the cause, the error body's ``reason`` (``upstream_unavailable``, #41)."""
+
+    def __init__(
+        self, message: str, http_status: int, returncode: int, reason: Optional[str] = None
+    ) -> None:
         super().__init__(message)
         self.http_status = http_status
         self.returncode = returncode
+        self.reason = reason
 
 
-class KeywordPreflightError(PipelineError):
-    def __init__(self, message: str, returncode: int = 3) -> None:
-        super().__init__(message, http_status=503, returncode=returncode)
+def _lindat_line(tail: str) -> Optional[str]:
+    """The last line a LINDAT client printed about why it stopped (``api_util/lindat_errors.py``)."""
+    found = [
+        line.strip()
+        for line in tail.splitlines()
+        if line.strip().startswith(lindat_errors.LINE_PREFIX)
+    ]
+    return found[-1] if found else None
+
+
+def _error_line(tail: str) -> Optional[str]:
+    """The first ``[ERROR]`` line of the run's output (a preflight's reason), without the tag."""
+    for line in tail.splitlines():
+        if line.strip().startswith("[ERROR]"):
+            return line.strip()[len("[ERROR]") :].strip()
+    return None
 
 
 @dataclass
@@ -79,8 +120,6 @@ class EnrichmentResult:
     workspace: Path
     output_dir: Path
     returncode: int
-    kw_method_requested: str
-    kw_method_used: Optional[str]
     pages: int = 0
     stages: List[Dict[str, Any]] = field(default_factory=list)
     stdout_tail: str = ""
@@ -89,6 +128,30 @@ class EnrichmentResult:
     #: "the file exists": the path being set is what says the client ASKED for a record,
     #: which is the only way api.py can tell "not requested" from "requested and missing".
     document_json_out: Optional[Path] = None
+    #: Where the TEITOK's page layout came from: "alto" (an uploaded ALTO file), "teitok"
+    #: (an uploaded, flexiconv-converted TEITOK file), "record" (the document_json record's
+    #: page canvases and line boxes, issue #42) or "rows" (the input's own pages and lines,
+    #: no coordinates) -- issue #38, F.
+    layout_source: str = "rows"
+
+
+def layout_kind(layout: Optional["Layout"], document_json: Optional[bytes]) -> str:
+    """The ``layout_source`` of a call, by stage 4's precedence (``doc_identity.layout_source``):
+    an uploaded layout, else the record when it has page geometry (issue #42), else the rows."""
+    if layout is not None:
+        return layout.kind
+    if document_json is not None and record_has_geometry(document_json):
+        return "record"
+    return "rows"
+
+
+@dataclass
+class Layout:
+    """A layout source uploaded with the text (issue #38, F): ``kind`` is "teitok" (the text
+    and layout of a converted TEITOK file) or "alto" (the layout of a table's page)."""
+
+    kind: str
+    data: bytes
 
 
 # ── input normalization helpers ───────────────────────────────────────────────
@@ -96,8 +159,12 @@ class EnrichmentResult:
 
 def sanitize_doc_id(name: str) -> str:
     stem = Path(str(name or "")).name
+    for suffix in (".teitok.xml", ".alto.xml"):
+        if stem.lower().endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
     root, ext = os.path.splitext(stem)
-    if ext.lower() in (".csv", ".xlsx", ".txt"):
+    if ext.lower() in (".csv", ".xlsx", ".txt", ".xml"):
         stem = root
     safe = _DOC_ID_RE.sub("_", stem).strip("._-")
     return safe or _DEFAULT_DOC_ID
@@ -112,10 +179,13 @@ def _coerce_int(value: Any) -> int:
 
 def _write_canonical_csvs(rows: List[Dict[str, Any]], dest_dir: Path, fallback_id: str) -> int:
     dest_dir.mkdir(parents=True, exist_ok=True)
+    # One request is one document, written as <doc_id>.csv. A row's `_source_path` used to
+    # name the file it went to; nothing in this service sets it, so it could only come
+    # from the caller -- a CSV column or an /enrich_text item -- and "../../x.csv" wrote
+    # outside the job's workspace (atrium-project#53, D9). It is ignored.
     groups = collections.defaultdict(list)
     for r in rows:
-        path = r.get("_source_path", f"{fallback_id}.csv")
-        groups[path].append(r)
+        groups[f"{fallback_id}.csv"].append(r)
 
     max_page = 0
     for path_str, group_rows in groups.items():
@@ -144,13 +214,74 @@ def _read_csv_bytes(data: bytes) -> List[Dict[str, Any]]:
 
 
 def _read_txt_bytes(data: bytes) -> List[Dict[str, Any]]:
+    """One row per non-empty line; a form feed (``\\f``, what pdftotext writes between
+    pages) starts the next page."""
     text = data.decode("utf-8-sig", errors="replace")
     rows: List[Dict[str, Any]] = []
-    for i, line in enumerate(text.splitlines(), start=1):
-        s = line.strip()
-        if s:
-            rows.append({"text": s, "page_num": 1, "line_num": i})
+    for page_num, page in enumerate(text.split("\f"), start=1):
+        for i, line in enumerate(page.splitlines(), start=1):
+            s = line.strip()
+            if s:
+                rows.append({"text": s, "page_num": page_num, "line_num": i})
     return rows
+
+
+def is_teitok_upload(filename: str, data: bytes) -> bool:
+    """A ``*.teitok.xml`` file, or any ``.xml`` whose first 4 KB contain ``<TEI``."""
+    name = (filename or "").lower()
+    if name.endswith(".teitok.xml"):
+        return True
+    return name.endswith(".xml") and b"<TEI" in data[:4096]
+
+
+def _read_teitok_bytes(data: bytes) -> List[Dict[str, Any]]:
+    """The rows of an uploaded TEITOK file (e.g. flexiconv's conversion of a PDF or DOCX),
+    as ``teitok_read`` gives them to stage 1: page = the page's ordinal, as the layout
+    reader numbers it. Rejects a file that is not well-formed or breaks TEITOK-core rules
+    (duplicate ids, dangling references), with the diagnostics."""
+    text = data.decode("utf-8-sig", errors="replace")
+    try:
+        from api_util.validate_teitok_xml import LxmlMissing, validate_xml_text
+
+        errors = validate_xml_text(text, profile="core")
+    except LxmlMissing:  # pragma: no cover - lxml ships in the service image
+        errors = []
+    if errors:
+        raise ValueError("Uploaded TEITOK is not usable: " + "; ".join(errors[:10]))
+    from api_util.teitok_read import read_teitok_rows
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "upload.teitok.xml"
+        path.write_text(text, encoding="utf-8")
+        try:
+            rows = read_teitok_rows(path)
+        except ET.ParseError as exc:
+            raise ValueError(f"Uploaded TEITOK is not well-formed XML: {exc}") from exc
+    return [
+        {
+            "text": r["text"],
+            "page_num": r.get("page_idx", r["page_num"]),
+            "line_num": r["line_num"],
+        }
+        for r in rows
+    ]
+
+
+def read_alto_upload(filename: str, data: bytes) -> Layout:
+    """An uploaded ALTO file, checked to be one. PAGE XML and hOCR take the CLI's flexiconv
+    route (``api_flexiconv.sh``): converted to TEITOK, they can be uploaded as ``file``."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError as exc:
+        raise ValueError(f"The alto part is not well-formed XML: {exc}") from exc
+    local = root.tag.split("}")[-1]
+    if local.lower() != "alto":
+        raise ValueError(
+            f"The alto part has root <{local}>, not <alto>. PAGE XML and hOCR are read "
+            "through flexiconv: convert them with api_flexiconv.sh (CLI) and upload the "
+            "*.teitok.xml as the file."
+        )
+    return Layout(kind="alto", data=data)
 
 
 def _read_xlsx_bytes(data: bytes) -> List[Dict[str, Any]]:
@@ -182,6 +313,8 @@ def _read_xlsx_bytes(data: bytes) -> List[Dict[str, Any]]:
 
 
 def normalize_upload(filename: str, data: bytes) -> List[Dict[str, Any]]:
+    if is_teitok_upload(filename, data):
+        return _read_teitok_bytes(data)
     ext = os.path.splitext(filename or "")[1].lower()
     if ext == ".csv":
         return _read_csv_bytes(data)
@@ -189,7 +322,10 @@ def normalize_upload(filename: str, data: bytes) -> List[Dict[str, Any]]:
         return _read_txt_bytes(data)
     if ext == ".xlsx":
         return _read_xlsx_bytes(data)
-    raise ValueError(f"Unsupported file type '{ext}'. Allowed: .csv, .xlsx, .txt")
+    raise UnsupportedUploadType(
+        f"Unsupported file type '{ext}'. Allowed: .csv, .xlsx, .txt, and a TEITOK .xml "
+        "(e.g. flexiconv's conversion of a PDF or DOCX)."
+    )
 
 
 def count_words(rows: List[Dict[str, Any]]) -> int:
@@ -218,6 +354,8 @@ _RELOCATED_KEYS = {
     "INPUT_ALTO_DIR",
     "INPUT_PAGES_DIR",
     "LOG_FILE",
+    "TEITOK_FLEXICONV_DIR",
+    "FLEXICONV_ANNOTATE",
 }
 
 _ASSIGN_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
@@ -240,7 +378,10 @@ _ENV_OVERRIDABLE = {
 }
 
 
-def _derive_config(workspace: Path) -> Path:
+def _derive_config(workspace: Path, layout_kind: Optional[str] = None) -> Path:
+    """The workspace's config. ``layout_kind`` ("teitok" or "alto") points stage 4 at the
+    uploaded layout under ``layout/`` (outside ``in/``, which stage 1 reads as tables);
+    otherwise no layout directory is set, whatever the template says."""
     out = workspace / "config_api.txt"
     ws = str(workspace)
 
@@ -256,9 +397,20 @@ def _derive_config(workspace: Path) -> Path:
         "TSV_INPUT_DIR": f'"{ws}/out/NE"',
         "SUMMARY_OUTPUT_DIR": f'"{ws}/out/UDP_NE"',
         "TEITOK_OUTPUT_DIR": f'"{ws}/out/TEITOK"',
-        "INPUT_ALTO_DIR": '""',
+        "INPUT_ALTO_DIR": f'"{ws}/layout/alto"' if layout_kind == "alto" else '""',
         "INPUT_PAGES_DIR": '""',
+        "TEITOK_FLEXICONV_DIR": f'"{ws}/layout/flexiconv"',
+        "FLEXICONV_ANNOTATE": '"true"' if layout_kind == "teitok" else '"false"',
+        # The request's `teitok_enrichment` alone switches the projection on (run_pipeline's
+        # --teitok-enrichment); an environment TEITOK_ENRICHMENT must not do it for every call.
+        "TEITOK_ENRICHMENT": '"false"',
     }
+    # The stage limits that are config_api.txt keys (atrium-project#53): the environment
+    # wins over the template, which wins over the code default (tool_limits.py).
+    limits = tool_limits.LIMITS
+    overrides["WORD_CHUNK_LIMIT"] = str(limits.get(tool_limits.WORD_CHUNK_LIMIT.key))
+    overrides["TIMEOUT"] = str(limits.get(tool_limits.LINDAT_TIMEOUT_S.key))
+    overrides["MAX_RETRIES"] = str(limits.get(tool_limits.LINDAT_MAX_RETRIES.key))
 
     seen: set = set()
     lines_out: List[str] = []
@@ -289,6 +441,8 @@ def _derive_config(workspace: Path) -> Path:
         "out/paradata",
         "tmp/TXT_EXTRACT",
         "tmp/CHUNKS",
+        "layout/alto",
+        "layout/flexiconv",
     ):
         (workspace / sub).mkdir(parents=True, exist_ok=True)
     return out
@@ -347,46 +501,14 @@ def _run_and_log(
     return proc.returncode, combined[-4000:]
 
 
-def _detect_kw_method_used(out_dir: Path) -> str:
-    """Return which keyword backend produced output in *out_dir*.
-
-    Checks for per-document keyword CSV files in the three possible output
-    subdirectories (KB → Y → L) and returns the name of the first that has
-    at least one result file.  Returns ``"none"`` when no keyword output is
-    found.  This is the API's window into which backend actually ran (e.g.
-    keybert requested but yake used after degradation fallback).
-    """
-    for sub, name in (
-        ("KW_PER_DOC_KB", "keybert"),
-        ("KW_PER_DOC_Y", "yake"),
-        ("KW_PER_DOC_L", "legacy"),
-    ):
-        d = out_dir / sub
-        if d.exists() and any(d.glob("*_keywords.csv")):
-            return name
-    return "none"
-
-
 class PipelineManager:
     def __init__(self) -> None:
         _API_JOBS_ROOT.mkdir(parents=True, exist_ok=True)
 
-    def warmup(self, kw_method: str = "keybert") -> None:
-        """
-        Pre-populates the HuggingFace disk cache and validates KeyBERT loads
-        so the first request degrades cleanly if needed.
-        Note: This does not warm the in-RAM model per request, as extraction
-        runs in a subprocess spawn pool.
-        """
-        if kw_method != "keybert":
-            return
-        try:
-            from keywords import DEFAULT_KEYBERT_MODEL, _get_keybert_model
-
-            _get_keybert_model(DEFAULT_KEYBERT_MODEL)
-            logger.info("KeyBERT model loaded.")
-        except Exception as exc:
-            logger.warning("KeyBERT warmup failed: %s. Will degrade gracefully.", exc)
+    def warmup(self) -> None:
+        """Nothing to load: the models are remote (UDPipe, NameTag) and every run is a
+        subprocess. Kept so the lifespan has one place to add a preload."""
+        return None
 
     def config_facts(self) -> Dict[str, Any]:
         facts = {
@@ -430,7 +552,7 @@ class PipelineManager:
 
         return facts
 
-    def dry_run(self, kw_method: str = "keybert") -> Tuple[int, str]:
+    def dry_run(self) -> Tuple[int, str]:
         """Run the pipeline in --dry-run mode — the body of the deep health check
         (service/api.py's _deep_health, issue #55). Bounded by ``timeout=`` (added in
         the same issue): this is called from a Docker HEALTHCHECK's deep probe and,
@@ -455,13 +577,16 @@ class PipelineManager:
         self,
         rows: List[Dict[str, Any]],
         doc_id: str,
-        kw_method: str = "keybert",
-        num_keywords: int = 20,
         lang: str = "cs",
         document_json: Optional[bytes] = None,
+        layout: Optional[Layout] = None,
+        timeout: Optional[float] = None,
+        teitok_enrichment: bool = False,
     ) -> EnrichmentResult:
-        if kw_method not in _KW_METHODS:
-            raise ValueError(f"Invalid kw_method '{kw_method}'. Choose from {_KW_METHODS}.")
+        """Run the pipeline on *rows*. With *timeout* (seconds, the service passes
+        API_JOB_TIMEOUT), the run and every process it started are stopped when it is up,
+        the workspace is removed, and ``LimitExceeded`` (504) is raised. *teitok_enrichment*
+        adds run_pipeline.py's opt-in ``project`` stage (atrium-project#70)."""
         doc_id = sanitize_doc_id(doc_id)
         job_id = uuid.uuid4().hex
         workspace = _API_JOBS_ROOT / job_id
@@ -473,18 +598,28 @@ class PipelineManager:
         # try/except — NOT try/finally — because on success the workspace must
         # survive until the caller reads the outputs and calls cleanup().
         try:
-            cfg = _derive_config(workspace)
+            cfg = _derive_config(workspace, layout.kind if layout else None)
             pages = _write_canonical_csvs(rows, workspace / "in", doc_id)
+            # The text always enters as the canonical table (no input bypasses stage 1); the
+            # uploaded layout sits where stage 4 looks for it. A converted TEITOK file named
+            # after the table is claimed by it (api_util/doc_identity.py), so it is the
+            # layout of that one document -- never a second document.
+            if layout is not None and layout.kind == "teitok":
+                (workspace / "layout" / "flexiconv" / f"{doc_id}.teitok.xml").write_bytes(
+                    layout.data
+                )
+            elif layout is not None and layout.kind == "alto":
+                (workspace / "layout" / "alto" / f"{doc_id}.alto.xml").write_bytes(layout.data)
 
             cmd = [sys.executable, str(_RUN_PIPELINE), "--config", str(cfg)]
-            cmd.extend(["--kw-fallback", "--strict-empty", "--lang", lang])
+            cmd.extend(["--strict-empty", "--lang", lang])
 
             # (atrium-project#10, J3) Rule 1: a service accepts and returns an optional
             # document_json part. run_pipeline.py has supported both flags since the
             # document-JSON bridge landed; this subprocess call simply never appended
             # them, so the CLI honoured the accretion contract and the deployed API
             # surface did not. Threaded only on opt-in, matching translator's and
-            # llm-enrich's services: without a baseline there is nothing to accrete onto,
+            # the other services: without a baseline there is nothing to accrete onto,
             # and emitting a bare own-part record nobody asked for would be a second,
             # undocumented output.
             document_json_out: Optional[Path] = None
@@ -503,13 +638,44 @@ class PipelineManager:
                     ]
                 )
 
-            if kw_method != "none":
-                cmd.extend(["--kw", "--kw-method", kw_method])
-                if num_keywords is not None:
-                    cmd.extend(["--num-keywords", str(num_keywords)])
+            if teitok_enrichment:
+                cmd.append("--teitok-enrichment")
 
-            rc, tail = _run_and_log(cmd, cwd=_REPO_ROOT, env=_stage_env(job_id))
+            rc, tail = self._run_bounded(cmd, job_id, timeout)
 
+            # A LINDAT service that failed is told apart from an empty run (#41): the client's own
+            # exit code travels through its stage script and run_pipeline.py unchanged, and the
+            # line it printed about the cause comes first in the error.
+            if rc == lindat_errors.EXIT_UPSTREAM:
+                cause = (
+                    _lindat_line(tail)
+                    or "LINDAT UDPipe or NameTag did not answer after the retries."
+                )
+                raise PipelineError(
+                    f"{cause}\n{tail}",
+                    http_status=502,
+                    returncode=rc,
+                    reason="upstream_unavailable",
+                )
+            if rc == lindat_errors.EXIT_UPSTREAM_TIMEOUT:
+                cause = _lindat_line(tail) or "LINDAT UDPipe or NameTag timed out on every attempt."
+                raise tool_limits.LINDAT_TIMEOUT_S.exceeded(
+                    None,
+                    # The job's effective value: the environment, else config_api.txt (_derive_config).
+                    value=tool_limits.LIMITS.get(tool_limits.LINDAT_TIMEOUT_S.key),
+                    detail=(
+                        f"{cause} Each attempt may take LINDAT_TIMEOUT_S, and LINDAT_MAX_RETRIES "
+                        "retries follow the first."
+                    ),
+                )
+            if rc == lindat_errors.EXIT_UPSTREAM_REFUSED:
+                cause = _lindat_line(tail) or "LINDAT UDPipe or NameTag refused the request."
+                raise PipelineError(
+                    f"{cause} A deployment or request defect (the model, the request), not the input: "
+                    f"please report it.\n{tail}",
+                    http_status=500,
+                    returncode=rc,
+                )
             if rc == 1:
                 raise PipelineError(
                     f"Pipeline produced no output (empty run, exit 1).\n{tail}",
@@ -523,11 +689,21 @@ class PipelineManager:
                     returncode=rc,
                 )
             if rc == 3:
-                raise KeywordPreflightError(
-                    f"Keyword preflight failed (exit 3).\n{tail}", returncode=rc
+                # A dependency preflight (run_pipeline.py): the stages' Python lacks a package,
+                # or flexiconv is missing. A deployment defect; its own line says what to do.
+                cause = _error_line(tail) or "A dependency of the pipeline's stages is missing."
+                raise PipelineError(
+                    f"{cause} A deployment defect, not the input (exit 3).\n{tail}",
+                    http_status=500,
+                    returncode=rc,
                 )
-            if rc == 4:
-                raise KeywordPreflightError("Keyword backend failed at runtime.", returncode=4)
+            if rc == 5:
+                raise PipelineError(
+                    "The TEITOK output failed its output contract (exit 5): a writer defect, "
+                    f"not a problem with the input -- please report it.\n{tail}",
+                    http_status=500,
+                    returncode=rc,
+                )
             if rc != 0:
                 raise PipelineError(
                     f"Pipeline stage failed (exit {rc}).\n{tail}", http_status=502, returncode=rc
@@ -543,26 +719,55 @@ class PipelineManager:
                     returncode=0,
                 )
 
-            kw_method_used = _detect_kw_method_used(workspace / "out")
-
             return EnrichmentResult(
                 job_id=job_id,
                 doc_id=doc_id,
                 workspace=workspace,
                 output_dir=workspace / "out",
                 returncode=rc,
-                kw_method_requested=kw_method,
-                kw_method_used=kw_method_used,
                 pages=pages,
                 stages=self._read_stage_records(workspace / "out" / "paradata"),
                 stdout_tail=tail,
                 document_json_out=document_json_out,
+                layout_source=layout_kind(layout, document_json),
             )
 
         except Exception:
             if not _KEEP_WORKSPACES:
                 shutil.rmtree(workspace, ignore_errors=True)
             raise
+
+    @staticmethod
+    def _run_bounded(cmd: List[str], job_id: str, timeout: Optional[float]) -> Tuple[int, str]:
+        """Run the pipeline command, under bounded_run.py when there is a *timeout*.
+
+        ``subprocess.run(timeout=)`` alone kills only its direct child: the stage scripts and
+        their UDPipe/NameTag/KeyBERT processes kept running after the service had answered
+        504, and the executor thread -- with the job's slot -- was released before they
+        ended, so MAX_CONCURRENT_JOBS was exceeded (atrium-project#53).
+        """
+        if not timeout:
+            return _run_and_log(cmd, cwd=_REPO_ROOT, env=_stage_env(job_id))
+        bounded = [sys.executable, str(_BOUNDED_RUN), f"{timeout:g}", "--", *cmd]
+        try:
+            rc, tail = _run_and_log(
+                bounded,
+                cwd=_REPO_ROOT,
+                env=_stage_env(job_id),
+                timeout=timeout + _SUPERVISOR_GRACE_S,
+            )
+        except subprocess.TimeoutExpired:
+            rc, tail = _TIMED_OUT, ""
+        if rc == _TIMED_OUT:
+            raise tool_limits.API_JOB_TIMEOUT.exceeded(
+                None,
+                value=timeout,
+                detail=(
+                    f"Pipeline execution timed out: over {timeout:g} s (API_JOB_TIMEOUT). The run "
+                    "and every process it started were stopped."
+                ),
+            )
+        return rc, tail
 
     @staticmethod
     def _read_stage_records(paradata_dir: Path) -> List[Dict[str, Any]]:
@@ -595,31 +800,6 @@ class PipelineManager:
         return cands[0].read_text(encoding="utf-8") if cands else None
 
     @staticmethod
-    def collect_keywords(result: EnrichmentResult) -> List[Dict[str, Any]]:
-        if result.kw_method_used is None or result.kw_method_used == "none":
-            return []
-        suffix = {"legacy": "L", "yake": "Y", "keybert": "KB"}.get(
-            result.kw_method_used, result.kw_method_used.upper()
-        )
-        kw_dir = result.output_dir / f"KW_PER_DOC_{suffix}"
-        path = kw_dir / f"{result.doc_id}_keywords.csv"
-        if not path.exists():
-            cands = list(kw_dir.glob("*_keywords.csv"))
-            if not cands:
-                return []
-            path = cands[0]
-        kws: List[Dict[str, Any]] = []
-        with open(path, "r", encoding="utf-8") as fh:
-            reader = csv.DictReader(fh)
-            for row in reader:
-                try:
-                    score = float(row.get("score", 0) or 0)
-                except (TypeError, ValueError):
-                    score = 0.0
-                kws.append({"keyword": row.get("keyword", ""), "score": score})
-        return kws
-
-    @staticmethod
     def collect_ne_summary(result: EnrichmentResult) -> List[Dict[str, Any]]:
         summary = result.output_dir / "summary_ne_counts.csv"
         if not summary.exists():
@@ -627,10 +807,15 @@ class PipelineManager:
         out: List[Dict[str, Any]] = []
         with open(summary, "r", encoding="utf-8-sig") as fh:
             reader = csv.DictReader(fh)
+            # As many entity columns as the file has: NE_SUMMARY_TOP_N (#53), 20 by default.
+            fields = set(reader.fieldnames or ())
+            top_n = 0
+            while f"ne{top_n + 1}" in fields:
+                top_n += 1
             for row in reader:
                 rec = {"file": row.get("file"), "page": row.get("page")}
                 ents = []
-                for i in range(1, 21):
+                for i in range(1, top_n + 1):
                     ne = row.get(f"ne{i}")
                     typ = row.get(f"type{i}")
                     cnt = row.get(f"cnt-{i}")

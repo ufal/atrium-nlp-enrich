@@ -5,8 +5,8 @@ document.getElementById('enrichForm').addEventListener('submit', async (e) => {
 
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
-    formData.append('kw_method', document.getElementById('kw_method').value);
-    formData.append('num_keywords', document.getElementById('num_keywords').value);
+    const altoInput = document.getElementById('alto');
+    if (altoInput && altoInput.files[0]) formData.append('alto', altoInput.files[0]);
     formData.append('format', document.getElementById('format').value);
 
     document.getElementById('loader').style.display = 'block';

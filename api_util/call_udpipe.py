@@ -2,6 +2,10 @@
 """
 call_udpipe.py  –  Send pre-chunked text files to the UDPipe 2 API,
 automatically retry on network failures, and write a single merged CoNLL-U file.
+
+Exit codes (``api_util/lindat_errors.py``, atrium-nlp-enrich#41): 0 written; 1 nothing to send or
+every chunk answered empty; 6 UDPipe did not answer after the retries; 7 every attempt timed out;
+8 UDPipe refused the request (a 4xx). For 6, 7 and 8 the first line on stderr names the cause.
 """
 
 from __future__ import annotations
@@ -23,6 +27,14 @@ except ImportError:
         "[Error] 'requests' library is required. Run: pip install requests urllib3", file=sys.stderr
     )
     sys.exit(1)
+
+from pathlib import Path  # noqa: E402
+
+_project_root = Path(__file__).resolve().parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+from api_util import lindat_errors  # noqa: E402
 
 UDPIPE_URL = "https://lindat.mff.cuni.cz/services/udpipe/api/process"
 
@@ -92,11 +104,17 @@ def process_chunk(
 
 
 def merge_conllu_chunks(chunks: list[str]) -> str:
-    """Merges multiple UDPipe CoNLL-U outputs, recalculating sent_id."""
+    """Merges multiple UDPipe CoNLL-U outputs, recalculating sent_id.
+
+    Every chunk after the first starts with ``# chunk_start = K`` (K = 2, 3, ...). A chunk is
+    ~WORD_CHUNK_LIMIT words cut at a line end (``chunk.py``), not a page: pages come from the
+    rows file stage 1 writes (``api_util/page_rows.py``). Until 2026-09 this marker was
+    ``# page_break = true`` and every stage read it as a page break (issue #38, A); readers
+    still accept the old form, as a chunk start."""
     out_lines: list[str] = []
     global_sent_offset = 0
 
-    for chunk_text in chunks:
+    for chunk_no, chunk_text in enumerate(chunks, start=1):
         lines = chunk_text.splitlines(keepends=True)
         chunk_sent_ids: list[int] = []
 
@@ -115,7 +133,7 @@ def merge_conllu_chunks(chunks: list[str]) -> str:
                 try:
                     val = int(line.split("=", 1)[1].strip())
                     if val == 1 and global_sent_offset > 0:
-                        out_lines.append("# page_break = true\n")
+                        out_lines.append(f"# chunk_start = {chunk_no}\n")
                     new_val = val + global_sent_offset
                     out_lines.append(f"# sent_id = {new_val}\n")
                 except ValueError:
@@ -155,7 +173,7 @@ def main():
 
     if not chunk_files:
         print(f"[Error] No chunk files found in {args.chunk_dir}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(lindat_errors.EXIT_EMPTY)
 
     session = get_robust_session(args.retries)
     processed_chunks = []
@@ -173,15 +191,17 @@ def main():
             if result:
                 processed_chunks.append(result)
         except requests.exceptions.RequestException as e:
+            # The cause first, as one line the service puts at the start of its error (#41).
             print(
-                f"[CRITICAL] UDPipe API failed permanently on chunk {idx + 1}. Error: {e}",
+                lindat_errors.describe("UDPipe", e, timeout=args.timeout, retries=args.retries),
                 file=sys.stderr,
             )
-            sys.exit(1)
+            print(f"[CRITICAL] UDPipe API failed permanently on chunk {idx + 1}.", file=sys.stderr)
+            sys.exit(lindat_errors.classify(e))
 
     if not processed_chunks:
         print("[Error] All UDPipe chunks returned empty.", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(lindat_errors.EXIT_EMPTY)
 
     merged_conllu = merge_conllu_chunks(processed_chunks)
 
