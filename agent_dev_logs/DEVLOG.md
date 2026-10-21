@@ -705,6 +705,11 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 * **Checks:** the lane's own steps in a venv with only `lxml pytest` (225 passed, 13 skipped; with flexiconv
   90 passed); the full fast suite 1,057 passed; ruff clean.
 
+## 2026-10-21 — #42's plan names v1.1.2-beta
+* `agent_dev_logs/plans/42.plan.md`: the done-criterion is met since `v1.1.0-beta`, and the record's return is fixed
+  in `v1.1.2-beta`; E4 is the same check on that release. Closing #42 is proposed.
+* Dev logs only.
+
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);
