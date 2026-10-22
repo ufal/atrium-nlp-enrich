@@ -730,6 +730,18 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 * `api_util/__init__` (empty, no `.py`, read by nothing) is removed from `test` and `agent-skill`.
 * **Dev logs:** #42 was closed today, #41 on 10-13; both pairs are removed.
 
+## 2026-10-22 (round 4) — `/jobs` documented as non-persistent (atrium-project#77); the lane notifier (#81); #51
+* **atrium-project#77:** motyc accepts non-persistent `/jobs` for the pilot if it is documented. `service/README.md`:
+  a Known limits line (a job lives in the accepting replica's memory; a restart, redeploy or another replica answers
+  404; resubmit, or use `/enrich`) and a 404 row in Errors. No code change: the 404's `detail` already names the
+  cause. The agent-skill client's resubmit-once on a 404 is next round's, with the branch.
+* **atrium-project#81:** `scheduled-smoke.yml` opens or updates one issue per failing lane through the hub's
+  `lane-failure-issue` action (needs the hub's new `v1`).
+* **atrium-project#51:** `atrium_vocab.py` and its two shared tests re-vendored (no theme is read from a record field).
+* **Next round:** the #79 restructuring (README 1,439 lines; inventoried in the hub's `79.plan.md`) and the daily
+  UDPipe/NameTag lane (#78).
+* **Checks:** 1,053 passed, 11 skipped; `runbook_check` OK.
+
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);
