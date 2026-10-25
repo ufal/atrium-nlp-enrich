@@ -1,9 +1,9 @@
-# 🤝 Contributing to the NLP Enrichment Pipeline of the ATRIUM project
+# Contributing to the NLP Enrichment Pipeline of the ATRIUM project
 
 Thank you for your interest in contributing!
 This document describes the development workflow, conventions, and rules for contributors.
 
-## 📦 Release History
+## Release History
 
 | Version         | Highlights                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Status      |
 |:----------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:------------|
@@ -49,7 +49,7 @@ This document describes the development workflow, conventions, and rules for con
 | **v0.1.0**      | NER + UDP from raw TXT files (Per-page txt files extracted by alto-tools as inputs, 4-step process, Initial working version)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Pre-release |
 
 
-## 🌿 Branches & Environments
+## Branches & Environments
 
 | Branch   | Environment          | Rule                                                                            |
 |----------|----------------------|---------------------------------------------------------------------------------|
@@ -63,7 +63,7 @@ master  ←  (humans only, after test stabilises)
 
 ```
 
-### 🏷️ Branch Naming
+### Branch Naming
 
 | Type             | Pattern          | Example              |
 |------------------|------------------|----------------------|
@@ -73,7 +73,7 @@ master  ←  (humans only, after test stabilises)
 
 ---
 
-## 🔁 Contributor Workflow
+## Contributor Workflow
 
 1. **Create an issue** (or find an existing one) describing the problem or feature.
 2. **Branch from `test`:**
@@ -88,7 +88,7 @@ git checkout -b feature-<name>
 
 ---
 
-## 📋 Pull Request Format
+## Pull Request Format
 
 Every PR must include:
 
@@ -108,7 +108,7 @@ maintainers' responsibility.
 
 ---
 
-## ✏️ Commit Messages
+## Commit Messages
 
 Format:
 
@@ -134,7 +134,7 @@ Allowed types:
 
 ---
 
-## 🧪 Code Conventions & Testing
+## Code Conventions & Testing
 
 ### Code Conventions
 
@@ -231,13 +231,14 @@ point of each. Everywhere else, prefer a fixture.
 
 ---
 
-## 📁 Repository Documentation Management
+## Repository Documentation Management
 
 Each documentation file has one target audience and one responsibility. Rules are not repeated — cross-references are used instead.
 
 | File                                     | Audience                | Responsibility                                                                          |
 |------------------------------------------|-------------------------|-----------------------------------------------------------------------------------------|
-| `README.md`                              | GitHub visitors         | Project overview, workflow stages, quick start                                          |
+| `README.md`                              | GitHub visitors         | What it does, inputs and outputs, quick start, limits, the documentation map            |
+| `docs/`                                  | Users, integrators      | Usage, configuration, how it works, the TEITOK/outputs/paradata/licence references      |
 | `CONTRIBUTING.md`                        | Developers              | Code conventions, branches, PRs, testing, generated artefacts                           |
 | `annotation/README.md` · `GUIDELINES.md` | Annotators              | Label Studio / Doccano setup; the annotation label scheme                               |
 | `service/README.md`                      | API consumers           | REST endpoints, environment variables, deployment                                       |
@@ -251,7 +252,7 @@ still point correctly.
 
 ---
 
-## ⚙️ Generated Artefacts
+## Generated Artefacts
 
 Some files are modified automatically by scripts or hooks:
 
@@ -282,7 +283,7 @@ a change to what it writes moves the XSD and `tests/fixtures/teitok/CTX_projecte
 
 ---
 
-## 🚩 Output Format Flags
+## Output Format Flags
 
 Pipeline output is controlled by boolean flags in `config_api.txt`. When adding a new output format,
 follow this pattern:
@@ -301,7 +302,7 @@ New flags must be documented here and in `config_api.txt`.
 
 ---
 
-## 📞 Contacts & Acknowledgements
+## Contacts & Acknowledgements
 
 For technical questions contact **lutsai.k@gmail.com**
 

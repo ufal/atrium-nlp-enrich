@@ -219,8 +219,8 @@ def _committed_sample(doc):
 
 
 def test_committed_data_samples_are_conformant():
-    """README.md advertises data_samples/TEITOK/ as the example output
-    directory. Three of those files were once not even well-formed XML
+    """README.md and docs/reference/outputs.md advertise data_samples/TEITOK/ as the example
+    output directory. Three of those files were once not even well-formed XML
     (`<name>` closed with `</n>`); this keeps them honest.
 
     The XSD covers the whole directory (format-1 documents from local runs pass it, which
@@ -279,8 +279,8 @@ def test_committed_samples_are_what_the_writer_produces_today(doc, tmp_path):
 
     committed = (REAL_SAMPLES / sample).read_text(encoding="utf-8")
     assert undated(out.read_text(encoding="utf-8")) == undated(committed), (
-        f"data_samples/TEITOK/{sample} is stale -- regenerate it (see data_samples/TEITOK "
-        "in README.md)"
+        f"data_samples/TEITOK/{sample} is stale -- regenerate it (see 'Keeping this schema "
+        "current' in schemas/teitok/README.md)"
     )
 
 

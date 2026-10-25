@@ -71,7 +71,7 @@ REGENERATE_TEITOK="${REGENERATE_TEITOK:-false}"
 INPUT_DOCS_DIR="$OUTPUT_DIR/DOCS"
 # flexiconv's TEITOK goes to its own subdirectory: it is a different TEITOK profile (no
 # UDPipe/NameTag annotation), gated with `validate_teitok_xml.py --profile core`, and
-# excluded from stage 4's output-contract gate. Point keywords.py -i / llm_config INPUT_DIR here.
+# excluded from stage 4's output-contract gate.
 TEITOK_FLEXICONV_DIR="$TEITOK_OUTPUT_DIR/flexiconv"
 # Re-convert documents whose output already exists (default: keep them, resume-safe).
 FLEXICONV_FORCE=false
@@ -98,9 +98,9 @@ FLEXICONV_FORMATS="pdf docx odt rtf html htm md txt epub tei conllu vert folia s
 # instead of always "succeeding". Set to false to allow empty stages.
 FAIL_ON_EMPTY=true
 # TEITOK_ENRICHMENT: opt-in, default false (atrium-project#70). When true, a `project` stage
-# after `keywords` writes the document record's page categories and llm-enrich categories and
-# keywords, and this run's per-document and per-page keywords, into the TEITOK headers and
-# pb/@ana (api_util/teitok_project.py). AMČR's stored TEITOK stays linguistics + layout; switch
+# after the four core stages writes the document record's page categories and the keywords
+# keyword-extract wrote into it (its controlled categories and its statistical keywords, per
+# document and per page) into the TEITOK headers and pb/@ana (api_util/teitok_project.py). AMČR's stored TEITOK stays linguistics + layout; switch
 # it on for flexiconv#1 / the LINDAT dataset. `run_pipeline.py --teitok-enrichment` sets it
 # for one run; keep the ${...:-} form so that setting survives `source`.
 TEITOK_ENRICHMENT="${TEITOK_ENRICHMENT:-false}"

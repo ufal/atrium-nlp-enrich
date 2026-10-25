@@ -807,6 +807,6 @@ def _finalize_merge(
 
 
 if __name__ == "__main__":
-    # The exit code is the contract (README, "Exit codes"; the service maps it to HTTP). A bare
+    # The exit code is the contract (docs/usage.md, "Exit codes"; the service maps it to HTTP). A bare
     # main() exited 0 for every run, so a stage that failed was reported as a success.
     sys.exit(main())

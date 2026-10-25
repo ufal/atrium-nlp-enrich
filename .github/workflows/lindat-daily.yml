@@ -1,0 +1,76 @@
+# .github/workflows/lindat-daily.yml
+# The daily check of the live LINDAT UDPipe and NameTag services (atrium-project#78).
+#
+# Every other lane mocks LINDAT. This one sends UDPipe the same short Czech sentence, and NameTag the
+# same CoNLL-U of it, 6 times each on a fresh connection and 6 times over one keep-alive session
+# (24 requests), with eval/lindat_probe.py, and fails when a reply is bad: an HTTP error or timeout,
+# UDPipe's analysis of another text (token count, stray tokens, changed lemmas), or NameTag's tags
+# without the sentence's person and place. Repeating the request is the point: one broken replica
+# behind LINDAT's balancer answers only some requests wrongly. The translator runs the same check for
+# LINDAT Translation (its lindat-daily.yml); this one runs 18 minutes later, so the two do not load
+# LINDAT at the same moment.
+#
+# A failing scheduled run opens the lane's issue, or comments on it while it is open (the hub's
+# lane-failure-issue action, atrium-project#81). The probe's summary, with the pattern per service and
+# mode and the first bad reply, is in the run's summary page.
+#
+# It installs only `requests`: the probe needs nothing else, and the lane stays a minute long.
+
+name: LINDAT daily check
+
+# Its own group, so it never queues behind or cancels the scheduled smoke test.
+concurrency:
+  group: lindat-daily-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write          # the lane's issue on a scheduled failure
+
+on:
+  schedule:
+    - cron: '41 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  lindat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install the probe's one dependency
+        run: python -m pip install requests
+
+      - name: Probe UDPipe and NameTag (24 requests)
+        shell: bash
+        run: |
+          python -m eval.lindat_probe --n 6 --pause 0.5 --max-bad 0 | tee probe.txt
+          rc=${PIPESTATUS[0]}
+          {
+            echo '### LINDAT daily check (UDPipe, NameTag)'
+            echo
+            echo '```'
+            sed -n '/── summary/,$p' probe.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      - name: Open or update the lane's issue on scheduled failure
+        if: failure() && github.event_name == 'schedule'
+        uses: ufal/atrium-project/.github/actions/lane-failure-issue@v1
+        with:
+          lane: lindat-daily
+          title: LINDAT daily check failed (UDPipe, NameTag)
+          labels: ci,upstream
+          body: >-
+            The daily check of LINDAT's UDPipe and NameTag found bad replies. The run's summary shows the
+            pattern per service and mode and the first bad reply; a broken replica behind the balancer shows
+            as an alternating pattern, a changed model as every reply failing the same check. If it persists,
+            report it to LINDAT with that summary.

@@ -29,6 +29,16 @@ DOCS = [
     "annotation/README.md",
     "service/README.md",
     "schemas/teitok/README.md",
+    "docs/usage.md",
+    "docs/configuration.md",
+    "docs/how-it-works.md",
+    "docs/development.md",
+    "docs/reference/teitok.md",
+    "docs/reference/outputs.md",
+    "docs/reference/paradata.md",
+    "docs/reference/licences.md",
+    "docs/evaluation/flexiconv-collection-check.md",
+    "docs/decisions/2026-10-01-repository-split.md",
 ]
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")

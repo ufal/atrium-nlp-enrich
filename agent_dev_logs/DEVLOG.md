@@ -742,6 +742,32 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
   UDPipe/NameTag lane (#78).
 * **Checks:** 1,053 passed, 11 skipped; `runbook_check` OK.
 
+## 2026-10-25 — The documentation on the skeleton (atrium-project#79); the daily LINDAT check (#78); the release gate (#81)
+* **Shared modules (hub re-vendor, atrium-project#13, #6, #79):** `atrium_rocrate.py` writes David Novák's
+  correct ORCID (`0000-0001-6592-6291`) as a tool creator in every crate; `atrium_document.schema.json` describes
+  `provenance.license*` as calculated from the components, not the output's licence (descriptions only, no
+  `POST_FREEZE_CHANGES` entry); an `atrium_vocab.py` comment names page-classification's new categories page.
+  `service/openapi.json` regenerated: description-only, and the `x-atrium-record-schema` digest.
+* **`CITATION.cff`:** the ORCID corrected; each author's affiliation in its ROR name (Charles University;
+  Czech Academy of Sciences, Institute of Archaeology, Prague). Authors unchanged until they confirm (#13).
+* **atrium-project#81:** `release.yml` gains the `image` job (the hub's `docker-tool.reusable.yml` with this
+  repository's `docker.yml` inputs and `release-gate: true`), the `simulate-probe-failure` dispatch input, and
+  `images.json` in the release; `docker.yml` no longer runs on tags. It takes effect at the next tag, after
+  digital-convert's dispatched demonstration. No version bump.
+* **atrium-project#79:** README 1,439 → 149 lines on the hub's template; the rest moved, by layer, into `docs/`
+  (usage, configuration, how-it-works, development, reference/teitok, outputs, paradata, licences, evaluation,
+  decisions); map: the hub's `plans/79.nlp-enrich_relocation_map.md`. Stale facts corrected (the config block
+  against `config_api.txt`, Python 3.11, release names, the output tree). `service/README.md`: the `/rescale`
+  example count, and the Known limits licence line in the #6 wording. `config_api.txt`: two comments no longer
+  name the keyword stage that left in 1.0.0.
+* **atrium-project#78:** `lindat-daily.yml` and `eval/lindat_probe.py`: every day, 24 requests to UDPipe and
+  NameTag (fresh and kept-alive connections), failing on an HTTP error, a changed analysis (token count, stray
+  tokens, the lemmas of `Praze`, `hroby`, `vedl`) or an untagged person or place; one issue per failing lane.
+  `eval/` stays out of the image. Tests: `tests/test_lindat_probe.py` (the probe's models must match
+  `config_api.txt`). LINDAT is not reachable from the agent's sandbox: the expected lemmas and tags were checked
+  against the committed outputs, not live.
+* **Checks:** 1,093 passed, 11 skipped; docs_check, runbook_check, image closure OK.
+
 ---
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);

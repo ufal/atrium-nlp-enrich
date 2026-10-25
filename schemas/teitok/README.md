@@ -5,11 +5,11 @@ before the pipeline packages them for the LINDAT dataset release.
 
 It is the *contract* only. What the format is built from (TEI P5, TEITOK's conventions, the
 annotation vocabularies), how each element is composed from the pipeline's inputs, which tools
-write or read it, and the pitfalls a valid file can still hit are in the main README:
-[The format and the standards it builds on](../../README.md#the-format-and-the-standards-it-builds-on),
-[How a TEITOK document is composed](../../README.md#how-a-teitok-document-is-composed),
-[Tools that generate or read TEITOK](../../README.md#tools-that-generate-or-read-teitok),
-[Pitfalls](../../README.md#pitfalls).
+write or read it, and the pitfalls a valid file can still hit are in the documentation:
+[The format and the standards it builds on](../../docs/how-it-works.md#the-format-and-the-standards-it-builds-on),
+[How a TEITOK document is composed](../../docs/reference/teitok.md#how-a-teitok-document-is-composed),
+[Tools that generate or read TEITOK](../../docs/reference/teitok.md#tools-that-generate-or-read-teitok),
+[Pitfalls](../../docs/reference/teitok.md#pitfalls).
 
 ## Files
 
@@ -66,7 +66,8 @@ now follows flexiconv's hOCR/xpdf output. Two remain, both about a TEITOK *proje
 than the file: **U3** the file name (`<doc_id>.teitok.xml`; a project wants
 `xmlfiles/<doc_id>.xml`) and a bare `orgfile` (a project keeps originals in `Originals/`);
 **U4** the tag attribute is `xpos`, teitok-tools' default is `pos`, so a project declares
-`xpos` in `settings.xml`. The README's "Importing into a TEITOK project" gives the steps.
+`xpos` in `settings.xml`. [Importing into a TEITOK project](../../docs/usage.md#importing-into-a-teitok-project)
+gives the steps.
 
 ## Provenance
 

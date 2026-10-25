@@ -251,7 +251,7 @@ curl -s -F "file=@mixed_pages.teitok.xml" -F "scale=0.5" \
     { "surface": "facs-1", "source": { "width": 1654, "height": 2339 }, "target": { "width": 827, "height": 1170 } },
     { "surface": "facs-2", "source": { "width": 1654, "height": 2339 }, "target": { "width": 827, "height": 1170 } }
   ],
-  "boxes_rescaled": 37,
+  "boxes_rescaled": 38,
   "clamped": 0,
   "name_tags_fixed": 0,
   "schema_valid": true, "schema_errors": []
@@ -276,8 +276,8 @@ Opt-in by being called; AMČR's stored TEITOK keeps linguistics and layout only.
 What is written — `pb/@ana` and a `classDecl` taxonomy for the page categories,
 `profileDesc/textClass/keywords` for the TEATER/AMČR categories and controlled
 keywords and for the `keywords` block's statistical keywords, each pointing at its pages — is
-the table in the main README's
-[Record projection onto TEITOK](../README.md#record-projection-onto-teitok-opt-in). Nothing
+the table in the TEITOK reference's
+[Record projection onto TEITOK](../docs/reference/teitok.md#record-projection-onto-teitok-opt-in). Nothing
 below the header changes but `pb/@ana`; projecting again replaces an earlier projection. 422
 when the TEITOK is not the record's document (its `<title>` is neither `doc_id` nor the id of
 `source.filename`), is not this writer's `teitok-2` output, or does not validate.
@@ -423,8 +423,11 @@ A 200 can carry less than was asked for. Read these before using the result:
 
 ## Known limits
 
-- The LINDAT models are CC BY-NC-SA 4.0, so every output is at least CC BY-NC-SA 4.0 (the
-  paradata's licence says so).
+- UDPipe and NameTag run at LINDAT under the [LINDAT Terms of Use](https://lindat.mff.cuni.cz/en/terms-of-use);
+  their models are CC BY-NC-SA 4.0. The paradata lists them with these licences and a calculated label
+  (the most restrictive of them), which is not the licence of the output: the rights in an output depend
+  on the source document and are stated by whoever holds them
+  ([Licences and paradata](https://ufal.github.io/atrium-project/ecosystem/licences/), atrium-project#6).
 - Every request needs LINDAT: there is no local fallback for UDPipe or NameTag.
 - A born-digital record has line boxes only. Word boxes are shared out from them by character
   offset, are approximate, and the TEITOK header says so.

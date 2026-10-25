@@ -272,7 +272,7 @@ def test_a_failed_preflight_stops_before_any_stage(tmp_path, monkeypatch, capsys
     assert ran == []
     assert "[ERROR] no lxml" in capsys.readouterr().err
 
-    # --force overrides exit 3 (README, "Exit codes")
+    # --force overrides exit 3 (docs/usage.md, "Exit codes")
     assert rp.main(["--config", str(cfg), "--stages", "stats", "--force"]) == 0
     assert len(ran) == 1
 
