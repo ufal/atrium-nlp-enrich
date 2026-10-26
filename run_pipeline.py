@@ -353,6 +353,9 @@ def _build_plan(args: argparse.Namespace, values: Dict[str, str]) -> Dict[str, A
     teitok_enrichment = bool(getattr(args, "teitok_enrichment", False)) or _config_bool(
         values, "TEITOK_ENRICHMENT", False
     )
+    skip_untrustworthy_lines = bool(
+        getattr(args, "skip_untrustworthy_lines", False)
+    ) or _config_bool(values, "SKIP_UNTRUSTWORTHY_LINES", False)
     if teitok_enrichment:
         plan_stages.append(
             {
@@ -374,6 +377,7 @@ def _build_plan(args: argparse.Namespace, values: Dict[str, str]) -> Dict[str, A
         "input_tables_dir": values.get("INPUT_TABLES_DIR", ""),
         "fail_on_empty": fail_on_empty,
         "teitok_enrichment": teitok_enrichment,
+        "skip_untrustworthy_lines": skip_untrustworthy_lines,
         "teitok_output_dir": values.get("TEITOK_OUTPUT_DIR")
         or (f"{output_dir}/TEITOK" if output_dir else "TEITOK"),
         "teitok_flexiconv_dir": values.get("TEITOK_FLEXICONV_DIR", ""),
@@ -384,12 +388,14 @@ def _build_plan(args: argparse.Namespace, values: Dict[str, str]) -> Dict[str, A
     }
 
 
-def _pipeline_doc_id(input_tables_dir: str) -> Optional[str]:
-    """The doc_id nlp-enrich's own stages will derive for this run, from the single CSV in
-    INPUT_TABLES_DIR (mirrors summarize_nt_udp.py's doc_name, which in turn traces back to
-    this same file via the manifest). None when the directory holds zero or multiple files
-    -- batch runs have no single answer, so callers should fall back to their prior,
-    doc_id-agnostic behavior rather than guess.
+def _pipeline_doc_id(input_tables_dir: str, flexiconv_dir: str = "") -> Optional[str]:
+    """The doc_id nlp-enrich's own stages will derive for this run, from the single input in
+    INPUT_TABLES_DIR -- a CSV, XLSX or text file, what stage 1 reads there -- or, with none
+    there, the single converted TEITOK file in ``flexiconv_dir`` (FLEXICONV_ANNOTATE)
+    (mirrors summarize_nt_udp.py's doc_name, which in turn traces back to this same file via
+    the manifest). None when there are zero or several -- batch runs have no single answer, so
+    callers should fall back to their prior, doc_id-agnostic behavior rather than guess. It
+    used to look at CSV files only (atrium-project#72).
 
     Both ends of that chain now go through `atrium_document.canonical_doc_id()` (issue
     atrium-project#10, D3). This used to be `matches[0].stem`, and "mirrors" was the whole
@@ -398,12 +404,61 @@ def _pipeline_doc_id(input_tables_dir: str) -> Optional[str]:
     and every upstream block is silently dropped (rule 3) -- the same failure mode
     _prepare_document_json_bridge already documents for a wrong upstream doc_id.
     """
-    if not input_tables_dir:
-        return None
-    matches = sorted(Path(input_tables_dir).glob("*.csv"))
+    matches: List[Path] = []
+    if input_tables_dir and Path(input_tables_dir).is_dir():
+        matches = sorted(
+            p
+            for p in Path(input_tables_dir).iterdir()
+            if p.is_file() and p.suffix.lower() in _STAGE1_SUFFIXES
+        )
+    if not matches and flexiconv_dir and Path(flexiconv_dir).is_dir():
+        matches = sorted(Path(flexiconv_dir).glob("*.teitok.xml"))
     if len(matches) != 1:
         return None
     return canonical_doc_id(matches[0])
+
+
+#: What stage 1 reads from INPUT_TABLES_DIR (api_1_manifest.sh; api_util/line_inputs.py).
+_STAGE1_SUFFIXES = (".csv", ".xlsx", ".txt")
+
+
+def _write_record_text(document_json: str, input_tables_dir: str) -> Optional[Path]:
+    """``--text-from-record``: the record's lines as ``<doc_id>.csv`` in INPUT_TABLES_DIR, the
+    table the service makes of a record sent without one (``record_layout.record_rows``:
+    ``lines[]`` with text, in record order, untrustworthy categories left out; atrium-project#72).
+    None, with the reason on stderr, when it cannot be written."""
+    from api_util import line_inputs
+    from api_util.record_layout import record_rows
+
+    try:
+        record = json.loads(Path(document_json).read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as exc:
+        print(f"[ERROR] --text-from-record: cannot read {document_json}: {exc}", file=sys.stderr)
+        return None
+    rows = record_rows(record)
+    if not rows:
+        print(
+            f"[ERROR] --text-from-record: {document_json} has no text in lines[] to enrich "
+            "(e.g. a scanned PDF whose pages need OCR).",
+            file=sys.stderr,
+        )
+        return None
+    if not input_tables_dir:
+        print("[ERROR] --text-from-record: INPUT_TABLES_DIR is not set.", file=sys.stderr)
+        return None
+    target = (
+        Path(input_tables_dir)
+        / f"{line_inputs.sanitize_doc_id(str(record.get('doc_id') or 'document'))}.csv"
+    )
+    if target.exists():
+        print(
+            f"[ERROR] --text-from-record: {target} exists; not replacing an input.",
+            file=sys.stderr,
+        )
+        return None
+    line_inputs.write_table(rows, target)
+    print(f"[document] the record's text: {len(rows)} lines written to {target}")
+    return target
 
 
 def _prepare_document_json_bridge(
@@ -591,6 +646,19 @@ def main(argv=None):
         "nlp-enrich's entities/pages contribution into.",
     )
     parser.add_argument(
+        "--text-from-record",
+        action="store_true",
+        help="With --document-json: enrich the record's own lines[] (written as <doc_id>.csv "
+        "into INPUT_TABLES_DIR, and left there), as the service does with a record sent "
+        "without a file.",
+    )
+    parser.add_argument(
+        "--skip-untrustworthy-lines",
+        action="store_true",
+        help="Opt-in (default off; also SKIP_UNTRUSTWORTHY_LINES=true in the config): leave out "
+        "a table's rows whose categ is Trash, Garbage or Inverted (atrium-project#72).",
+    )
+    parser.add_argument(
         "--document-json-out",
         type=str,
         default=None,
@@ -629,6 +697,9 @@ def main(argv=None):
     if plan["with_flexiconv"]:
         # config_api.txt writes it as ${FLEXICONV_ANNOTATE:-false}, so this survives `source`
         env["FLEXICONV_ANNOTATE"] = "true"
+    if plan["skip_untrustworthy_lines"]:
+        # the same ${...:-false} form in config_api.txt
+        env["SKIP_UNTRUSTWORTHY_LINES"] = "true"
 
     problem = _stage_python_problem(
         env, [s["name"] for s in plan["stage_plan"] if not s["skip"]], values
@@ -639,10 +710,21 @@ def main(argv=None):
             return 3
         print("[WARN] --force: running the stages anyway.", file=sys.stderr, flush=True)
 
+    if args.text_from_record:
+        if not args.document_json:
+            print("[ERROR] --text-from-record needs --document-json.", file=sys.stderr)
+            return 2
+        if _write_record_text(args.document_json, values.get("INPUT_TABLES_DIR", "")) is None:
+            return 1
+
     doc_json_scratch_dir: Optional[Path] = None
     doc_json_doc_id: Optional[str] = None
     if args.document_json or args.document_json_out:
-        doc_json_doc_id = _pipeline_doc_id(values.get("INPUT_TABLES_DIR", ""))
+        annotate = plan["with_flexiconv"] or _config_bool(values, "FLEXICONV_ANNOTATE", False)
+        doc_json_doc_id = _pipeline_doc_id(
+            values.get("INPUT_TABLES_DIR", ""),
+            values.get("TEITOK_FLEXICONV_DIR", "") if annotate else "",
+        )
         doc_json_scratch_dir = _prepare_document_json_bridge(args.document_json, doc_json_doc_id)
 
     before = _snapshot_paradata_dir(paradata_dir)

@@ -96,7 +96,13 @@ CTX000000001,2,1,Nalezená keramika pochází z raného středověku.,,,ces,1.0,
 where `split_ws` and `split_we` are the start and end character offsets of the words split in the original ALTO
 XML. The `lang` and `lang_score` columns give the detected language and its confidence score, while `perplex`,
 `categ` and the other quality columns add metadata about the text classification. Only `text` is required; a
-`page_label` column, when present, becomes `<pb n>` in TEITOK.
+`page_label` column, when present, becomes `<pb n>` in TEITOK. `page` and `line` are read as `page_num` and
+`line_num`, and a byte-order mark at the start of a CSV is fine.
+
+Every row with text is enriched, whatever its `categ`. With `SKIP_UNTRUSTWORTHY_LINES=true` in
+[config_api.txt](../config_api.txt), or `run_pipeline.py --skip-untrustworthy-lines`, the rows whose `categ` is
+`Trash` (or digital-convert's `Garbage` and `Inverted`) are left out; the service's `skip_untrustworthy_lines` does
+the same. A record sent as the text is filtered always.
 
 ### Step 2: extract named entities and CoNLL-U
 
@@ -111,7 +117,10 @@ processing, text chunking and API rate limiting. Run them in sequence; each sour
 ./api_1_manifest.sh
 ```
 
-* **Input:** the tables in `INPUT_TABLES_DIR` (`*.csv`, `*.xlsx`; step 1).
+* **Input:** the tables and plain-text files in `INPUT_TABLES_DIR` (`*.csv`, `*.xlsx`, `*.txt`; in a text file a
+  form feed starts a page), read by [api_util/line_inputs.py](../api_util/line_inputs.py) as the service reads an
+  upload. Any other file there is named on stderr and in the paradata as skipped; a TEITOK file is read from
+  `TEITOK_FLEXICONV_DIR` with `FLEXICONV_ANNOTATE=true` ([below](#annotating-converted-documents-flexiconv_annotate)).
 * **Output:** `<OUTPUT_DIR>/manifest.tsv`, and per document `TEMP_TXT_DIR/<doc_id>.txt` (one line per table row)
   with `TEMP_TXT_DIR/<doc_id>.rows.tsv` next to it: the page, line, page label and text of every line.
 
@@ -221,6 +230,13 @@ python3 run_pipeline.py --print-config json
 
 # Add this run's entities to an ATRIUM document record
 python3 run_pipeline.py --document-json CTX.document.json --document-json-out CTX.document.json
+
+# Enrich the record's own lines (a born-digital record from digital-convert): written as <doc_id>.csv into
+# INPUT_TABLES_DIR first, and left there; an existing file of that name is never replaced
+python3 run_pipeline.py --document-json C-1.document.json --document-json-out C-1.document.json --text-from-record
+
+# Leave out the rows ocr-postprocess categorised Trash (and Garbage, Inverted)
+python3 run_pipeline.py --skip-untrustworthy-lines
 ```
 
 The runner reads the **same** [config_api.txt](../config_api.txt) that the shell stages source, so Python and Bash
@@ -305,11 +321,34 @@ every document was already complete and thus *skipped*, or where a stage was ski
 `--skip-<stage>` (see [Resume / checkpoint recovery](#resume--checkpoint-recovery)), is treated as success, not an
 empty failure. Set `FAIL_ON_EMPTY=false` to permit genuinely empty stages.
 
+## The command line and the service
+
+Stage 1 and the service read every input through [api_util/line_inputs.py](../api_util/line_inputs.py), and the
+service runs the same four stages on what it read (its upload becomes a table in a workspace of its own), so the same
+input gives the same rows, CoNLL-U, entities, TEITOK and record (atrium-project#72;
+[tests/test_cli_service_parity.py](../tests/test_cli_service_parity.py)). Where they differ:
+
+| What                        | Command line                                                   | Service                                                  | Why they differ                                            |
+|-----------------------------|----------------------------------------------------------------|----------------------------------------------------------|------------------------------------------------------------|
+| How much per run            | every document in `INPUT_TABLES_DIR`                           | one document per request                                 | the service is stateless                                   |
+| Table, `.txt`               | files in `INPUT_TABLES_DIR`                                    | the `file` part                                          |                                                            |
+| Lines as JSON               | none; write them to a `.txt`                                   | `POST /enrich_text`                                      | an HTTP convenience                                        |
+| TEITOK (flexiconv's)        | files in `TEITOK_FLEXICONV_DIR` with `FLEXICONV_ANNOTATE=true` | the `file` part                                          | on the command line, flexiconv writes them there           |
+| PDF, office files, PAGE XML | converted by flexiconv (`--with-flexiconv`)                    | not read; send flexiconv's TEITOK                        | flexiconv is GPL-3.0-or-later and stays out of the service |
+| ALTO layout                 | `INPUT_ALTO_DIR`                                               | the `alto` part                                          |                                                            |
+| Page images                 | `INPUT_PAGES_DIR`, scaled into the TEITOK file                 | not taken; `POST /rescale` scales a finished TEITOK file | the images are large; the service keeps uploads small      |
+| The record                  | `--document-json`, `--document-json-out`                       | `document_json`                                          |                                                            |
+| The record as the text      | `--text-from-record`                                           | `document_json` without `file`                           |                                                            |
+| Untrustworthy rows          | `SKIP_UNTRUSTWORTHY_LINES` / `--skip-untrustworthy-lines`      | `skip_untrustworthy_lines`                               | both off by default                                        |
+| Language                    | `--lang`                                                       | `lang`, `cs` only                                        | the service's models are pinned per deployment             |
+| Outputs                     | files under `OUTPUT_DIR`                                       | the JSON envelope, or `format=zip` of the same files     |                                                            |
+| Paradata                    | a file per stage and a merged one in `PARADATA_DIR`            | the envelope's `paradata`, a `CreateAction`              | atrium-project#71                                          |
+
 ## Docker
 
 The published images are `ghcr.io/ufal/atrium-nlp-enrich:<version>` (the batch runner, `run_pipeline.py`) and
 `ghcr.io/ufal/atrium-nlp-enrich-api:<version>` (the service). `<version>` is the release **without** its leading
-`v`: `1.1.3-beta` for the release `v1.1.3-beta`. The target is part of the image name, not the tag.
+`v`: `1.2.0-beta` for the release `v1.2.0-beta`. The target is part of the image name, not the tag.
 `atrium-nlp-enrich-llm` was published up to 0.23.0 only; it is not built any more (the keyword and LLM code left,
 see [the repository split](decisions/2026-10-01-repository-split.md)).
 

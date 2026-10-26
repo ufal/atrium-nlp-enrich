@@ -3,7 +3,7 @@
   "info": {
     "title": "ATRIUM nlp-enrich API",
     "description": "Text lines (a table, a .txt, or a converted TEITOK file) → NLP-enriched TEITOK XML.",
-    "version": "1.1.3-beta",
+    "version": "1.2.0-beta",
     "x-atrium-service": "atrium-nlp-enrich"
   },
   "paths": {
@@ -2114,6 +2114,12 @@
             "title": "Teitok Enrichment",
             "description": "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and its controlled keywords, in `profileDesc/textClass`. AMČR's stored TEITOK leaves it off.",
             "default": false
+          },
+          "skip_untrustworthy_lines": {
+            "type": "boolean",
+            "title": "Skip Untrustworthy Lines",
+            "description": "Opt-in, default false (atrium-project#72). When true, a table's rows whose `categ` is untrustworthy (ocr-postprocess's `Trash`, digital-convert's `Garbage` and `Inverted`) are left out of the enrichment, as `run_pipeline.py --skip-untrustworthy-lines` leaves them out. A record sent as the text is filtered always; a TEITOK or text file has no `categ`.",
+            "default": false
           }
         },
         "type": "object",
@@ -2242,6 +2248,12 @@
             "type": "boolean",
             "title": "Teitok Enrichment",
             "description": "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and its controlled keywords, in `profileDesc/textClass`. AMČR's stored TEITOK leaves it off.",
+            "default": false
+          },
+          "skip_untrustworthy_lines": {
+            "type": "boolean",
+            "title": "Skip Untrustworthy Lines",
+            "description": "Opt-in, default false (atrium-project#72). When true, a table's rows whose `categ` is untrustworthy (ocr-postprocess's `Trash`, digital-convert's `Garbage` and `Inverted`) are left out of the enrichment, as `run_pipeline.py --skip-untrustworthy-lines` leaves them out. A record sent as the text is filtered always; a TEITOK or text file has no `categ`.",
             "default": false
           }
         },

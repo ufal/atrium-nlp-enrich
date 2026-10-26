@@ -804,3 +804,27 @@ this file is a derived reading aid in `agent_dev_logs/`._
 * **CONTRIBUTING:** the release row names the tag as it exists, `v.0.4.0` (the table said `v0.4.0`).
 * **#7, #18:** deferred after the pilot since 09-26 (atrium-project#67), never said on their threads; a one-line
   comment each is drafted. Dev logs `{7,18}` updated.
+
+## 2026-10-26 — v1.2.0-beta: the command line and the service read the same inputs (atrium-project#72)
+* **One reader:** `api_util/line_inputs.py` reads tables (CSV with a BOM, `page`/`line` spellings, `page_label`,
+  `categ`; XLSX, every sheet with `text`), `.txt` (form feeds) and TEITOK (document order, `<pb/>` ordinal and
+  label) for stage 1 (`build_manifest_row.get_rows`, whose `_read_csv`/`_read_xlsx` stay as wrappers) and for the
+  service (`normalize_upload`). The service's canonical table gains `page_label` and `categ`
+  (`line_inputs.write_table`); `sanitize_doc_id` moved there, re-exported by `service/enrichment.py`;
+  `line_inputs.py` joins `.github/production-image.json`.
+* **Stage 1:** reads `*.txt` from `INPUT_TABLES_DIR`; names every other file it skips on stderr and in the
+  paradata (a TEITOK file with the hint to use `TEITOK_FLEXICONV_DIR`); bash-3.2 safe.
+* **Opt-in filter:** `SKIP_UNTRUSTWORTHY_LINES` (config, `${...:-false}`), `run_pipeline.py
+  --skip-untrustworthy-lines`, and the service's `skip_untrustworthy_lines` on `/enrich` and `/jobs` (pinned per
+  request in the derived config, never from the environment). Stage 1 filters; the paradata records the setting.
+* **The record as the text:** `run_pipeline.py --text-from-record` writes `record_rows()` as `<doc_id>.csv` into
+  `INPUT_TABLES_DIR` (never replacing a file). `_pipeline_doc_id` predicts the id of an XLSX or `.txt` input, and
+  of a single converted TEITOK file when `FLEXICONV_ANNOTATE` is on.
+* **Kept and documented** (`docs/usage.md` "The command line and the service"): flexiconv CLI-only (GPL), page
+  images on the CLI (the service has `/rescale`), `/enrich_text` (its CLI equivalent is a `.txt`), `lang=cs`,
+  paradata file vs `CreateAction`. Checked: a TEITOK file's (page, line) keys never decrease along the document,
+  so stage 1's sort of the service's table keeps its order (pinned in the parity test).
+* **Release:** v1.2.0-beta in `CITATION.cff`, `para_config.txt`, the spec and the docs' image examples; the
+  `CITATION.cff` schema reference corrected to version 1.0 (2026-09-25) with the hub's authors (#13).
+* **Checks:** 1113 passed, 11 skipped (torch, transformers, flexiconv); the new parity test 19/19; ruff clean;
+  `check_version.py`, `docs_check.py` and `image_closure.py` OK.

@@ -1,5 +1,13 @@
 OUTPUT_DIR="./data_samples"
+# Stage 1 reads the tables (.csv, .xlsx) and plain-text files (.txt; a form feed starts a page)
+# here, as the service reads an upload (api_util/line_inputs.py, atrium-project#72).
 INPUT_TABLES_DIR="$OUTPUT_DIR/DOC_LINE_CATEG"
+# SKIP_UNTRUSTWORTHY_LINES: opt-in, default false (atrium-project#72). When true, stage 1 leaves
+# out a table's rows whose `categ` is untrustworthy: ocr-postprocess's Trash, digital-convert's
+# Garbage and Inverted (atrium_vocab.UNTRUSTWORTHY_LINE_CATEGORIES). A record sent as the text is
+# filtered always. `run_pipeline.py --skip-untrustworthy-lines` and the service's
+# `skip_untrustworthy_lines` set it. Keep the ${...:-} form so that setting survives `source`.
+SKIP_UNTRUSTWORTHY_LINES="${SKIP_UNTRUSTWORTHY_LINES:-false}"
 
 WORK_DIR="./TEMP"
 

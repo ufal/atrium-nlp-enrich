@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """
-build_manifest_row.py  –  Extract ordered text from one CSV/XLSX file, or from a TEITOK
-file flexiconv converted (``api_flexiconv.sh``, ``FLEXICONV_ANNOTATE=true``), write it to a
-temp text file, and print one TSV row to stdout:
+build_manifest_row.py  –  Extract ordered text from one input of stage 1 -- a CSV or XLSX table,
+a plain-text file, or a TEITOK file (flexiconv's conversion, ``api_flexiconv.sh``) -- write it
+to a temp text file, and print one TSV row to stdout:
 
     doc_id <TAB> page_count <TAB> /path/to/text_file
 
-A ``.teitok.xml`` input contributes the rows ``teitok_read.read_teitok_rows()`` gives
-keywords.py and llm-enrich (one per ``<lb/>`` line or text block), in document order. Stage
-4 later takes the document's layout from the same file, so the text UDPipe sees and the
-text the layout was built from are the same.
+The input is read by ``api_util/line_inputs.py``, the reader the service's uploads go through
+too (atrium-project#72): a table in (page, line) order, a text file's pages at its form feeds,
+a TEITOK file in document order with the rows ``teitok_read.read_teitok_rows()`` gives
+keywords.py and llm-enrich. Stage 4 later takes a TEITOK document's layout from the same file,
+so the text UDPipe sees and the text the layout was built from are the same.
+``--skip-untrustworthy-lines`` leaves out a table's rows whose ``categ`` is untrustworthy
+(``atrium_vocab.UNTRUSTWORTHY_LINE_CATEGORIES``; the opt-in ``SKIP_UNTRUSTWORTHY_LINES``).
 
 Next to ``<doc>.txt`` it writes ``<doc>.rows.tsv`` (``api_util/page_rows.py``): the page,
 line, page label and text of every line, in the same order -- the page provenance stages
@@ -22,7 +25,6 @@ layout (``api_util/doc_identity.py``), so ``api_1_manifest.sh`` can skip it.
 """
 
 import argparse
-import csv
 import os
 import sys
 from pathlib import Path
@@ -35,116 +37,43 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from api_util.page_rows import Row, normalize_row_text, rows_path_for, write_rows  # noqa: E402
+from api_util import line_inputs  # noqa: E402
+from api_util.page_rows import rows_path_for, write_rows  # noqa: E402
 from atrium_document import canonical_doc_id  # noqa: E402
+from atrium_vocab import UNTRUSTWORTHY_LINE_CATEGORIES  # noqa: E402
 
-csv.field_size_limit(sys.maxsize)
 
-try:
-    import openpyxl
-except ImportError:
-    openpyxl = None
+def _entries(file_path, reader):
+    """The rows of one input as ``{"p", "l", "text", "label"}``, page numbers as the input
+    has them; [] with the reason on stderr when it cannot be read."""
+    try:
+        rows = reader(Path(file_path).read_bytes())
+    except Exception as exc:
+        print(f"[Error] reading {file_path}: {exc}", file=sys.stderr)
+        return []
+    return [{"p": r.page, "l": r.line, "text": r.text, "label": r.label} for r in rows]
 
 
 def _read_csv(file_path):
-    entries = []
-    try:
-        with open(file_path, "r", encoding="utf-8") as fh:
-            reader = csv.DictReader(fh)
-            for row in reader:
-                try:
-                    p = int(row.get("page_num", 0) or 0)
-                except (ValueError, TypeError):
-                    p = 0
-                try:
-                    ln = int(row.get("line_num", 0) or 0)
-                except (ValueError, TypeError):
-                    ln = 0
-                text = normalize_row_text(row.get("text"))
-                if text:
-                    label = (row.get("page_label") or "").strip()
-                    entries.append({"p": p, "l": ln, "text": text, "label": label})
-    except Exception as exc:
-        print(f"[Error] reading CSV {file_path}: {exc}", file=sys.stderr)
-    return entries
+    return _entries(file_path, line_inputs.read_csv)
 
 
 def _read_xlsx(file_path):
-    if openpyxl is None:
-        print("[Error] openpyxl is required for .xlsx files.", file=sys.stderr)
-        return []
-    entries = []
-    try:
-        wb = openpyxl.load_workbook(file_path, data_only=True)
-        for sheet_name in wb.sheetnames:
-            ws = wb[sheet_name]
-            headers = [cell.value for cell in ws[1]]
-            if not headers or "text" not in headers:
-                continue
-            text_idx = headers.index("text")
-            page_idx = headers.index("page_num") if "page_num" in headers else -1
-            line_idx = headers.index("line_num") if "line_num" in headers else -1
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                text_val = row[text_idx]
-                text = normalize_row_text(text_val) if text_val is not None else ""
-                if not text:
-                    continue
-                try:
-                    p = int(row[page_idx]) if page_idx != -1 and row[page_idx] is not None else 0
-                except (ValueError, TypeError):
-                    p = 0
-                try:
-                    ln = int(row[line_idx]) if line_idx != -1 and row[line_idx] is not None else 0
-                except (ValueError, TypeError):
-                    ln = 0
-                entries.append({"p": p, "l": ln, "text": text, "label": ""})
-    except Exception as exc:
-        print(f"[Error] reading XLSX {file_path}: {exc}", file=sys.stderr)
-    return entries
+    return _entries(file_path, line_inputs.read_xlsx)
 
 
-def _read_teitok(file_path):
-    from api_util.teitok_read import read_teitok_rows
-
-    try:
-        rows = read_teitok_rows(file_path)
-    except Exception as exc:
-        print(f"[Error] reading TEITOK {file_path}: {exc}", file=sys.stderr)
-        return []
-    entries = []
-    for r in rows:
-        text = normalize_row_text(r["text"])
-        if text:
-            # page_idx: the ordinal of the <pb> (what stage 4's layout counts); page_label:
-            # its @n. Older readers without those keys give page_num for both.
-            entries.append(
-                {
-                    "p": r.get("page_idx", r["page_num"]),
-                    "l": r["line_num"],
-                    "text": text,
-                    "label": str(r.get("page_label", "") or ""),
-                }
-            )
-    return entries
-
-
-def get_rows(file_path):
+def get_rows(file_path, skip_untrustworthy=False):
     """The lines of one input, in the order they go into ``<doc>.txt``, as ``page_rows.Row``s
-    (a missing page number counts as page 1). [] when the input has no text."""
-    ext = os.path.splitext(file_path)[1].lower()
-    if str(file_path).lower().endswith(".teitok.xml"):
-        # document order, not (page, line): block rows restart their line count per page
-        entries = _read_teitok(file_path)
-    elif ext == ".csv":
-        entries = sorted(_read_csv(file_path), key=lambda x: (x["p"], x["l"]))
-    elif ext == ".xlsx":
-        entries = sorted(_read_xlsx(file_path), key=lambda x: (x["p"], x["l"]))
-    else:
+    (a missing page number counts as page 1). [] when the input has no text, is not one stage
+    1 reads, or cannot be read (the reason on stderr)."""
+    skip = UNTRUSTWORTHY_LINE_CATEGORIES if skip_untrustworthy else ()
+    try:
+        return line_inputs.read_rows(str(file_path), skip_categories=skip)
+    except line_inputs.UnsupportedInput:
         return []
-    return [
-        Row(page=e["p"] or 1, line=e["l"], label=e.get("label", ""), text=e["text"])
-        for e in entries
-    ]
+    except (OSError, ValueError) as exc:
+        print(f"[Error] reading {file_path}: {exc}", file=sys.stderr)
+        return []
 
 
 def get_sorted_text_and_page_count(file_path):
@@ -162,6 +91,11 @@ def main():
     parser.add_argument("--doc-id", default=None, help="Logical document ID to use in manifest")
     parser.add_argument(
         "--doc-id-only", action="store_true", help="print the doc_id and exit (writes nothing)"
+    )
+    parser.add_argument(
+        "--skip-untrustworthy-lines",
+        action="store_true",
+        help="leave out a table's rows whose categ is untrustworthy (Trash, Garbage, Inverted)",
     )
     parser.add_argument(
         "--table-ids",
@@ -192,7 +126,7 @@ def main():
         else:
             print(doc_id)
         return
-    rows = get_rows(args.input_file)
+    rows = get_rows(args.input_file, skip_untrustworthy=args.skip_untrustworthy_lines)
     if not rows:
         print(f"[Error] No text content found in {args.input_file}", file=sys.stderr)
         sys.exit(1)

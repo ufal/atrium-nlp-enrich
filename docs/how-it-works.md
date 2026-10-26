@@ -38,7 +38,8 @@ and analysis.
 ### 1. Manifest
 
 Stage 1 maps the input tables to document ids and page counts, to ensure the correct processing order. For every
-table in `INPUT_TABLES_DIR` it writes a row of `<OUTPUT_DIR>/manifest.tsv` and, per document,
+table or text file in `INPUT_TABLES_DIR` (read by [api_util/line_inputs.py](../api_util/line_inputs.py), the reader
+of the service's uploads too) it writes a row of `<OUTPUT_DIR>/manifest.tsv` and, per document,
 `TEMP_TXT_DIR/<doc_id>.txt` (one line per table row) with `TEMP_TXT_DIR/<doc_id>.rows.tsv` next to it: the page,
 line, page label and text of every line. That rows file is where stages 3 and 4 take page numbers from
 ([api_util/page_rows.py](../api_util/page_rows.py)).

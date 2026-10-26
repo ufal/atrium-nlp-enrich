@@ -4,9 +4,7 @@ service/enrichment.py — PipelineManager for the nlp-enrich API service.
 
 from __future__ import annotations
 
-import collections
 import csv
-import io
 import json
 import logging
 import os
@@ -14,7 +12,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -35,7 +32,9 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import tool_limits  # noqa: E402
-from api_util import lindat_errors  # noqa: E402
+from api_util import lindat_errors, line_inputs  # noqa: E402
+from api_util.line_inputs import is_teitok as is_teitok_upload  # noqa: E402,F401
+from api_util.line_inputs import sanitize_doc_id  # noqa: E402,F401
 from api_util.record_layout import record_has_geometry  # noqa: E402
 from atrium_document import FILE_SUFFIX, load_document  # noqa: E402
 
@@ -66,19 +65,11 @@ _RUNNER_ENV_VARS = (
     "ATRIUM_RUNNER_REF",
 )
 
-_DOC_ID_RE = re.compile(r"[^A-Za-z0-9._-]")
-_DEFAULT_DOC_ID = "document"
-
-
-class UnsupportedUploadType(ValueError):
-    """An upload of a type the pipeline does not read (atrium-project#32 round 2).
-
-    A ``ValueError`` still, so every caller that caught the old one keeps working; the API
-    answers it with 415 ``unsupported_media_type`` and ``accepted``, where any other
-    ``ValueError`` of an upload stays a 422.
-    """
-
-    accepted = (".csv", ".xlsx", ".txt", ".xml")
+#: An upload of a type the pipeline does not read (atrium-project#32 round 2): a
+#: ``ValueError`` still, which the API answers with 415 ``unsupported_media_type`` and
+#: ``accepted``; any other ``ValueError`` of an upload stays a 422. Stage 1 skips the same
+#: files (``api_util/line_inputs.py``, atrium-project#72).
+UnsupportedUploadType = line_inputs.UnsupportedInput
 
 
 # ── exit-code → HTTP mapping ──────────────────────────────────────────────────
@@ -157,114 +148,15 @@ class Layout:
 # ── input normalization helpers ───────────────────────────────────────────────
 
 
-def sanitize_doc_id(name: str) -> str:
-    stem = Path(str(name or "")).name
-    for suffix in (".teitok.xml", ".alto.xml"):
-        if stem.lower().endswith(suffix):
-            stem = stem[: -len(suffix)]
-            break
-    root, ext = os.path.splitext(stem)
-    if ext.lower() in (".csv", ".xlsx", ".txt", ".xml"):
-        stem = root
-    safe = _DOC_ID_RE.sub("_", stem).strip("._-")
-    return safe or _DEFAULT_DOC_ID
-
-
-def _coerce_int(value: Any) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
-
-
 def _write_canonical_csvs(rows: List[Dict[str, Any]], dest_dir: Path, fallback_id: str) -> int:
+    """One request is one document, written as ``<doc_id>.csv``, the canonical table stage 1
+    reads (``line_inputs.write_table``: ``text``, ``page_num``, ``line_num``, ``page_label``,
+    ``categ``). A row's ``_source_path`` used to name the file it went to; nothing in this
+    service sets it, so it could only come from the caller -- a CSV column or an /enrich_text
+    item -- and "../../x.csv" wrote outside the job's workspace (atrium-project#53, D9). It is
+    ignored."""
     dest_dir.mkdir(parents=True, exist_ok=True)
-    # One request is one document, written as <doc_id>.csv. A row's `_source_path` used to
-    # name the file it went to; nothing in this service sets it, so it could only come
-    # from the caller -- a CSV column or an /enrich_text item -- and "../../x.csv" wrote
-    # outside the job's workspace (atrium-project#53, D9). It is ignored.
-    groups = collections.defaultdict(list)
-    for r in rows:
-        groups[f"{fallback_id}.csv"].append(r)
-
-    max_page = 0
-    for path_str, group_rows in groups.items():
-        dest = dest_dir / path_str
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        with open(dest, "w", encoding="utf-8", newline="") as fh:
-            writer = csv.writer(fh)
-            writer.writerow(["text", "page_num", "line_num"])
-            for r in group_rows:
-                text = (r.get("text") or "").strip()
-                if not text:
-                    continue
-                p = _coerce_int(r.get("page_num", r.get("page", 0)))
-                ln = _coerce_int(r.get("line_num", r.get("line", 0)))
-                max_page = max(max_page, p)
-                writer.writerow([text, p, ln])
-    return max_page
-
-
-def _read_csv_bytes(data: bytes) -> List[Dict[str, Any]]:
-    text = data.decode("utf-8-sig", errors="replace")
-    reader = csv.DictReader(io.StringIO(text))
-    if reader.fieldnames is None or "text" not in reader.fieldnames:
-        raise ValueError("CSV input must contain a 'text' column.")
-    return list(reader)
-
-
-def _read_txt_bytes(data: bytes) -> List[Dict[str, Any]]:
-    """One row per non-empty line; a form feed (``\\f``, what pdftotext writes between
-    pages) starts the next page."""
-    text = data.decode("utf-8-sig", errors="replace")
-    rows: List[Dict[str, Any]] = []
-    for page_num, page in enumerate(text.split("\f"), start=1):
-        for i, line in enumerate(page.splitlines(), start=1):
-            s = line.strip()
-            if s:
-                rows.append({"text": s, "page_num": page_num, "line_num": i})
-    return rows
-
-
-def is_teitok_upload(filename: str, data: bytes) -> bool:
-    """A ``*.teitok.xml`` file, or any ``.xml`` whose first 4 KB contain ``<TEI``."""
-    name = (filename or "").lower()
-    if name.endswith(".teitok.xml"):
-        return True
-    return name.endswith(".xml") and b"<TEI" in data[:4096]
-
-
-def _read_teitok_bytes(data: bytes) -> List[Dict[str, Any]]:
-    """The rows of an uploaded TEITOK file (e.g. flexiconv's conversion of a PDF or DOCX),
-    as ``teitok_read`` gives them to stage 1: page = the page's ordinal, as the layout
-    reader numbers it. Rejects a file that is not well-formed or breaks TEITOK-core rules
-    (duplicate ids, dangling references), with the diagnostics."""
-    text = data.decode("utf-8-sig", errors="replace")
-    try:
-        from api_util.validate_teitok_xml import LxmlMissing, validate_xml_text
-
-        errors = validate_xml_text(text, profile="core")
-    except LxmlMissing:  # pragma: no cover - lxml ships in the service image
-        errors = []
-    if errors:
-        raise ValueError("Uploaded TEITOK is not usable: " + "; ".join(errors[:10]))
-    from api_util.teitok_read import read_teitok_rows
-
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "upload.teitok.xml"
-        path.write_text(text, encoding="utf-8")
-        try:
-            rows = read_teitok_rows(path)
-        except ET.ParseError as exc:
-            raise ValueError(f"Uploaded TEITOK is not well-formed XML: {exc}") from exc
-    return [
-        {
-            "text": r["text"],
-            "page_num": r.get("page_idx", r["page_num"]),
-            "line_num": r["line_num"],
-        }
-        for r in rows
-    ]
+    return line_inputs.write_table(rows, dest_dir / f"{fallback_id}.csv")
 
 
 def read_alto_upload(filename: str, data: bytes) -> Layout:
@@ -284,48 +176,13 @@ def read_alto_upload(filename: str, data: bytes) -> Layout:
     return Layout(kind="alto", data=data)
 
 
-def _read_xlsx_bytes(data: bytes) -> List[Dict[str, Any]]:
-    try:
-        import openpyxl  # type: ignore
-    except ImportError as exc:  # pragma: no cover
-        raise ValueError("openpyxl is required for .xlsx input.") from exc
-    wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
-    rows: List[Dict[str, Any]] = []
-    for ws in wb.worksheets:
-        header = None
-        for r in ws.iter_rows(values_only=True):
-            if header is None:
-                header = [str(c).strip() if c is not None else "" for c in r]
-                if "text" not in header:
-                    break
-                ti = header.index("text")
-                pi = header.index("page_num") if "page_num" in header else -1
-                li = header.index("line_num") if "line_num" in header else -1
-                continue
-            tv = r[ti] if ti < len(r) else None
-            text = str(tv).strip() if tv is not None else ""
-            if not text:
-                continue
-            p = _coerce_int(r[pi]) if pi != -1 and pi < len(r) else 0
-            ln = _coerce_int(r[li]) if li != -1 and li < len(r) else 0
-            rows.append({"text": text, "page_num": p, "line_num": ln})
-    return rows
-
-
 def normalize_upload(filename: str, data: bytes) -> List[Dict[str, Any]]:
-    if is_teitok_upload(filename, data):
-        return _read_teitok_bytes(data)
-    ext = os.path.splitext(filename or "")[1].lower()
-    if ext == ".csv":
-        return _read_csv_bytes(data)
-    if ext == ".txt":
-        return _read_txt_bytes(data)
-    if ext == ".xlsx":
-        return _read_xlsx_bytes(data)
-    raise UnsupportedUploadType(
-        f"Unsupported file type '{ext}'. Allowed: .csv, .xlsx, .txt, and a TEITOK .xml "
-        "(e.g. flexiconv's conversion of a PDF or DOCX)."
-    )
+    """The upload's rows, read by ``api_util/line_inputs.py`` as stage 1 reads the same file
+    (atrium-project#72): ``text``, ``page_num``, ``line_num``, ``page_label``, and a table's
+    ``categ``, which stage 1 filters on with ``skip_untrustworthy_lines``. Raises
+    ``UnsupportedUploadType`` for a type it does not read, ``ValueError`` for an unreadable
+    file."""
+    return line_inputs.as_dicts(line_inputs.read_entries(filename or "upload", data))
 
 
 def count_words(rows: List[Dict[str, Any]]) -> int:
@@ -378,10 +235,13 @@ _ENV_OVERRIDABLE = {
 }
 
 
-def _derive_config(workspace: Path, layout_kind: Optional[str] = None) -> Path:
+def _derive_config(
+    workspace: Path, layout_kind: Optional[str] = None, skip_untrustworthy_lines: bool = False
+) -> Path:
     """The workspace's config. ``layout_kind`` ("teitok" or "alto") points stage 4 at the
     uploaded layout under ``layout/`` (outside ``in/``, which stage 1 reads as tables);
-    otherwise no layout directory is set, whatever the template says."""
+    otherwise no layout directory is set, whatever the template says.
+    ``skip_untrustworthy_lines`` is the request's, never the environment's."""
     out = workspace / "config_api.txt"
     ws = str(workspace)
 
@@ -404,6 +264,8 @@ def _derive_config(workspace: Path, layout_kind: Optional[str] = None) -> Path:
         # The request's `teitok_enrichment` alone switches the projection on (run_pipeline's
         # --teitok-enrichment); an environment TEITOK_ENRICHMENT must not do it for every call.
         "TEITOK_ENRICHMENT": '"false"',
+        # The request's `skip_untrustworthy_lines` alone switches stage 1's filter on.
+        "SKIP_UNTRUSTWORTHY_LINES": '"true"' if skip_untrustworthy_lines else '"false"',
     }
     # The stage limits that are config_api.txt keys (atrium-project#53): the environment
     # wins over the template, which wins over the code default (tool_limits.py).
@@ -582,11 +444,13 @@ class PipelineManager:
         layout: Optional[Layout] = None,
         timeout: Optional[float] = None,
         teitok_enrichment: bool = False,
+        skip_untrustworthy_lines: bool = False,
     ) -> EnrichmentResult:
         """Run the pipeline on *rows*. With *timeout* (seconds, the service passes
         API_JOB_TIMEOUT), the run and every process it started are stopped when it is up,
         the workspace is removed, and ``LimitExceeded`` (504) is raised. *teitok_enrichment*
-        adds run_pipeline.py's opt-in ``project`` stage (atrium-project#70)."""
+        adds run_pipeline.py's opt-in ``project`` stage (atrium-project#70);
+        *skip_untrustworthy_lines* switches stage 1's ``categ`` filter on (atrium-project#72)."""
         doc_id = sanitize_doc_id(doc_id)
         job_id = uuid.uuid4().hex
         workspace = _API_JOBS_ROOT / job_id
@@ -598,7 +462,9 @@ class PipelineManager:
         # try/except — NOT try/finally — because on success the workspace must
         # survive until the caller reads the outputs and calls cleanup().
         try:
-            cfg = _derive_config(workspace, layout.kind if layout else None)
+            cfg = _derive_config(
+                workspace, layout.kind if layout else None, skip_untrustworthy_lines
+            )
             pages = _write_canonical_csvs(rows, workspace / "in", doc_id)
             # The text always enters as the canonical table (no input bypasses stage 1); the
             # uploaded layout sits where stage 4 looks for it. A converted TEITOK file named

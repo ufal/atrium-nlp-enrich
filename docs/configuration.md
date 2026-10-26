@@ -19,7 +19,8 @@ The file as shipped, grouped, with its comments shortened:
 ```bash
 # Paths
 OUTPUT_DIR="./data_samples"                       # destination for results (the samples, by default)
-INPUT_TABLES_DIR="$OUTPUT_DIR/DOC_LINE_CATEG"     # input tables: ocr-postprocess's DOC_LINE_CATEG/
+INPUT_TABLES_DIR="$OUTPUT_DIR/DOC_LINE_CATEG"     # input tables (.csv, .xlsx) and .txt: ocr-postprocess's DOC_LINE_CATEG/
+SKIP_UNTRUSTWORTHY_LINES="${SKIP_UNTRUSTWORTHY_LINES:-false}"  # true: leave out rows whose categ is Trash, Garbage or Inverted (#72)
 
 WORK_DIR="./TEMP"                                 # working directory for intermediate files
 

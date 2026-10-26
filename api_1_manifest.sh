@@ -11,6 +11,14 @@ if [[ "${FLEXICONV_ANNOTATE:-false}" == "true" ]]; then
     FLEXICONV_INPUT_DIR="${TEITOK_FLEXICONV_DIR:-${TEITOK_OUTPUT_DIR}/flexiconv}"
 fi
 
+# SKIP_UNTRUSTWORTHY_LINES=true (opt-in, atrium-project#72): a table's rows whose `categ` is
+# untrustworthy (Trash, Garbage, Inverted; atrium_vocab) are left out, as the service's
+# skip_untrustworthy_lines leaves them out. Off by default: every row with text is read.
+SKIP_FLAG=""
+if [[ "${SKIP_UNTRUSTWORTHY_LINES:-false}" == "true" ]]; then
+    SKIP_FLAG="--skip-untrustworthy-lines"
+fi
+
 # P1 FIX: Validate input directory exists before starting (a flexiconv-only run needs
 # only the converted documents)
 if [[ ! -d "${INPUT_TABLES_DIR}" ]] && [[ ! -d "${FLEXICONV_INPUT_DIR:-/nonexistent}" ]]; then
@@ -27,6 +35,7 @@ PARA_STATE=$(python3 atrium_paradata.py start \
         "script=api_1_manifest" \
         "input_dir=${INPUT_TABLES_DIR}" \
         "flexiconv_input_dir=${FLEXICONV_INPUT_DIR}" \
+        "skip_untrustworthy_lines=${SKIP_UNTRUSTWORTHY_LINES:-false}" \
         "output_manifest=${OUTPUT_DIR}/manifest.tsv")
 # ── end paradata start ────────────────────────────────────────────────────────
 
@@ -47,13 +56,34 @@ drop_manifest_row() {
     mv "${OUTPUT_DIR}/manifest.tmp" "${OUTPUT_DIR}/manifest.tsv"
 }
 
-for csv_file in "${INPUT_TABLES_DIR}"/*.csv "${INPUT_TABLES_DIR}"/*.xlsx; do
+# The inputs stage 1 reads from INPUT_TABLES_DIR: tables and plain text (a form feed starts a
+# page), read by api_util/line_inputs.py as the service reads its uploads (atrium-project#72).
+# Any other file there is named and skipped, not passed over in silence; a TEITOK file is read
+# from TEITOK_FLEXICONV_DIR with FLEXICONV_ANNOTATE=true, which also gives stage 4 its layout.
+if [[ -d "${INPUT_TABLES_DIR}" ]]; then
+    for other in "${INPUT_TABLES_DIR}"/*; do
+        [ -f "$other" ] || continue
+        lowered=$(printf '%s' "$other" | tr '[:upper:]' '[:lower:]')  # no ${,,}: bash 3.2
+        case "$lowered" in
+            *.csv|*.xlsx|*.txt) continue ;;
+            *.teitok.xml)
+                # read below when the two directories are one
+                [[ -n "$FLEXICONV_INPUT_DIR" && "${INPUT_TABLES_DIR}" -ef "$FLEXICONV_INPUT_DIR" ]] && continue
+                reason="a TEITOK file: put it in TEITOK_FLEXICONV_DIR and set FLEXICONV_ANNOTATE=true" ;;
+            *) reason="not an input stage 1 reads (.csv, .xlsx, .txt)" ;;
+        esac
+        echo "[manifest] skipped ${other}: ${reason}" >&2
+        python3 atrium_paradata.py skip --state "$PARA_STATE" --file "$other" --reason "$reason"
+    done
+fi
+
+for csv_file in "${INPUT_TABLES_DIR}"/*.csv "${INPUT_TABLES_DIR}"/*.xlsx "${INPUT_TABLES_DIR}"/*.txt; do
     [ -f "$csv_file" ] || continue
     TOTAL=$((TOTAL + 1))
 
-    # build_manifest_row.py reads one CSV/XLSX, writes a temp .txt, and prints
+    # build_manifest_row.py reads one table or text file, writes a temp .txt, and prints
     # a single TSV row:  doc_id <TAB> page_count <TAB> /path/to/text_file
-    if NEW_ROW=$(python3 api_util/build_manifest_row.py "$csv_file" --text-dir "${TEMP_TXT_DIR:-./TEMP/TXT_EXTRACT}"); then
+    if NEW_ROW=$(python3 api_util/build_manifest_row.py "$csv_file" --text-dir "${TEMP_TXT_DIR:-./TEMP/TXT_EXTRACT}" ${SKIP_FLAG:+"$SKIP_FLAG"}); then
 
         DOC_ID=$(echo "$NEW_ROW" | cut -f1)
         TABLE_DOC_IDS+="${DOC_ID}"$'\n'

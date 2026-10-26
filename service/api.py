@@ -596,6 +596,7 @@ def _run_pipeline_sync(
     document_json=None,
     layout=None,
     teitok_enrichment=False,
+    skip_untrustworthy_lines=False,
 ):
     """Blocking pipeline call, stopped at API_JOB_TIMEOUT (LimitExceeded, 504)."""
     return _manager.enrich(
@@ -606,6 +607,7 @@ def _run_pipeline_sync(
         layout=layout,
         timeout=API_JOB_TIMEOUT.get(),
         teitok_enrichment=teitok_enrichment,
+        skip_untrustworthy_lines=skip_untrustworthy_lines,
     )
 
 
@@ -696,6 +698,7 @@ async def _run_enrichment(
     layout=None,
     teitok_enrichment=False,
     sent=(),
+    skip_untrustworthy_lines=False,
 ) -> tuple[Any, str, Any]:
     loop = asyncio.get_event_loop()
     try:
@@ -708,6 +711,7 @@ async def _run_enrichment(
             document_json,
             layout,
             teitok_enrichment,
+            skip_untrustworthy_lines,
         )
     except PipelineError as exc:
         # `reason` is set for a registered cause: `upstream_unavailable` for a LINDAT service that
@@ -748,6 +752,7 @@ async def _enrich_common(
     layout=None,
     teitok_enrichment=False,
     sent=(),
+    skip_untrustworthy_lines=False,
 ):
     _validate_params(lang)
     _check_rows(rows)
@@ -768,6 +773,7 @@ async def _enrich_common(
             layout,
             teitok_enrichment,
             sent,
+            skip_untrustworthy_lines=skip_untrustworthy_lines,
         )
     finally:
         await _semaphore.release()
@@ -792,6 +798,7 @@ async def _run_job_background(
     layout=None,
     teitok_enrichment=False,
     sent=(),
+    skip_untrustworthy_lines=False,
 ):
     try:
         # "queued" until the job holds a slot (atrium-project#53): it used to report
@@ -808,6 +815,7 @@ async def _run_job_background(
                 layout=layout,
                 teitok_enrichment=teitok_enrichment,
                 sent=sent,
+                skip_untrustworthy_lines=skip_untrustworthy_lines,
             )
             PipelineManager.cleanup(result)
             job.result = data
@@ -939,6 +947,13 @@ _FILE_HELP = (
 #: The statuses the enrichment endpoints refuse or fail with (§4.4), beyond the app-wide 422/500.
 _ENRICH_ERRORS = (413, 429, 502, 503, 504)
 
+_SKIP_UNTRUSTWORTHY_HELP = (
+    "Opt-in, default false (atrium-project#72). When true, a table's rows whose `categ` is "
+    "untrustworthy (ocr-postprocess's `Trash`, digital-convert's `Garbage` and `Inverted`) are "
+    "left out of the enrichment, as `run_pipeline.py --skip-untrustworthy-lines` leaves them out. "
+    "A record sent as the text is filtered always; a TEITOK or text file has no `categ`."
+)
+
 _TEITOK_ENRICHMENT_HELP = (
     "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the "
     "record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and "
@@ -975,6 +990,7 @@ async def enrich(
     ),
     alto: UploadFile = File(None, description=_ALTO_HELP),  # noqa: B008
     teitok_enrichment: bool = Form(False, description=_TEITOK_ENRICHMENT_HELP),
+    skip_untrustworthy_lines: bool = Form(False, description=_SKIP_UNTRUSTWORTHY_HELP),
 ):
     rows, doc_id, layout, baseline, sent = await _read_text_input(file, alto, document_json)
     return await _enrich_common(
@@ -986,6 +1002,7 @@ async def enrich(
         layout,
         teitok_enrichment,
         sent,
+        skip_untrustworthy_lines=skip_untrustworthy_lines,
     )
 
 
@@ -1206,6 +1223,7 @@ async def submit_job(
     ),
     alto: UploadFile = File(None, description=_ALTO_HELP),  # noqa: B008
     teitok_enrichment: bool = Form(False, description=_TEITOK_ENRICHMENT_HELP),
+    skip_untrustworthy_lines: bool = Form(False, description=_SKIP_UNTRUSTWORTHY_HELP),
 ):
     _validate_params(lang)
     # Read here, not in the background task: the UploadFile's spooled temp file is tied
@@ -1246,6 +1264,7 @@ async def submit_job(
             layout,
             teitok_enrichment,
             sent,
+            skip_untrustworthy_lines=skip_untrustworthy_lines,
         )
     )
     return {"job_id": job.job_id, "status": "queued"}

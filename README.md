@@ -30,7 +30,9 @@ page is in the [documentation map](#documentation).
 
 The record follows the hub's [document contract](https://ufal.github.io/atrium-project/ecosystem/document-contract/).
 PDF, office files, PAGE XML and hOCR are converted to TEITOK by [flexiconv](docs/usage.md#other-input-formats-flexiconv)
-first, from the command line. Every output file: [docs/reference/outputs.md](docs/reference/outputs.md); example
+first, from the command line. The command line and the service read the tables, `.txt` files, TEITOK files and records
+with the same code; what only one of them does, and why:
+[the command line and the service](docs/usage.md#the-command-line-and-the-service). Every output file: [docs/reference/outputs.md](docs/reference/outputs.md); example
 output of the three synthetic sample documents: [data_samples/TEITOK/](data_samples/TEITOK) and its neighbours.
 
 ## Quick start
@@ -39,7 +41,7 @@ The service from the published image, on a sample table and its ALTO from this r
 
 ```bash
 git clone https://github.com/ufal/atrium-nlp-enrich.git && cd atrium-nlp-enrich
-docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # the release without its v, e.g. 1.1.3-beta
+docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # the release without its v, e.g. 1.2.0-beta
 curl --fail-with-body -sS -X POST localhost:8000/enrich \
   -F "file=@data_samples/DOC_LINE_CATEG/CTX000000001.csv" \
   -F "alto=@data_samples/ALTO/CTX000000001.alto.xml" -o out.json
