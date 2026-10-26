@@ -796,3 +796,11 @@ released yet: v0.22.0 is suggested in `CONTRIBUTING.md`.
 _Timeline index refreshed 2026-09-26 (AMČR baseline entry and header); 2026-09-24 (round 4) against `test` HEAD `3654e73` and again after the push (round 5) against `8003051`, using the `CONTRIBUTING.md` changelog, commit
 subjects, the issue exports in `issues/`, GitHub Actions runs and tags, and the TEITOK/flexi* audit. Nothing removed from the issues themselves (per hub #29);
 this file is a derived reading aid in `agent_dev_logs/`._
+
+## 2026-10-26 — Triage (atrium-project): the first scheduled LINDAT check; #7 and #18
+* **LINDAT daily check (atrium-project#78):** its first scheduled run on `master` passed (run 40284376752, 07:12 UTC:
+  24 requests, the expected lemmas and entities, no issue opened). The fixtures written without LINDAT access held;
+  the probe is unchanged.
+* **CONTRIBUTING:** the release row names the tag as it exists, `v.0.4.0` (the table said `v0.4.0`).
+* **#7, #18:** deferred after the pilot since 09-26 (atrium-project#67), never said on their threads; a one-line
+  comment each is drafted. Dev logs `{7,18}` updated.
