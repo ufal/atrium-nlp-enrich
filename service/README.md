@@ -334,7 +334,7 @@ layout declares.
 | Variable              | Default   | Meaning                                                                                   |
 |-----------------------|-----------|-------------------------------------------------------------------------------------------|
 | `PORT`                | `8000`    | port the service **binds**, and the one `service/healthcheck.py` probes (issues #55, #58) |
-| `HOST`                | `0.0.0.0` | bind address (issue #58). ⚠️ see the warning below                                        |
+| `HOST`                | `0.0.0.0` | bind address (issue #58); see the warning below                                           |
 | `GRACEFUL_SHUTDOWN_S` | `20`      | seconds uvicorn waits for in-flight requests (issue #55)                                  |
 | `RELOAD`              | `false`   | filesystem auto-reload — development only                                                 |
 | `LOG_LEVEL`           | `INFO`    | root logger level for the `python -m service.api` start path (issue #61)                  |
@@ -353,7 +353,7 @@ image's `ENTRYPOINT` (`python -m service.api`) runs. Before issue #58 the entryp
 while `service/healthcheck.py` read it. Setting `PORT` therefore moved the health *probe*
 and not the listener, and the container reported unhealthy forever.
 
-> ⚠️ `HOST=127.0.0.1` yields a container that reports **healthy** and serves nobody:
+> **Note:** `HOST=127.0.0.1` yields a container that reports **healthy** and serves nobody:
 > `service/healthcheck.py` always probes loopback by design and never reads `HOST`, so a
 > loopback bind passes every probe while being unreachable from outside the container.
 
@@ -459,7 +459,7 @@ On `SIGTERM` the service:
    still running. Jobs are registered with `ServiceState.track()`
    (`service/atrium_service.py`) specifically so shutdown waits for them.
 
-⚠️ A job that needs longer than that drain budget is still cut short, and the job
+A job that needs longer than that drain budget is still cut short, and the job
 **record** is in-memory (`service/jobs.py`) — so a client polling `/jobs/{id}` across a
 restart gets 404 rather than a result. Durable job storage is out of scope here (hub
 issue #53, factors IV/VI). See `docs/k8s_deployment.md` in the hub for the full

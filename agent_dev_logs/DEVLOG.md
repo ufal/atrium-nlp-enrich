@@ -828,3 +828,9 @@ this file is a derived reading aid in `agent_dev_logs/`._
   `CITATION.cff` schema reference corrected to version 1.0 (2026-09-25) with the hub's authors (#13).
 * **Checks:** 1113 passed, 11 skipped (torch, transformers, flexiconv); the new parity test 19/19; ruff clean;
   `check_version.py`, `docs_check.py` and `image_closure.py` OK.
+
+## 2026-10-28 — Documentation review: no decorative emoji (atrium-project#79)
+
+* `service/README.md`: the `HOST` warning takes the runbook template's `> **Note:**` form, and the drain-budget
+  paragraph loses its emoji; CONTRIBUTING's footer ©.
+* No release (documentation only); it rides the next tag. `docs_check.py` and `runbook_check.py` OK.

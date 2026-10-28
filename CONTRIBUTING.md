@@ -323,7 +323,7 @@ Keyword extraction: https://github.com/ufal/atrium-keyword-extract/issues
   * NameTag 3 [^6]
   * UDPipe 2 [^5]
 
-**©️ 2026 UFAL & ATRIUM**
+**© 2026 UFAL & ATRIUM**
 
 
 [^2]: https://github.com/ufal/atrium-ocr-postprocess
