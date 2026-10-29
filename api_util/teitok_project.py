@@ -773,6 +773,9 @@ def _run_directory(args: argparse.Namespace) -> int:
             },
             paradata_dir=str(args.paradata_dir),
             output_types=["teitok_xml"],
+            # para_config.txt at the repository root, wherever the script is started from: read from
+            # the working directory, a run elsewhere recorded version "unknown" (atrium-project#72).
+            config_dir=str(Path(__file__).resolve().parents[1]),
         )
     failed = 0
     try:

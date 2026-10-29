@@ -10,6 +10,11 @@ and runs the same pipeline on it, so parity means: the rows stage 1 reads from a
 file. Both sides read through ``api_util/line_inputs.py`` since v1.2.0-beta. Also pinned here:
 the record as the text (``run_pipeline.py --text-from-record`` and a record sent without a
 file), the opt-in ``categ`` filter, and the doc_id the runner predicts for each kind of input.
+
+v1.3.0-beta: a table or text upload reaches stage 1 as sent, as the user's file does on the command
+line (the TEITOK names the file sent); the service's doc_id keeps what the command line keeps
+(``zpráva 1``, not ``zpr_va_1``); ``include_record`` is ``--document-json-out`` alone;
+``/enrich_text`` honours ``skip_untrustworthy_lines``; ``--lang`` takes ``cs`` only, as ``lang`` does.
 """
 
 from __future__ import annotations
@@ -313,3 +318,61 @@ def test_the_service_passes_skip_untrustworthy_lines_to_the_pipeline(monkeypatch
     assert {r.get("categ") for r in seen["rows"]} == {"Clear", "Noisy", "Trash"}
     client.post("/enrich", files=files)
     assert seen["skip_untrustworthy_lines"] is False
+
+
+def test_the_doc_id_of_an_upload_is_the_command_lines():
+    for name in ("zpráva 1.csv", "CTX01.v2.csv", "report.teitok.xml", "scan.txt"):
+        assert enr.sanitize_doc_id(name) == canonical_doc_id(name)
+    assert (
+        enr.sanitize_doc_id("bad\tname.csv") == "bad_name"
+    )  # a control character cannot be a name
+    assert enr.sanitize_doc_id(".hidden.csv") == "hidden"
+
+
+def test_the_service_hands_stage_1_the_upload_and_returns_a_record_on_request(monkeypatch):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from service import api
+
+    seen = {}
+
+    def capture(self, rows, doc_id, **kwargs):
+        seen.update(kwargs, doc_id=doc_id)
+        raise enr.PipelineError("stop here", 502, 1)
+
+    monkeypatch.setattr(enr.PipelineManager, "enrich", capture)
+    client = TestClient(api.app)
+    client.post(
+        "/enrich",
+        files={"file": ("zpráva 1.txt", TXT_BYTES, "text/plain")},
+        data={"include_record": "true"},
+    )
+    assert seen["source"] == ("zpráva 1.txt", TXT_BYTES)
+    assert seen["include_record"] is True
+    client.post("/enrich", files={"file": ("page.teitok.xml", TEITOK_BYTES, "application/xml")})
+    assert seen["source"] is None  # a TEITOK file is its own layout; its rows go in as the table
+    client.post(
+        "/enrich_text",
+        json={
+            "lines": [{"text": "x", "categ": "Trash"}],
+            "skip_untrustworthy_lines": True,
+            "include_record": True,
+        },
+    )
+    assert seen["skip_untrustworthy_lines"] is True and seen["include_record"] is True
+
+
+def test_lang_other_than_cs_is_refused_on_both_sides(capsys):
+    with pytest.raises(SystemExit) as stop:
+        run_pipeline.main(["--lang", "de", "--dry-run"])
+    assert stop.value.code == 2
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from service import api
+
+    response = TestClient(api.app).post(
+        "/enrich", files={"file": ("a.csv", CSV_BYTES, "text/csv")}, data={"lang": "de"}
+    )
+    assert response.status_code == 422

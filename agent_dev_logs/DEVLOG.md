@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-10-21). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `75d6dfc` (2026-10-18) · **v1.1.0-beta** (2026-10-18, `9c126a5`; published mutable, and the tag name was used once before, on 10-09). Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-10-21). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). `test` = `7c6f017` (2026-10-28) · **v1.2.0-beta** (2026-10-26, the CLI and the service read the same inputs) · **v1.3.0-beta** prepared 2026-10-29 (the two give the same results; the pilot candidate, atrium-project#77). **v1.1.0-beta** (2026-10-18, `9c126a5`) was published mutable, and its tag name was used once before, on 10-09. Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). The #6 saga (April→September) is condensed below; its full record moved with the issue to atrium-keyword-extract (`agent_dev_logs/digests/2.digest.md`). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -834,3 +834,35 @@ this file is a derived reading aid in `agent_dev_logs/`._
 * `service/README.md`: the `HOST` warning takes the runbook template's `> **Note:**` form, and the drain-budget
   paragraph loses its emoji; CONTRIBUTING's footer ©.
 * No release (documentation only); it rides the next tag. `docs_check.py` and `runbook_check.py` OK.
+
+## 2026-10-29 — v1.3.0-beta: the command line and the service give the same results (atrium-project#72, #77)
+
+* **How it was checked:** a scratch harness (not committed) ran `run_pipeline.py` with a config of its own and
+  `POST /enrich` on the same input, with one deterministic stand-in for UDPipe and NameTag on both sides (a local
+  HTTP server answering CoNLL-U and NameTag's `conll`): a table, a table named `zpráva 1.csv`, a `.txt` with form
+  feeds, a TEITOK file, a table with its ALTO, a record as the text; with and without a record, a seed with a BOM,
+  `include_record` against `--document-json-out` alone, the row filter and the projection on and off. 38 cases.
+  Before: the doc_id of `zpráva 1.csv` (`zpr_va_1` from the service), `derived_from.teitok` (an absolute path on
+  both sides, the service's being its workspace) and a `.txt` upload's TEITOK `orgfile` (`notes.csv`) differed.
+  After: the TEITOK, the entity summary, the doc_id and the record are the same in every case.
+* **Service:** `line_inputs.sanitize_doc_id` keeps what `canonical_doc_id` keeps (only control characters and path
+  separators are replaced; 200 bytes at most); a `.csv`, `.xlsx` or `.txt` upload is written to `in/` as sent
+  (`line_inputs.highest_page` gives the page count); `include_record` on `/enrich`, `/jobs` and `/enrich_text`;
+  `/enrich_text` passes `skip_untrustworthy_lines` on (the model accepted the field and dropped it).
+* **Both:** `document_hook` records `derived_from.teitok` as the file's name. **CLI:** `--lang` takes `cs` only,
+  as `lang` does (it was read nowhere); the bridge reads a seed with `utf-8-sig`.
+* **Tests:** `tests/test_cli_service_parity.py` pins the doc_id, the upload handed on as sent, `include_record`,
+  `/enrich_text`'s filter and `--lang`.
+* **Docs:** `docs/usage.md`'s parity section is one table of inputs and settings (the kept differences: strict-empty,
+  ALTO with a `.txt` or TEITOK, `/rescale` against `fix_teitok_bboxes.py`, `/project_record` without `--force`, the
+  environment values the service ignores, the word limit before the filter); exit code 2 from argparse; the service
+  README's `lang`, `include_record`, doc_id and "How it works" (the canonical CSV only where there is no file); the
+  `file` and `lines` descriptions in the spec; README's "Czech first".
+* **Release:** v1.3.0-beta in `CITATION.cff` (2026-10-29), `para_config.txt`, the regenerated spec, the docs'
+  examples; CONTRIBUTING row.
+
+## 2026-10-29 — v1.3.0-beta, before the tag: the projection's paradata reads `para_config.txt` at the root
+
+* `api_util/teitok_project.py` passes the repository root to `ParadataLogger`; run from another folder it read
+  `para_config.txt` from the working directory and recorded version "unknown" (the cross-tool check of
+  atrium-project#72; the stages run from the root and were not affected). Its tests pass.

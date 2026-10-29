@@ -497,7 +497,9 @@ def _prepare_document_json_bridge(
         else:
             seed_id = doc_id
             if not seed_id:
-                data = json.loads(baseline.read_text(encoding="utf-8"))
+                # utf-8-sig: a seed saved by a Windows editor starts with a BOM, which the
+                # service's record part accepts (atrium-project#72).
+                data = json.loads(baseline.read_text(encoding="utf-8-sig"))
                 seed_id = data.get("doc_id")
             if not seed_id:
                 print(
@@ -618,7 +620,13 @@ def main(argv=None):
     parser.add_argument(
         "--strict-empty", action="store_true", help="Treat all-skipped runs as failures"
     )
-    parser.add_argument("--lang", default="cs", help="Language code passed to extraction")
+    parser.add_argument(
+        "--lang",
+        default="cs",
+        choices=("cs",),
+        help="The language: cs, the only one. The UDPipe and NameTag models (MODEL_UDPIPE, "
+        "MODEL_NAMETAG in the config) decide what is read; the service refuses any other value too.",
+    )
     parser.add_argument(
         "--teitok-enrichment",
         action="store_true",

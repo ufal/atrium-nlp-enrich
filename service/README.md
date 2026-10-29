@@ -13,7 +13,7 @@ service (since 1.0.0): it is [atrium-keyword-extract](https://github.com/ufal/at
 The published image first: it is what a deployment runs, and it needs no checkout.
 
 ```bash
-docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # e.g. 1.2.0-beta
+docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # e.g. 1.3.0-beta
 curl -s http://localhost:8000/ready                                           # 200 once ready
 # from a checkout:
 docker compose --profile api up -d
@@ -67,11 +67,12 @@ LINDAT services, so the service needs outbound HTTPS to them.
 |----------------------------|-------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `file`                     | *required*, or a record | `.csv` (needs a `text` column; optional `page_num` or `page`, `line_num` or `line`, `page_label`, `categ`), `.xlsx`, `.txt` (a form feed starts a new page), or a TEITOK `.xml` (`*.teitok.xml`, or any `.xml` starting with `<TEI`) — see [Layout inputs](#layout-inputs). Read as stage 1 reads the same file (`api_util/line_inputs.py`). Optional when `document_json` is a record whose `lines[]` carry the text |
 | `alto`                     | *optional*              | ALTO XML of the pages a `.csv`/`.xlsx` lists the lines of — see [Layout inputs](#layout-inputs)                                                                                                                                                                                                                                                                                                                       |
-| `lang`                     | `cs`                    | Czech-pinned in v1                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `lang`                     | `cs`                    | `cs` only, as the command line's `--lang`: the UDPipe and NameTag models of `config_api.txt` decide the language; any other value → 422                                                                                                                                                                                                                                                                               |
 | `format`                   | `json`                  | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`; any other value → 422 (it silently became `json` before atrium-project#32 round 2)                                                                                                                                                                                                                                                                           |
 | `document_json`            | *optional*              | baseline ATRIUM Document JSON (or an AMČR seed) to accrete onto — see below; not a JSON object → 422 `invalid_record`. A born-digital record is also a layout — see [Layout inputs](#layout-inputs)                                                                                                                                                                                                                   |
 | `teitok_enrichment`        | `false`                 | opt-in (atrium-project#70): the returned TEITOK also carries the record's page categories (`pb/@ana`) and the record's controlled keywords in its header — see [`POST /project_record`](#post-project_record-multipart-form). `/jobs` takes it too                                                                                                                                                                    |
-| `skip_untrustworthy_lines` | `false`                 | opt-in (atrium-project#72): a table's rows whose `categ` is `Trash`, `Garbage` or `Inverted` are left out, as the command line's `SKIP_UNTRUSTWORTHY_LINES`. A record sent as the text is filtered always. `/jobs` takes it too                                                                                                                                                                                       |
+| `skip_untrustworthy_lines` | `false`                 | opt-in (atrium-project#72): a table's rows whose `categ` is `Trash`, `Garbage` or `Inverted` are left out, as the command line's `SKIP_UNTRUSTWORTHY_LINES`. A record sent as the text is filtered always. `/jobs` and `/enrich_text` take it too                                                                                                                                                                     |
+| `include_record`           | `false`                 | opt-in (since v1.3.0-beta): `document_json` comes back even when none was sent, a new record with nlp-enrich's blocks, as `run_pipeline.py --document-json-out` alone writes. `/jobs` and `/enrich_text` take it too                                                                                                                                                                                                  |
 
 ### Layout inputs
 
@@ -109,8 +110,10 @@ The TEITOK the service returns has the layout of what it was given (issue
   the page images' DPI / 72; the CLI scales them itself with `IMAGE_DPI` or `INPUT_PAGES_DIR`. The
   record has line boxes only, so a token's box is its share of the line box by character offset
   — approximate, and the header says so. A DOCX record has no geometry: `layout_source` is `rows`.
-* The `doc_id` is the file name without `.teitok.xml`, `.alto.xml` or the table extension; for a
-  record sent alone, the record's `doc_id`.
+* The `doc_id` is the file name without `.teitok.xml`, `.alto.xml` or the table extension, as the
+  command line derives it from the same file: `zpráva 1.csv` is `zpráva 1` (since v1.3.0-beta; it
+  was `zpr_va_1`). Only control characters and path separators are replaced. For a record sent
+  alone, the record's `doc_id`.
 
 ### `POST /enrich_text` (JSON)
 
@@ -118,8 +121,11 @@ The TEITOK the service returns has the layout of what it was given (issue
 { "doc_id": "CTX1", "lines": ["Výzkum odhalil základy kostela.", "..."],
   "format": "json",
   "document_json": { "...optional baseline record, inline..." },
-  "teitok_enrichment": false }
+  "teitok_enrichment": false, "skip_untrustworthy_lines": false, "include_record": false }
 ```
+
+A line may also be an object: `text`, and optional `page_num` (or `page`), `line_num` (or `line`),
+`page_label` and `categ`. `skip_untrustworthy_lines` was accepted and ignored before v1.3.0-beta.
 
 ### The `document_json` accretion part
 
@@ -305,9 +311,11 @@ curl -F file=@TEITOK/CTX000000001.teitok.xml -F document_json=@CTX000000001.docu
 it never calls the stage scripts directly. Each request gets a fresh workspace
 under `TEMP/api_jobs/<job_id>/` with every pipeline directory relocated inside
 it, so resume / paradata-collision / `FAIL_ON_EMPTY` semantics behave as a clean
-first run and concurrent requests can't collide. Every input form is normalized
-to a canonical `text[,page_num,line_num]` CSV so stage 1 always runs on the same
-path and no input type bypasses a mandatory step.
+first run and concurrent requests can't collide. A `.csv`, `.xlsx` or `.txt` upload goes to
+stage 1 as sent (`in/<doc_id>.<ext>`), as the command line hands it the user's file, so the
+TEITOK names the file that was sent (since v1.3.0-beta). A TEITOK upload, a record sent as the
+text and `/enrich_text`'s lines are written as the canonical table (`text`, `page_num`,
+`line_num`, `page_label`, `categ`). Every input goes through stage 1; none bypasses it.
 
 The runner's exit codes map to HTTP: `0`→200; `3` (a dependency of the stages is missing, e.g.
 their `python3` cannot import `lxml` — a deployment defect)→500, its `detail` starting with what is
@@ -501,7 +509,7 @@ response — 200s and refusals — to the published schema; `tests/test_openapi_
 `tests/test_api_service.py` is fully hermetic (no LINDAT, no models): it
 monkeypatches the pipeline subprocess to drop fixture outputs into the
 workspace, then exercises the full HTTP contract via FastAPI `TestClient`,
-plus input normalization, `doc_id` sanitization, and exit-code→HTTP mapping.
+plus input normalization, the `doc_id` of an upload, and exit-code→HTTP mapping.
 `tests/test_rescale.py` covers the `/rescale` transform and endpoint (including
 the non-well-formed `<name>…</n>` TEITOK quirk and documents whose pages differ in size).
 `tests/test_teitok_project.py` covers the record projection, `/project_record` and the

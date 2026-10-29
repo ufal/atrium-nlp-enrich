@@ -304,7 +304,7 @@ The exit code is the runner's contract; the service maps it to an HTTP status
 |------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `0`  | All requested stages completed; nothing flagged.                                                                                                                            |
 | `1`  | A stage processed **nothing** despite having input and no resume, and `FAIL_ON_EMPTY=true` (the default). Also: `--with-flexiconv` could not convert at least one document. |
-| `2`  | A required stage script was not found.                                                                                                                                      |
+| `2`  | A required stage script was not found; or argparse refused an option (e.g. `--lang de`).                                                                                    |
 | `3`  | A dependency preflight failed: `--with-flexiconv` without flexiconv, or the stages' `python3` cannot import `requests` or `lxml` (the message names it and the fix).        |
 | `5`  | The TEITOK output failed its output contract (`api_4_stats.sh`'s gate: the XSD, unique ids, resolvable references, the page rules). A writer defect: please report it.      |
 | `6`  | LINDAT UDPipe or NameTag did not answer after `MAX_RETRIES` retries (HTTP 5xx or 429, a refused or dropped connection); the first line on stderr names the service (#41).   |
@@ -324,31 +324,43 @@ empty failure. Set `FAIL_ON_EMPTY=false` to permit genuinely empty stages.
 ## The command line and the service
 
 Stage 1 and the service read every input through [api_util/line_inputs.py](../api_util/line_inputs.py), and the
-service runs the same four stages on what it read (its upload becomes a table in a workspace of its own), so the same
-input gives the same rows, CoNLL-U, entities, TEITOK and record (atrium-project#72;
-[tests/test_cli_service_parity.py](../tests/test_cli_service_parity.py)). Where they differ:
+service runs `run_pipeline.py` itself on what it was sent, in a workspace of its own. A scratch harness ran 38
+combinations through both on 2026-10-28, with one deterministic stand-in for UDPipe and NameTag on both sides: a
+table, a table named `zpráva 1.csv`, a `.txt` with form feeds, a TEITOK file, a table with its ALTO, and a record as
+the text; with and without a record, with a seed saved with a BOM, `include_record` against `--document-json-out`
+alone, the untrustworthy-row filter on and off, and the record projection on and off. The TEITOK, the entity summary,
+the doc_id and the record were the same in every case
+([tests/test_cli_service_parity.py](../tests/test_cli_service_parity.py) keeps the main ones).
 
-| What                        | Command line                                                   | Service                                                  | Why they differ                                            |
-|-----------------------------|----------------------------------------------------------------|----------------------------------------------------------|------------------------------------------------------------|
-| How much per run            | every document in `INPUT_TABLES_DIR`                           | one document per request                                 | the service is stateless                                   |
-| Table, `.txt`               | files in `INPUT_TABLES_DIR`                                    | the `file` part                                          |                                                            |
-| Lines as JSON               | none; write them to a `.txt`                                   | `POST /enrich_text`                                      | an HTTP convenience                                        |
-| TEITOK (flexiconv's)        | files in `TEITOK_FLEXICONV_DIR` with `FLEXICONV_ANNOTATE=true` | the `file` part                                          | on the command line, flexiconv writes them there           |
-| PDF, office files, PAGE XML | converted by flexiconv (`--with-flexiconv`)                    | not read; send flexiconv's TEITOK                        | flexiconv is GPL-3.0-or-later and stays out of the service |
-| ALTO layout                 | `INPUT_ALTO_DIR`                                               | the `alto` part                                          |                                                            |
-| Page images                 | `INPUT_PAGES_DIR`, scaled into the TEITOK file                 | not taken; `POST /rescale` scales a finished TEITOK file | the images are large; the service keeps uploads small      |
-| The record                  | `--document-json`, `--document-json-out`                       | `document_json`                                          |                                                            |
-| The record as the text      | `--text-from-record`                                           | `document_json` without `file`                           |                                                            |
-| Untrustworthy rows          | `SKIP_UNTRUSTWORTHY_LINES` / `--skip-untrustworthy-lines`      | `skip_untrustworthy_lines`                               | both off by default                                        |
-| Language                    | `--lang`                                                       | `lang`, `cs` only                                        | the service's models are pinned per deployment             |
-| Outputs                     | files under `OUTPUT_DIR`                                       | the JSON envelope, or `format=zip` of the same files     |                                                            |
-| Paradata                    | a file per stage and a merged one in `PARADATA_DIR`            | the envelope's `paradata`, a `CreateAction`              | atrium-project#71                                          |
+| Input or setting             | Command line                                                                                            | Service                                                   | Same?                                                                      |
+|------------------------------|---------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|----------------------------------------------------------------------------|
+| How much per run             | every document in `INPUT_TABLES_DIR`                                                                    | one document per request                                  | differs: the service is stateless                                          |
+| Table, `.txt`                | files in `INPUT_TABLES_DIR`                                                                             | the `file` part, handed to stage 1 as sent                | the same (the TEITOK named a `.txt` upload `.csv` before v1.3.0-beta)      |
+| The doc_id                   | the file name without its extension                                                                     | the same                                                  | the same (`zpráva 1`; the service said `zpr_va_1` before v1.3.0-beta)      |
+| Lines as JSON                | none; write them to a `.txt` or a table                                                                 | `POST /enrich_text`                                       | an HTTP convenience                                                        |
+| TEITOK (flexiconv's)         | files in `TEITOK_FLEXICONV_DIR` with `FLEXICONV_ANNOTATE=true`                                          | the `file` part                                           | the same                                                                   |
+| PDF, office files, PAGE XML  | converted by flexiconv (`--with-flexiconv`)                                                             | not read; send flexiconv's TEITOK                         | differs: flexiconv is GPL-3.0-or-later and stays out of the service        |
+| ALTO layout                  | `INPUT_ALTO_DIR`, for any document of the same name                                                     | the `alto` part, with a `.csv` or `.xlsx` only (else 422) | the same for a table; the service refuses ALTO with a `.txt` or TEITOK     |
+| Page images                  | `INPUT_PAGES_DIR`, scaled into the TEITOK file                                                          | not taken; `POST /rescale` scales a finished TEITOK file  | differs: the images are large; `fix_teitok_bboxes.py` is the CLI's rescale |
+| The record                   | `--document-json`, `--document-json-out`                                                                | `document_json`; `include_record` without one             | the same record                                                            |
+| The record as the text       | `--text-from-record`                                                                                    | `document_json` without `file`                            | the same                                                                   |
+| Untrustworthy rows           | `--skip-untrustworthy-lines`, or `SKIP_UNTRUSTWORTHY_LINES`                                             | `skip_untrustworthy_lines`, the request's only            | the same; the service ignores the environment value                        |
+| Record projection            | `--teitok-enrichment`, or `TEITOK_ENRICHMENT`                                                           | `teitok_enrichment`, the request's only                   | the same; the service ignores the environment value                        |
+| Projection onto a TEITOK     | `api_util/teitok_project.py`; `--force` also takes a TEITOK this writer did not make, or an invalid one | `POST /project_record`, which refuses those (422)         | the same projection; the service has no `--force`                          |
+| Language                     | `--lang`, `cs` only                                                                                     | `lang`, `cs` only                                         | the same: the models of `config_api.txt` decide; any other value refused   |
+| A run that annotates nothing | exit 1 when `FAIL_ON_EMPTY=true`; `--strict-empty` for all-skipped                                      | always `--strict-empty`: a 502                            | differs: one document is one request, so nothing done is a failure         |
+| The word limit               | none                                                                                                    | `MAX_WORDS`, counted before the row filter                | differs: the service bounds a request                                      |
+| Outputs                      | files under `OUTPUT_DIR`                                                                                | the JSON envelope, or `format=zip` of the same files      | the same files                                                             |
+| Paradata                     | a file per stage and a merged one in `PARADATA_DIR`                                                     | the envelope's `paradata`, a `CreateAction`               | the same merged record (atrium-project#71)                                 |
+
+The record names its TEITOK file in `derived_from.teitok` by its name, on both sides; it held the absolute path
+before v1.3.0-beta, and from the service its private workspace.
 
 ## Docker
 
 The published images are `ghcr.io/ufal/atrium-nlp-enrich:<version>` (the batch runner, `run_pipeline.py`) and
 `ghcr.io/ufal/atrium-nlp-enrich-api:<version>` (the service). `<version>` is the release **without** its leading
-`v`: `1.2.0-beta` for the release `v1.2.0-beta`. The target is part of the image name, not the tag.
+`v`: `1.3.0-beta` for the release `v1.3.0-beta`. The target is part of the image name, not the tag.
 `atrium-nlp-enrich-llm` was published up to 0.23.0 only; it is not built any more (the keyword and LLM code left,
 see [the repository split](decisions/2026-10-01-repository-split.md)).
 

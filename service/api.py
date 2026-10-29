@@ -20,6 +20,7 @@ Regenerate the spec after an API change::
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -321,7 +322,8 @@ class EnrichTextRequest(BaseModel):
         min_length=1,
         description=(
             "The text lines: strings (one per line, all on page 1), or objects with `text` and optional "
-            "`page_num`/`line_num`. An object without a non-empty `text` is skipped."
+            "`page_num` or `page`, `line_num` or `line`, `page_label` and `categ` (what "
+            "`skip_untrustworthy_lines` filters on). An object without a non-empty `text` is skipped."
         ),
     )
     doc_id: str = Field("document", description="The document's id.")
@@ -342,6 +344,17 @@ class EnrichTextRequest(BaseModel):
             "Opt-in, default false: see `/enrich`. Projects the record's page categories and "
             "its controlled keywords into the TEITOK header."
         ),
+    )
+    skip_untrustworthy_lines: bool = Field(
+        False,
+        description=(
+            "Opt-in, default false: see `/enrich`. Leaves out the lines whose `categ` is untrustworthy "
+            "(`Trash`, `Garbage`, `Inverted`). Until v1.3.0-beta the field was accepted and ignored."
+        ),
+    )
+    include_record: bool = Field(
+        False,
+        description="Return a document record even when `document_json` is not sent: see `/enrich`.",
     )
 
 
@@ -553,11 +566,13 @@ async def _read_layout(filename: str, data: bytes, alto: UploadFile | None) -> L
 async def _read_text_input(
     file: UploadFile | None, alto: UploadFile | None, document_json: UploadFile | None
 ):
-    """What a call enriches, as ``(rows, doc_id, layout, baseline, sent)``: the ``file`` upload
-    with its layout, or -- without one -- the ``document_json`` record's own ``lines[]`` (issue
-    #42). The record is then the text, the baseline and, when it has page geometry, the layout
-    stage 4 finds (``layout_source: "record"``). An empty, unnamed ``file`` part is the one a
-    form sends when nothing was chosen: no file, as for ``document_json``."""
+    """What a call enriches, as ``(rows, doc_id, layout, baseline, sent, source)``: the ``file``
+    upload with its layout, or -- without one -- the ``document_json`` record's own ``lines[]``
+    (issue #42). The record is then the text, the baseline and, when it has page geometry, the
+    layout stage 4 finds (``layout_source: "record"``). An empty, unnamed ``file`` part is the one
+    a form sends when nothing was chosen: no file, as for ``document_json``. ``source`` is the
+    upload as ``(name, bytes)`` when stage 1 reads it as sent (a table or a text file), else
+    None."""
     data = b""
     if file is not None:
         data = await read_upload_bounded(file, MAX_UPLOAD.get(), "Upload")
@@ -567,7 +582,8 @@ async def _read_text_input(
         rows = _normalize(filename, data)
         baseline = await _read_document_json(document_json)
         sent = _sent(filename, data, file.content_type, alto, layout)
-        return rows, file.filename or "document", layout, baseline, sent
+        source = None if layout is not None and layout.kind == "teitok" else (filename, data)
+        return rows, file.filename or "document", layout, baseline, sent, source
     baseline = await _read_document_json(document_json)
     if baseline is None:
         raise HTTPException(
@@ -586,7 +602,7 @@ async def _read_text_input(
             "whose pages need OCR); send the text as `file`.",
         ) from None
     # Nothing but the record was sent, and _run_action() lists the record as the call's object.
-    return rows, str(record.get("doc_id") or "document"), None, baseline, []
+    return rows, str(record.get("doc_id") or "document"), None, baseline, [], None
 
 
 def _run_pipeline_sync(
@@ -597,6 +613,8 @@ def _run_pipeline_sync(
     layout=None,
     teitok_enrichment=False,
     skip_untrustworthy_lines=False,
+    include_record=False,
+    source=None,
 ):
     """Blocking pipeline call, stopped at API_JOB_TIMEOUT (LimitExceeded, 504)."""
     return _manager.enrich(
@@ -608,6 +626,8 @@ def _run_pipeline_sync(
         timeout=API_JOB_TIMEOUT.get(),
         teitok_enrichment=teitok_enrichment,
         skip_untrustworthy_lines=skip_untrustworthy_lines,
+        include_record=include_record,
+        source=source,
     )
 
 
@@ -699,19 +719,25 @@ async def _run_enrichment(
     teitok_enrichment=False,
     sent=(),
     skip_untrustworthy_lines=False,
+    include_record=False,
+    source=None,
 ) -> tuple[Any, str, Any]:
     loop = asyncio.get_event_loop()
     try:
         result = await loop.run_in_executor(
             None,
-            _run_pipeline_sync,
-            rows,
-            doc_id,
-            lang,
-            document_json,
-            layout,
-            teitok_enrichment,
-            skip_untrustworthy_lines,
+            functools.partial(
+                _run_pipeline_sync,
+                rows,
+                doc_id,
+                lang,
+                document_json,
+                layout,
+                teitok_enrichment,
+                skip_untrustworthy_lines,
+                include_record=include_record,
+                source=source,
+            ),
         )
     except PipelineError as exc:
         # `reason` is set for a registered cause: `upstream_unavailable` for a LINDAT service that
@@ -753,6 +779,8 @@ async def _enrich_common(
     teitok_enrichment=False,
     sent=(),
     skip_untrustworthy_lines=False,
+    include_record=False,
+    source=None,
 ):
     _validate_params(lang)
     _check_rows(rows)
@@ -774,6 +802,8 @@ async def _enrich_common(
             teitok_enrichment,
             sent,
             skip_untrustworthy_lines=skip_untrustworthy_lines,
+            include_record=include_record,
+            source=source,
         )
     finally:
         await _semaphore.release()
@@ -799,6 +829,8 @@ async def _run_job_background(
     teitok_enrichment=False,
     sent=(),
     skip_untrustworthy_lines=False,
+    include_record=False,
+    source=None,
 ):
     try:
         # "queued" until the job holds a slot (atrium-project#53): it used to report
@@ -816,6 +848,8 @@ async def _run_job_background(
                 teitok_enrichment=teitok_enrichment,
                 sent=sent,
                 skip_untrustworthy_lines=skip_untrustworthy_lines,
+                include_record=include_record,
+                source=source,
             )
             PipelineManager.cleanup(result)
             job.result = data
@@ -934,8 +968,9 @@ _ALTO_HELP = (
 
 #: What `file` may be, for /enrich and /jobs.
 _FILE_HELP = (
-    "The text: a .csv/.xlsx table (`text`, optional `page_num`/`line_num`), a .txt (one "
-    "line per row; a form feed starts a new page), or a TEITOK .xml -- e.g. flexiconv's "
+    "The text: a .csv/.xlsx table (`text`; optional `page_num` or `page`, `line_num` or `line`, "
+    "`page_label`, `categ`), a .txt (one line per row; a form feed starts a new page), or a "
+    "TEITOK .xml -- e.g. flexiconv's "
     "conversion of a PDF, DOCX or PAGE XML (api_flexiconv.sh) -- whose text is annotated "
     "and whose pages, lines and boxes become the output's layout. Optional when "
     "`document_json` is a record whose `lines[]` carry the text (e.g. digital-convert's "
@@ -952,6 +987,13 @@ _SKIP_UNTRUSTWORTHY_HELP = (
     "untrustworthy (ocr-postprocess's `Trash`, digital-convert's `Garbage` and `Inverted`) are "
     "left out of the enrichment, as `run_pipeline.py --skip-untrustworthy-lines` leaves them out. "
     "A record sent as the text is filtered always; a TEITOK or text file has no `categ`."
+)
+
+_INCLUDE_RECORD_HELP = (
+    "Opt-in, default false (atrium-project#72). When true, the response carries a document record "
+    "(`document_json`) even when none was sent: a new one with nlp-enrich's blocks, as "
+    "`run_pipeline.py --document-json-out` alone writes. Without it, a record comes back only when "
+    "`document_json` was sent."
 )
 
 _TEITOK_ENRICHMENT_HELP = (
@@ -991,8 +1033,9 @@ async def enrich(
     alto: UploadFile = File(None, description=_ALTO_HELP),  # noqa: B008
     teitok_enrichment: bool = Form(False, description=_TEITOK_ENRICHMENT_HELP),
     skip_untrustworthy_lines: bool = Form(False, description=_SKIP_UNTRUSTWORTHY_HELP),
+    include_record: bool = Form(False, description=_INCLUDE_RECORD_HELP),
 ):
-    rows, doc_id, layout, baseline, sent = await _read_text_input(file, alto, document_json)
+    rows, doc_id, layout, baseline, sent, source = await _read_text_input(file, alto, document_json)
     return await _enrich_common(
         rows,
         doc_id,
@@ -1003,6 +1046,8 @@ async def enrich(
         teitok_enrichment,
         sent,
         skip_untrustworthy_lines=skip_untrustworthy_lines,
+        include_record=include_record,
+        source=source,
     )
 
 
@@ -1039,6 +1084,8 @@ async def enrich_text(payload: EnrichTextRequest, request: Request):
         baseline_bytes,
         teitok_enrichment=payload.teitok_enrichment,
         sent=_sent("lines.json", lines, "application/json"),
+        skip_untrustworthy_lines=payload.skip_untrustworthy_lines,
+        include_record=payload.include_record,
     )
 
 
@@ -1224,11 +1271,12 @@ async def submit_job(
     alto: UploadFile = File(None, description=_ALTO_HELP),  # noqa: B008
     teitok_enrichment: bool = Form(False, description=_TEITOK_ENRICHMENT_HELP),
     skip_untrustworthy_lines: bool = Form(False, description=_SKIP_UNTRUSTWORTHY_HELP),
+    include_record: bool = Form(False, description=_INCLUDE_RECORD_HELP),
 ):
     _validate_params(lang)
     # Read here, not in the background task: the UploadFile's spooled temp file is tied
     # to the request and is closed once this handler returns (#10 J3).
-    rows, doc_id, layout, baseline, sent = await _read_text_input(file, alto, document_json)
+    rows, doc_id, layout, baseline, sent, source = await _read_text_input(file, alto, document_json)
     # Refused now, with the synchronous endpoints' answer, rather than accepted as a job
     # that the pipeline then fails or runs over MAX_WORDS (atrium-project#53).
     _check_rows(rows)
@@ -1265,6 +1313,8 @@ async def submit_job(
             teitok_enrichment,
             sent,
             skip_untrustworthy_lines=skip_untrustworthy_lines,
+            include_record=include_record,
+            source=source,
         )
     )
     return {"job_id": job.job_id, "status": "queued"}

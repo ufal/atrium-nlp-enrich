@@ -445,12 +445,21 @@ class PipelineManager:
         timeout: Optional[float] = None,
         teitok_enrichment: bool = False,
         skip_untrustworthy_lines: bool = False,
+        include_record: bool = False,
+        source: Optional[Tuple[str, bytes]] = None,
     ) -> EnrichmentResult:
         """Run the pipeline on *rows*. With *timeout* (seconds, the service passes
         API_JOB_TIMEOUT), the run and every process it started are stopped when it is up,
         the workspace is removed, and ``LimitExceeded`` (504) is raised. *teitok_enrichment*
         adds run_pipeline.py's opt-in ``project`` stage (atrium-project#70);
-        *skip_untrustworthy_lines* switches stage 1's ``categ`` filter on (atrium-project#72)."""
+        *skip_untrustworthy_lines* switches stage 1's ``categ`` filter on (atrium-project#72).
+
+        *source* is the upload as ``(name, bytes)``: a ``.csv``, ``.xlsx`` or ``.txt`` goes to
+        stage 1 as sent, as the command line hands it the user's file, so the TEITOK names the
+        file that was sent (it named the canonical ``.csv``). Without one (a TEITOK upload, a
+        record as the text, ``/enrich_text``) the rows are written as the canonical table.
+        *include_record* writes a record without a baseline, as ``--document-json-out`` alone
+        does (atrium-project#72)."""
         doc_id = sanitize_doc_id(doc_id)
         job_id = uuid.uuid4().hex
         workspace = _API_JOBS_ROOT / job_id
@@ -465,7 +474,15 @@ class PipelineManager:
             cfg = _derive_config(
                 workspace, layout.kind if layout else None, skip_untrustworthy_lines
             )
-            pages = _write_canonical_csvs(rows, workspace / "in", doc_id)
+            suffix = os.path.splitext(source[0])[1].lower() if source else ""
+            if source is not None and suffix in (
+                *line_inputs.TABLE_SUFFIXES,
+                line_inputs.TEXT_SUFFIX,
+            ):
+                (workspace / "in" / f"{doc_id}{suffix}").write_bytes(source[1])
+                pages = line_inputs.highest_page(rows)
+            else:
+                pages = _write_canonical_csvs(rows, workspace / "in", doc_id)
             # The text always enters as the canonical table (no input bypasses stage 1); the
             # uploaded layout sits where stage 4 looks for it. A converted TEITOK file named
             # after the table is claimed by it (api_util/doc_identity.py), so it is the
@@ -489,20 +506,15 @@ class PipelineManager:
             # and emitting a bare own-part record nobody asked for would be a second,
             # undocumented output.
             document_json_out: Optional[Path] = None
-            if document_json is not None:
-                baseline_path = workspace / f"baseline{FILE_SUFFIX}"
-                baseline_path.write_bytes(document_json)
+            if document_json is not None or include_record:
                 # Under out/, so `format=zip` carries the updated record too, and beside
                 # every other per-document output rather than in the private workspace.
                 document_json_out = workspace / "out" / f"{doc_id}{FILE_SUFFIX}"
-                cmd.extend(
-                    [
-                        "--document-json",
-                        str(baseline_path),
-                        "--document-json-out",
-                        str(document_json_out),
-                    ]
-                )
+                if document_json is not None:
+                    baseline_path = workspace / f"baseline{FILE_SUFFIX}"
+                    baseline_path.write_bytes(document_json)
+                    cmd.extend(["--document-json", str(baseline_path)])
+                cmd.extend(["--document-json-out", str(document_json_out)])
 
             if teitok_enrichment:
                 cmd.append("--teitok-enrichment")

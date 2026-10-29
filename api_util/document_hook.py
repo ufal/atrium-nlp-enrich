@@ -363,7 +363,9 @@ def run_document_hook(
             doc.add_license_detail(license_detail)
 
         if teitok_path:
-            doc.add_derived_from("teitok", teitok_path)
+            # The file's name, as the other tools record what they derived: the path was the
+            # machine's own, and from the service its private workspace (atrium-project#72).
+            doc.add_derived_from("teitok", os.path.basename(str(teitok_path)))
 
         # The tokens know their page by index, the record keys its rows by page label
         # (`pages[].page`): a born-digital PDF's /PageLabels make them "i", "ii" (issue #42).

@@ -60,7 +60,10 @@ ACCEPTED = (".csv", ".xlsx", ".txt", ".xml")
 #: The columns of the canonical table the service writes and stage 1 reads.
 TABLE_COLUMNS = ("text", "page_num", "line_num", "page_label", "categ")
 
-_DOC_ID_RE = re.compile(r"[^A-Za-z0-9._-]")
+#: What cannot be part of a file name: control characters and path separators.
+_UNSAFE_IN_NAME = re.compile(r"[\x00-\x1f\x7f/\\]")
+#: A file name has 255 bytes; the longest suffix the stages add to a doc_id is under 30.
+_MAX_DOC_ID_BYTES = 200
 _DEFAULT_DOC_ID = "document"
 
 
@@ -101,8 +104,13 @@ def input_kind(name: str, head: bytes = b"") -> Optional[str]:
 
 
 def sanitize_doc_id(name: str) -> str:
-    """The doc_id of an uploaded file or a record's id: its name without the input suffix,
-    made file-safe."""
+    """The doc_id of an uploaded file or a record's id: its name without the input suffix, as
+    the command line's stages derive it from a file of that name (``canonical_doc_id``).
+
+    Only what cannot be part of a file name is replaced (control characters, path separators;
+    a leading dot or dash is dropped), and the id is cut at 200 bytes. It used to replace
+    everything outside ``[A-Za-z0-9._-]``, so the service called ``zpráva 1.csv`` ``zpr_va_1``
+    where the command line says ``zpráva 1`` (atrium-project#72)."""
     stem = Path(str(name or "")).name
     for suffix in (TEITOK_SUFFIX, ".alto.xml"):
         if stem.lower().endswith(suffix):
@@ -111,7 +119,8 @@ def sanitize_doc_id(name: str) -> str:
     root, ext = os.path.splitext(stem)
     if ext.lower() in (".csv", ".xlsx", ".txt", ".xml"):
         stem = root
-    safe = _DOC_ID_RE.sub("_", stem).strip("._-")
+    safe = _UNSAFE_IN_NAME.sub("_", stem).strip().lstrip(".-")
+    safe = safe.encode("utf-8")[:_MAX_DOC_ID_BYTES].decode("utf-8", "ignore").strip()
     return safe or _DEFAULT_DOC_ID
 
 
@@ -275,6 +284,14 @@ def read_rows(
         Row(page=r.page or 1, line=r.line, label=r.label, text=r.text)
         for r in read_entries(name, data, skip_categories=skip_categories)
     ]
+
+
+def highest_page(rows: Iterable[Dict[str, Any]]) -> int:
+    """The highest page number among ``rows`` with text, as ``write_table`` reports it."""
+    return max(
+        (_int(_cell(r, "page_num", "page")) for r in rows if (r.get("text") or "").strip()),
+        default=0,
+    )
 
 
 def write_table(rows: Iterable[Dict[str, Any]], path: Path) -> int:

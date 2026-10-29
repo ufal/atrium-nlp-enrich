@@ -80,8 +80,8 @@ each stage's paradata record (and therefore the merged record). This ties a run 
 that produced it.
 
 ```bash
-ATRIUM_RUNNER_IMAGE="ghcr.io/ufal/atrium-nlp-enrich:1.2.0-beta" \
-ATRIUM_RUNNER_REF="v1.2.0-beta" \
+ATRIUM_RUNNER_IMAGE="ghcr.io/ufal/atrium-nlp-enrich:1.3.0-beta" \
+ATRIUM_RUNNER_REF="v1.3.0-beta" \
 python3 run_pipeline.py
 ```
 

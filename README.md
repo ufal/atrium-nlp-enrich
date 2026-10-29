@@ -41,7 +41,7 @@ The service from the published image, on a sample table and its ALTO from this r
 
 ```bash
 git clone https://github.com/ufal/atrium-nlp-enrich.git && cd atrium-nlp-enrich
-docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # the release without its v, e.g. 1.2.0-beta
+docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # the release without its v, e.g. 1.3.0-beta
 curl --fail-with-body -sS -X POST localhost:8000/enrich \
   -F "file=@data_samples/DOC_LINE_CATEG/CTX000000001.csv" \
   -F "alto=@data_samples/ALTO/CTX000000001.alto.xml" -o out.json
@@ -95,7 +95,7 @@ opt-in `/project_record` can then carry the page categories and keywords back in
 - **LINDAT is required.** Every run sends the text to LINDAT's UDPipe 2 and NameTag 3, or to the instances
   `UDPIPE_URL` and `NAMETAG_URL` name; there is no local fallback. A run without them stops with exit code 6 or 7,
   the service with 502 or 504 ([exit codes](docs/usage.md#exit-codes)).
-- **Czech first.** The service's `lang` is pinned to `cs` in v1, and the UDPipe model is `czech-pdt-ud-2.15-241121`.
+- **Czech first.** Both entry points take `cs` only (`--lang`, `lang`): the UDPipe model is `czech-pdt-ud-2.15-241121`.
   Named entities come from NameTag's general multilingual OntoNotes model, not an archaeological one; the kit for
   annotating archaeological training data is in [annotation/](annotation/README.md).
 - **Positions are of different precision.** With ALTO, a word gets the box of the OCR word it is matched to. A
