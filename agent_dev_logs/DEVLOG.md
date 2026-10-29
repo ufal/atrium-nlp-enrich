@@ -866,3 +866,18 @@ this file is a derived reading aid in `agent_dev_logs/`._
 * `api_util/teitok_project.py` passes the repository root to `ParadataLogger`; run from another folder it read
   `para_config.txt` from the working directory and recorded version "unknown" (the cross-tool check of
   atrium-project#72; the stages run from the root and were not affected). Its tests pass.
+
+## 2026-10-29 (evening) — v1.3.1-beta: a record that cannot be added to is refused (atrium-project#72)
+
+* **Shared modules** (re-vendored from the hub with `scripts/revendor_shared.sh`): `atrium_document.py` raises
+  `InvalidRecordError` when a list block the merge adds rows to is not a list of objects, before anything is written,
+  and `service/atrium_service.py` answers it with 422 `invalid_record`. Here that is `entities` and `pages` (the
+  document hook's two merges). The spec's registry text names the case, and the `invalid_record` row of
+  `service/README.md` names `entities` and `pages`.
+* **v1.3.0-beta's notes** left out the TEITOK projection's `para_config.txt` fix (the entry above): recorded in the
+  v1.3.1-beta row and notes, not by editing the published release.
+* **CI:** the hub's workflows are pinned to the commit that carries the modules (the maintainer's pin move; the Trivy
+  database retry of `b07090f` is already in).
+* **Release:** v1.3.1-beta in `CITATION.cff`, `para_config.txt`, the spec's version; CONTRIBUTING row; the version
+  examples (README, service README, `docs/usage.md`, `docs/reference/paradata.md`).
+* **Checks:** 1117 passed, 11 skipped; pre-commit clean.

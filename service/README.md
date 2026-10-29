@@ -13,7 +13,7 @@ service (since 1.0.0): it is [atrium-keyword-extract](https://github.com/ufal/at
 The published image first: it is what a deployment runs, and it needs no checkout.
 
 ```bash
-docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # e.g. 1.3.0-beta
+docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # e.g. 1.3.1-beta
 curl -s http://localhost:8000/ready                                           # 200 once ready
 # from a checkout:
 docker compose --profile api up -d
@@ -407,7 +407,7 @@ validation error adds FastAPI's list of problems as `errors`.
 | 409    | `null`                   | `/jobs/{id}/result` of a job that is not `done`                                                                                                                        | poll `GET /jobs/{id}` until `done`                                                   |
 | 413    | `limit_exceeded`         | over `MAX_UPLOAD_MB` or `MAX_WORDS`                                                                                                                                    | split the input, or raise the setting `limit.env` names                              |
 | 415    | `unsupported_media_type` | the upload is not `.csv`, `.xlsx`, `.txt` or a TEITOK `.xml`; `accepted` lists them (a 422 before atrium-project#32 round 2)                                           | send one of the types in `accepted`                                                  |
-| 422    | `invalid_record`         | the `document_json` sent cannot be opened (not UTF-8 JSON, not an object, a newer `schema_version` major)                                                              | send the record the previous stage wrote; update this service if the record is newer |
+| 422    | `invalid_record`         | the `document_json` sent cannot be opened (not UTF-8 JSON, not an object, a newer `schema_version` major), or its `entities` or `pages` is not a list of objects       | send the record the previous stage wrote; update this service if the record is newer |
 | 422    | `limit_exceeded`         | `/rescale` over `MAX_RESCALE_DIM`                                                                                                                                      | lower `scale`, or raise `MAX_RESCALE_DIM`                                            |
 | 422    | `null`                   | an unusable upload, a bad parameter (a value outside the spec's enums or bounds), or request validation (`errors`)                                                     | fix the field `errors` or `detail` names                                             |
 | 429    | `busy`                   | every processing slot taken (synchronous endpoints), or the `/jobs` queue full; retry after `Retry-After` seconds                                                      | retry after `Retry-After`; add replicas if it persists                               |

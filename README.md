@@ -41,7 +41,7 @@ The service from the published image, on a sample table and its ALTO from this r
 
 ```bash
 git clone https://github.com/ufal/atrium-nlp-enrich.git && cd atrium-nlp-enrich
-docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # the release without its v, e.g. 1.3.0-beta
+docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # the release without its v, e.g. 1.3.1-beta
 curl --fail-with-body -sS -X POST localhost:8000/enrich \
   -F "file=@data_samples/DOC_LINE_CATEG/CTX000000001.csv" \
   -F "alto=@data_samples/ALTO/CTX000000001.alto.xml" -o out.json

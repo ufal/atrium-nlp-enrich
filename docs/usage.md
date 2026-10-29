@@ -360,7 +360,7 @@ before v1.3.0-beta, and from the service its private workspace.
 
 The published images are `ghcr.io/ufal/atrium-nlp-enrich:<version>` (the batch runner, `run_pipeline.py`) and
 `ghcr.io/ufal/atrium-nlp-enrich-api:<version>` (the service). `<version>` is the release **without** its leading
-`v`: `1.3.0-beta` for the release `v1.3.0-beta`. The target is part of the image name, not the tag.
+`v`: `1.3.1-beta` for the release `v1.3.1-beta`. The target is part of the image name, not the tag.
 `atrium-nlp-enrich-llm` was published up to 0.23.0 only; it is not built any more (the keyword and LLM code left,
 see [the repository split](decisions/2026-10-01-repository-split.md)).
 
