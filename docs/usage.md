@@ -255,10 +255,9 @@ under the runner.
    existed before the run are never merged).
 4. **Merges** all per-stage records into one `<PARADATA_DIR>/<runid>_nlp-enrich_pipeline-run.json` via
    `atrium_paradata.merge_run_paradata`. The merged record tracks document-level statistics across the sequential
-   pipeline (recording true throughput without inflating input counts). Its computed licence label is re-derived
-   from the **union** of every component used across the stages, so the most-restrictive rule holds end to end (a
-   core run's label is CC BY-NC-SA 4.0, from the NameTag 3 and UDPipe 2 models; converting with flexiconv adds its
-   GPL-3.0-or-later). The label describes the components, not the rights in the output:
+   pipeline (recording true throughput without inflating input counts). Its component list is the
+   **union** of every stage's: the NameTag 3 and UDPipe 2 models in every core run, and flexiconv when it converted
+   documents. The list describes what the run used, not the rights in the output:
    [licences](reference/licences.md).
 
 ### Resume / checkpoint recovery
@@ -339,7 +338,7 @@ the doc_id and the record were the same in every case
 | The doc_id                   | the file name without its extension                                                                     | the same                                                  | the same (`zpráva 1`; the service said `zpr_va_1` before v1.3.0-beta)      |
 | Lines as JSON                | none; write them to a `.txt` or a table                                                                 | `POST /enrich_text`                                       | an HTTP convenience                                                        |
 | TEITOK (flexiconv's)         | files in `TEITOK_FLEXICONV_DIR` with `FLEXICONV_ANNOTATE=true`                                          | the `file` part                                           | the same                                                                   |
-| PDF, office files, PAGE XML  | converted by flexiconv (`--with-flexiconv`)                                                             | not read; send flexiconv's TEITOK                         | differs: flexiconv is GPL-3.0-or-later and stays out of the service        |
+| PDF, office files, PAGE XML  | converted by flexiconv (`--with-flexiconv`)                                                             | not read; send flexiconv's TEITOK                         | differs: flexiconv is not in the service image                             |
 | ALTO layout                  | `INPUT_ALTO_DIR`, for any document of the same name                                                     | the `alto` part, with a `.csv` or `.xlsx` only (else 422) | the same for a table; the service refuses ALTO with a `.txt` or TEITOK     |
 | Page images                  | `INPUT_PAGES_DIR`, scaled into the TEITOK file                                                          | not taken; `POST /rescale` scales a finished TEITOK file  | differs: the images are large; `fix_teitok_bboxes.py` is the CLI's rescale |
 | The record                   | `--document-json`, `--document-json-out`                                                                | `document_json`; `include_record` without one             | the same record                                                            |
@@ -391,7 +390,7 @@ The files follow TEITOK's conventions, but a TEITOK project has a few of its own
 - **Page images.** `pb@facs` and `<graphic url>` name the images (`<doc_id>-N.png` for ALTO documents, the converted
   file's own names otherwise); place them where the project's facsimile settings look.
 
-What the TEITOK readers keep (flexiconv v0.3.10, the pinned version, is tested in
+What the TEITOK readers keep (flexiconv v0.3.11, the pinned version, is tested in
 `tests/test_teitok_conformance.py` and `tests/test_teitok_pages.py`; flexipipe `73188c5` was checked by hand on the
 committed samples, 2026-09-24):
 
@@ -451,11 +450,11 @@ has no facsimile; flexiconv's `pdf=bbox` reader gives word boxes but needs Poppl
 1. **Install** the pinned flexiconv and the format extras:
 
    ```bash
-   pip install -r requirements_flexiconv.txt   # flexiconv v0.3.10 + docx/odt/md/pdf/rtf extras
+   pip install -r requirements_flexiconv.txt   # flexiconv v0.3.11 + docx/odt/md/pdf/rtf extras
    ```
 
-   flexiconv is **GPL-3.0-or-later** (declared in its `pyproject.toml`) and optional: nothing else in the pipeline
-   imports it, and `para_config.txt` records it as a conditional component.
+   flexiconv is **MIT** and optional: nothing else in the pipeline imports it, and `para_config.txt` records it as a
+   conditional component.
 
 2. **Put the documents** in `INPUT_DOCS_DIR` (`config_api.txt`, default `$OUTPUT_DIR/DOCS`) and list the extensions
    to convert in `FLEXICONV_FORMATS`. `xml` covers PAGE XML, ALTO and TEI: flexiconv detects them by content.
@@ -485,7 +484,7 @@ For a single file, the CLI directly: `flexiconv -t teitok input.page.xml output.
 (`flexiconv --list-formats` lists every input format).
 
 `run_pipeline.py --with-flexiconv` runs `api_flexiconv.sh` as its first stage (`--start-from` any later stage skips
-it). The REST service never runs flexiconv (no GPL code in its image), but it takes flexiconv's output: upload a
+it). The REST service never runs flexiconv (it is not in its image), but it takes flexiconv's output: upload a
 converted `.teitok.xml` to `/enrich` and it is annotated with its own layout
 ([service/README.md, Layout inputs](../service/README.md#layout-inputs)).
 

@@ -54,8 +54,8 @@ This file is removed when the script completes. Because it is plain JSON it can 
 a run is interrupted unexpectedly; `run_pipeline.py --clean-state` sweeps stale ones.
 
 **Components and licences.** Each record lists the components the run used, each with its licence, as declared in
-[para_config.txt](../../para_config.txt), and a computed label, the most restrictive of them. The label is not the
-licence of the output: [licences.md](licences.md).
+[para_config.txt](../../para_config.txt). None of them is the licence of the output, and the older calculated
+`license` field beside the list is not one either: [licences.md](licences.md).
 
 ### The runtime log, `OUTPUT_DIR/processing.log`
 

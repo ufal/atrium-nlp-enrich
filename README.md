@@ -105,7 +105,7 @@ opt-in `/project_record` can then carry the page categories and keywords back in
 - **`/jobs` are not durable.** A job lives in the memory of the replica that accepted it; a restart or redeploy
   loses it (404). `/enrich` is the synchronous alternative ([Known limits](service/README.md#known-limits)).
 - **Service limits.** Uploads up to 5 MB and 30,000 words by default ([Limits](service/README.md#limits)).
-- **flexiconv is command-line only and optional** (GPL-3.0-or-later): the service takes its output but never runs it.
+- **flexiconv is command-line only and optional** (MIT): the service takes its output but never runs it.
 - **Upstream TEITOK readers lose something:** flexiconv the words of a multi-word token, flexipipe the dependency
   heads ([importing into TEITOK](docs/usage.md#importing-into-a-teitok-project)).
 - **Not evaluated here.** The tests check the pipeline, the formats and the contracts, not the accuracy of UDPipe or
@@ -139,7 +139,7 @@ The code is MIT ([LICENSE](LICENSE)). The annotation is done by LINDAT's
 [UDPipe 2](https://lindat.mff.cuni.cz/services/udpipe/api-reference.php) and
 [NameTag 3](https://lindat.mff.cuni.cz/services/nametag/api-reference.php) services, offered under the
 [LINDAT Terms of Use](https://lindat.mff.cuni.cz/en/terms-of-use); their engines are MPL 2.0 and the models in use
-CC BY-NC-SA 4.0. [flexiconv](https://github.com/ufal/flexiconv) (GPL-3.0-or-later) is an optional command-line
+CC BY-NC-SA 4.0. [flexiconv](https://github.com/ufal/flexiconv) (MIT) is an optional command-line
 converter. Each component with its licence or terms: [docs/reference/licences.md](docs/reference/licences.md), from
 [para_config.txt](para_config.txt). These do not by themselves set the rights in an output, which depend first on
 the source document: see the hub's [Licences and paradata](https://ufal.github.io/atrium-project/ecosystem/licences/).

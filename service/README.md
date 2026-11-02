@@ -89,7 +89,7 @@ The TEITOK the service returns has the layout of what it was given (issue
 * A **TEITOK upload** is text and layout at once: its rows (`teitok_read`) go through the
   pipeline as the document's table, and the file itself becomes that document's layout — the
   same claim the CLI's stage 1 makes. Convert PDF, DOCX, PAGE XML, hOCR, … to TEITOK with
-  `api_flexiconv.sh` (CLI) first: flexiconv is GPL-3.0 and is **not** in the service image. A file
+  `api_flexiconv.sh` (CLI) first: flexiconv is **not** in the service image. A file
   that is not well-formed, or breaks TEITOK-core rules (duplicate ids, references that point
   nowhere), is refused with 422 and the diagnostics.
 * An **`alto` part** goes with a `.csv`/`.xlsx` (e.g. ocr-postprocess's `DOC_LINE_CATEG` table and
@@ -182,7 +182,7 @@ this is the merged record's list (`[]` when no limit applied).
 
 **`paradata`** is the call's provenance (atrium-project#71): one Process Run Crate `CreateAction`,
 built by `atrium_rocrate.create_action()` from the run's merged pipeline-run record (its
-`paradataRecord`, with the licence union of every stage). Its `@id` is the `run_uuid` the stats
+`paradataRecord`, with the components of every stage). Its `@id` is the `run_uuid` the stats
 stage stamped on the blocks it wrote into `document_json`, or, without a record, the merged run's
 own; `object` is what the call was sent (the upload or `lines.json`, a separate `alto` part, the
 record), `result` the blocks written and the TEITOK; `agent` is `ATRIUM_RUN_AGENT` when set. It
@@ -433,9 +433,8 @@ A 200 can carry less than was asked for. Read these before using the result:
 ## Known limits
 
 - UDPipe and NameTag run at LINDAT under the [LINDAT Terms of Use](https://lindat.mff.cuni.cz/en/terms-of-use);
-  their models are CC BY-NC-SA 4.0. The paradata lists them with these licences and a calculated label
-  (the most restrictive of them), which is not the licence of the output: the rights in an output depend
-  on the source document and are stated by whoever holds them
+  their models are CC BY-NC-SA 4.0. The paradata lists them with these licences, which are not the licence
+  of the output: the rights in an output depend on the source document and are stated by whoever holds them
   ([Licences and paradata](https://ufal.github.io/atrium-project/ecosystem/licences/), atrium-project#6).
 - Every request needs LINDAT: there is no local fallback for UDPipe or NameTag.
 - A born-digital record has line boxes only. Word boxes are shared out from them by character

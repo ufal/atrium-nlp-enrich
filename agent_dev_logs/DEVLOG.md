@@ -881,3 +881,16 @@ this file is a derived reading aid in `agent_dev_logs/`._
 * **Release:** v1.3.1-beta in `CITATION.cff`, `para_config.txt`, the spec's version; CONTRIBUTING row; the version
   examples (README, service README, `docs/usage.md`, `docs/reference/paradata.md`).
 * **Checks:** 1117 passed, 11 skipped; pre-commit clean.
+
+## 2026-11-02 — flexiconv v0.3.11, declared MIT (atrium-project#6)
+
+* **Pin:** `requirements_flexiconv.txt` and `teitok-schema.yml` move to v0.3.11, the first tag with flexiconv's MIT
+  LICENSE (`1aed8ca`, 10-29). v0.3.11 converts ALTO, hOCR, PAGE XML, Markdown, DOCX and TXT exactly as v0.3.10 did
+  (flexiconv's own examples, both versions; the `when` stamp aside), so the v0.3.10 fixtures stand.
+* **`para_config.txt`:** `flexiconv = MIT`; the comment notes that `pyproject.toml` still says GPL-3.0-or-later
+  (raised on ufal/flexiconv#1). `production-image.json`'s comment follows.
+* **Docs:** README, `docs/usage.md`, `docs/reference/{licences,teitok,paradata}.md`, `schemas/teitok/README.md` and
+  the runbook say MIT and v0.3.11. Following motyc's 10-29 answer, no page presents the calculated licence: the
+  licences page's "What the computed label means" becomes "What the list does not say", which links the hub's note.
+* **Checks:** 1118 passed, 11 skipped; with flexiconv v0.3.11 installed, 1126 passed, 3 skipped (torch), the same
+  as with v0.3.10; `validate_teitok_xml.py --profile core` 5/5 on the fixtures.

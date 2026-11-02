@@ -101,7 +101,7 @@ separately, by reading the output the way the tools do:
   `tok.tail`, words from `<dtok>`, heads through `@id`. It then compares sentence texts,
   every `SpaceAfter`, MWT, heads, ids and entity attributes with the input.
 - The same file's last test repeats the round-trip through the pinned flexiconv
-  (`requirements_flexiconv.txt`, v0.3.10) when it is installed. The `teitok-schema`
+  (`requirements_flexiconv.txt`, v0.3.11) when it is installed. The `teitok-schema`
   workflow installs it for that step.
 - `api_util/validate_teitok_xml.py --profile core` checks rules that hold for *any*
   TEITOK document: `<TEI>` root, `<text>`, `@id` unique across all elements, resolvable
@@ -179,7 +179,7 @@ without `@id`. This schema would reject it for not being this writer's output ra
 than for being broken. So it goes to its own `$TEITOK_FLEXICONV_DIR` (default
 `$TEITOK_OUTPUT_DIR/flexiconv`), which `api_4_stats.sh` excludes (`--exclude`), and it is
 checked with the core profile. Real flexiconv v0.3.10 output is committed as fixtures in
-`tests/fixtures/teitok/flexiconv/`.
+`tests/fixtures/teitok/flexiconv/`; the pinned v0.3.11 writes the same for these formats.
 
 With `FLEXICONV_ANNOTATE=true` that output is an intermediate. Its text is annotated by stages
 2–3, and stage 4 writes **this** format (full XSD) with the converted file as the layout source.

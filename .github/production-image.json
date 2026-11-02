@@ -10,7 +10,7 @@
     "published, never pinned. The service runs run_pipeline.py, which runs api_*.sh, which run",
     "api_util/*.py: the walk follows those script names too. Keywords and the LLM stage are",
     "not part of this image since 1.0.0 (atrium-keyword-extract). api_flexiconv.sh is the",
-    "developer route (off the AMCR chain, nlp-enrich#10; flexiconv is a conditional GPL-3.0 component)."
+    "developer route (off the AMCR chain, nlp-enrich#10; flexiconv is a conditional MIT component)."
   ],
   "image": "ghcr.io/ufal/atrium-nlp-enrich-api",
   "target": "api",

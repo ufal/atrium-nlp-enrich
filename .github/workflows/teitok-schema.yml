@@ -236,7 +236,7 @@ jobs:
       - name: Install the pinned flexiconv (core only)
         # The same pin as requirements_flexiconv.txt, without the format extras: the
         # round-trip only needs flexiconv's TEITOK reader.
-        run: pip install "flexiconv @ git+https://github.com/ufal/flexiconv.git@v0.3.10"
+        run: pip install "flexiconv @ git+https://github.com/ufal/flexiconv.git@v0.3.11"
 
       - name: Upstream conformance (flexiconv round-trip)
         run: >-
