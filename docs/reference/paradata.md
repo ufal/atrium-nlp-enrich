@@ -87,7 +87,7 @@ python3 run_pipeline.py
 
 `ATRIUM_RUNNER_IMAGE` names the image with its tag, the release without its leading `v`; `ATRIUM_RUNNER_REF` is the
 git ref and keeps the `v` (or a commit: `"$(git rev-parse --short HEAD)"`). `docker-compose.yaml` sets all three for
-its services. The published images: [usage, Docker](../usage.md#docker).
+its services. The published images: [usage, Run it in Docker](../usage.md#run-it-in-docker).
 
 ### The service's provenance
 

@@ -80,7 +80,7 @@ would overwrite the environment's value when the stage sources the file.
 `run_pipeline.py` also reads `SKIP_<STAGE>=true` keys (`SKIP_MANIFEST`, `SKIP_UDP`, `SKIP_NT`, `SKIP_STATS`,
 `SKIP_PROJECT`, and `SKIP_FLEXICONV` under `--with-flexiconv`), which are not in the shipped file: the equivalents
 of its `--skip-<stage>` flags
-([Resume / checkpoint recovery](usage.md#resume--checkpoint-recovery)). `TEITOK_ENRICHMENT=true` adds a `project`
+([Resume an interrupted run](usage.md#resume-an-interrupted-run)). `TEITOK_ENRICHMENT=true` adds a `project`
 stage after `stats` ([record projection](reference/teitok.md#record-projection-onto-teitok-opt-in)).
 
 `TIMEOUT`, `MAX_RETRIES` and `WORD_CHUNK_LIMIT` are limits (atrium-project#53). For an API job each is also an

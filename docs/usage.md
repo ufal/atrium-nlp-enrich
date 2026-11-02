@@ -1,22 +1,23 @@
 # Using nlp-enrich
 
-For users and integrators who want to run it: how to set it up, call the service, run the pipeline from the
-command line, read its exit codes, put the result into a TEITOK project, convert other input formats, and fix boxes
-that do not line up. What each stage does: [how it works](how-it-works.md).
+For users and integrators who want to run it. This page shows how to set it up, call the service and run the
+pipeline from the command line. It also covers the exit codes, putting the result into a TEITOK project, converting
+other input formats and fixing boxes that do not line up. What each stage does: [how it works](how-it-works.md).
 
 On this page:
 
-- [Setup](#setup) and [the service](#the-service)
-- [The command line, stage by stage](#the-command-line-stage-by-stage)
-- [One-command pipeline run](#one-command-pipeline-run-run_pipelinepy): [what the runner does](#what-the-runner-does),
-  [resume](#resume--checkpoint-recovery), [exit codes](#exit-codes)
-- [Docker](#docker)
-- [Importing into a TEITOK project](#importing-into-a-teitok-project)
-- [Other input formats: flexiconv](#other-input-formats-flexiconv)
-- [Troubleshooting](#troubleshooting): [fixing bounding box alignments](#fixing-bounding-box-alignments),
-  [files from an older format](#files-from-an-older-format), [when a run stops](#when-a-run-stops)
+- **Get started:** [install and configure](#install-and-configure) · [call the service](#call-the-service) ·
+  [run it in Docker](#run-it-in-docker)
+- **Run the pipeline from the command line:** [run the stages by hand](#run-the-stages-by-hand) ·
+  [run the whole pipeline](#run-the-whole-pipeline-run_pipelinepy): [what the runner does](#what-the-runner-does),
+  [resume an interrupted run](#resume-an-interrupted-run), [read the exit codes](#exit-codes)
+- **Work with the result:** [import it into a TEITOK project](#importing-into-a-teitok-project) ·
+  [convert other input formats with flexiconv](#convert-other-input-formats-with-flexiconv)
+- **Compare the two ways to run it:** [the command line and the service](#the-command-line-and-the-service)
+- **Fix a problem:** [troubleshooting](#troubleshooting): [fix boxes that do not line up](#fixing-bounding-box-alignments),
+  [rewrite files from an older format](#rewrite-files-from-an-older-format), [find out why a run stopped](#when-a-run-stops)
 
-## Setup
+## Install and configure
 
 Python 3.11, the version the images and CI use.
 
@@ -40,7 +41,7 @@ Every run sends the text to LINDAT's UDPipe 2 and NameTag 3 services over HTTPS,
 and `NAMETAG_URL` name ([backing service endpoints](configuration.md#backing-service-endpoints)). Without them a run
 stops with exit code 6 or 7 ([Exit codes](#exit-codes)).
 
-## The service
+## Call the service
 
 [service/README.md](../service/README.md) is the reference: the endpoints, the layout inputs, the response, the
 limits, the errors and the OpenAPI contract. In short:
@@ -54,25 +55,25 @@ curl -s -X POST localhost:8000/rescale -F "file=@data_samples/TEITOK/CTX00000000
 ```
 
 `/enrich` takes a table, a `.txt` or a converted TEITOK file, optionally with the ALTO of a table's pages or an
-ATRIUM record; `/jobs` runs the same as a background job; `/rescale` and `/project_record` transform a finished
+ATRIUM record. `/jobs` runs the same as a background job. `/rescale` and `/project_record` transform a finished
 TEITOK file without running the pipeline.
 
-## The command line, stage by stage
+## Run the stages by hand
 
 The process is divided into sequential steps, each responsible for one part of the enrichment. Step 1 happens in
 [atrium-ocr-postprocess](https://github.com/ufal/atrium-ocr-postprocess); step 2 is this repository's four stage
-scripts. [run_pipeline.py](#one-command-pipeline-run-run_pipelinepy) runs them all with one command.
+scripts. [run_pipeline.py](#run-the-whole-pipeline-run_pipelinepy) runs them all with one command.
 
 ### Step 1: prepare tables with the text of page-specific ALTOs
 
 If you already have a directory of CSV (XLSX) tables with a `text` column holding the text extracted from ALTO XML
 files, skip step 1 and go to step 2.
 
-The input tables are the result of the ALTO XML postprocessing pipeline of
-[atrium-ocr-postprocess](https://github.com/ufal/atrium-ocr-postprocess) (text and bounding boxes ordered by
-LayoutReader, recorded as a `text` column): its `DOC_LINE_CATEG/` directory, which `INPUT_TABLES_DIR` points at by
-default. Each CSV (XLSX) file corresponds to a document and has a row for each line, with page and line number
-columns for the proper ordering (`page_num` and `line_num`):
+The input tables come from [atrium-ocr-postprocess](https://github.com/ufal/atrium-ocr-postprocess), which orders
+the text and boxes of the ALTO XML files by LayoutReader and records them in a `text` column. They are in its
+`DOC_LINE_CATEG/` directory, which `INPUT_TABLES_DIR` points at by default. Each CSV (XLSX) file corresponds to a
+document and has a row for each line, with page and line number columns for the proper ordering (`page_num` and
+`line_num`):
 
 ```
 DOC_LINE_CATEG/
@@ -192,7 +193,7 @@ ls <OUTPUT_DIR>/TEITOK/*.xml | wc -l      # .teitok.xml documents written
 The example output directories [UDP_NE](../data_samples/UDP_NE) and [TEITOK](../data_samples/TEITOK) hold the
 results for the three sample documents; the whole tree is in [output structure](reference/outputs.md#output-structure).
 
-## One-command pipeline run (`run_pipeline.py`)
+## Run the whole pipeline (`run_pipeline.py`)
 
 While each stage can be launched by hand, [run_pipeline.py](../run_pipeline.py) chains them end to end and merges
 every per-stage paradata JSON produced during the run into a single `pipeline-run-merged` record.
@@ -201,7 +202,7 @@ The stage scripts run `python3` from `PATH`. Started from a virtual environment 
 no activation needed), the runner puts that environment's `bin` first for them. Before the first stage it checks
 that this `python3` can import what the stages need (`requests` for UDPipe and NameTag, `lxml` for the TEITOK gate).
 If it cannot, the runner stops with exit code `3`, names the interpreter and the missing package, and gives the
-`pip install` that fixes it (atrium-nlp-enrich#42).
+`pip install` that fixes it.
 
 ```bash
 # Full core run: api_1 → api_2 → api_3 → api_4
@@ -241,10 +242,10 @@ python3 run_pipeline.py --skip-untrustworthy-lines
 
 The runner reads the **same** [config_api.txt](../config_api.txt) that the shell stages source, so Python and Bash
 always agree on `OUTPUT_DIR`, `PARADATA_DIR`, and the input/output paths. `python3 run_pipeline.py --help` lists
-every option. The runner never re-implements stage logic: it shells out to the exact same
-[api_1_manifest.sh](../api_1_manifest.sh) … [api_4_stats.sh](../api_4_stats.sh) and [config_api.txt](../config_api.txt)
-you can run by hand, so anything documented for those stages (resume behaviour, output flags, …) applies unchanged
-under the runner.
+every option. The runner never re-implements stage logic. It shells out to the same
+[api_1_manifest.sh](../api_1_manifest.sh) … [api_4_stats.sh](../api_4_stats.sh) scripts and the same
+[config_api.txt](../config_api.txt) you can run by hand, so anything documented for those stages (resume behaviour,
+output flags, …) applies unchanged under the runner.
 
 ### What the runner does
 
@@ -260,7 +261,7 @@ under the runner.
    documents. The list describes what the run used, not the rights in the output:
    [licences](reference/licences.md).
 
-### Resume / checkpoint recovery
+### Resume an interrupted run
 
 Long batches on constrained hardware are expensive to restart from scratch, so the runner lets you re-enter the
 pipeline at any stage instead of redoing completed work. Recovery operates at two complementary levels.
@@ -306,7 +307,7 @@ The exit code is the runner's contract; the service maps it to an HTTP status
 | `2`  | A required stage script was not found; or argparse refused an option (e.g. `--lang de`).                                                                                    |
 | `3`  | A dependency preflight failed: `--with-flexiconv` without flexiconv, or the stages' `python3` cannot import `requests` or `lxml` (the message names it and the fix).        |
 | `5`  | The TEITOK output failed its output contract (`api_4_stats.sh`'s gate: the XSD, unique ids, resolvable references, the page rules). A writer defect: please report it.      |
-| `6`  | LINDAT UDPipe or NameTag did not answer after `MAX_RETRIES` retries (HTTP 5xx or 429, a refused or dropped connection); the first line on stderr names the service (#41).   |
+| `6`  | LINDAT UDPipe or NameTag did not answer after `MAX_RETRIES` retries (HTTP 5xx or 429, a refused or dropped connection); the first line on stderr names the service.         |
 | `7`  | Every attempt at a LINDAT call timed out (`TIMEOUT` seconds each).                                                                                                          |
 | `8`  | LINDAT refused the request (HTTP 4xx, e.g. an unknown model): a configuration or request defect, not the input.                                                             |
 | `≠0` | A stage script itself exited non-zero (its code is propagated).                                                                                                             |
@@ -317,51 +318,14 @@ processes zero files.
 
 The empty-run guard is governed by `FAIL_ON_EMPTY` in [config_api.txt](../config_api.txt). A **resumed** run, where
 every document was already complete and thus *skipped*, or where a stage was skipped outright via `--start-from` /
-`--skip-<stage>` (see [Resume / checkpoint recovery](#resume--checkpoint-recovery)), is treated as success, not an
+`--skip-<stage>` (see [Resume an interrupted run](#resume-an-interrupted-run)), is treated as success, not an
 empty failure. Set `FAIL_ON_EMPTY=false` to permit genuinely empty stages.
 
-## The command line and the service
-
-Stage 1 and the service read every input through [api_util/line_inputs.py](../api_util/line_inputs.py), and the
-service runs `run_pipeline.py` itself on what it was sent, in a workspace of its own. A scratch harness ran 38
-combinations through both on 2026-10-28, with one deterministic stand-in for UDPipe and NameTag on both sides: a
-table, a table named `zpráva 1.csv`, a `.txt` with form feeds, a TEITOK file, a table with its ALTO, and a record as
-the text; with and without a record, with a seed saved with a BOM, `include_record` against `--document-json-out`
-alone, the untrustworthy-row filter on and off, and the record projection on and off. The TEITOK, the entity summary,
-the doc_id and the record were the same in every case
-([tests/test_cli_service_parity.py](../tests/test_cli_service_parity.py) keeps the main ones).
-
-| Input or setting             | Command line                                                                                            | Service                                                   | Same?                                                                      |
-|------------------------------|---------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|----------------------------------------------------------------------------|
-| How much per run             | every document in `INPUT_TABLES_DIR`                                                                    | one document per request                                  | differs: the service is stateless                                          |
-| Table, `.txt`                | files in `INPUT_TABLES_DIR`                                                                             | the `file` part, handed to stage 1 as sent                | the same (the TEITOK named a `.txt` upload `.csv` before v1.3.0-beta)      |
-| The doc_id                   | the file name without its extension                                                                     | the same                                                  | the same (`zpráva 1`; the service said `zpr_va_1` before v1.3.0-beta)      |
-| Lines as JSON                | none; write them to a `.txt` or a table                                                                 | `POST /enrich_text`                                       | an HTTP convenience                                                        |
-| TEITOK (flexiconv's)         | files in `TEITOK_FLEXICONV_DIR` with `FLEXICONV_ANNOTATE=true`                                          | the `file` part                                           | the same                                                                   |
-| PDF, office files, PAGE XML  | converted by flexiconv (`--with-flexiconv`)                                                             | not read; send flexiconv's TEITOK                         | differs: flexiconv is not in the service image                             |
-| ALTO layout                  | `INPUT_ALTO_DIR`, for any document of the same name                                                     | the `alto` part, with a `.csv` or `.xlsx` only (else 422) | the same for a table; the service refuses ALTO with a `.txt` or TEITOK     |
-| Page images                  | `INPUT_PAGES_DIR`, scaled into the TEITOK file                                                          | not taken; `POST /rescale` scales a finished TEITOK file  | differs: the images are large; `fix_teitok_bboxes.py` is the CLI's rescale |
-| The record                   | `--document-json`, `--document-json-out`                                                                | `document_json`; `include_record` without one             | the same record                                                            |
-| The record as the text       | `--text-from-record`                                                                                    | `document_json` without `file`                            | the same                                                                   |
-| Untrustworthy rows           | `--skip-untrustworthy-lines`, or `SKIP_UNTRUSTWORTHY_LINES`                                             | `skip_untrustworthy_lines`, the request's only            | the same; the service ignores the environment value                        |
-| Record projection            | `--teitok-enrichment`, or `TEITOK_ENRICHMENT`                                                           | `teitok_enrichment`, the request's only                   | the same; the service ignores the environment value                        |
-| Projection onto a TEITOK     | `api_util/teitok_project.py`; `--force` also takes a TEITOK this writer did not make, or an invalid one | `POST /project_record`, which refuses those (422)         | the same projection; the service has no `--force`                          |
-| Language                     | `--lang`, `cs` only                                                                                     | `lang`, `cs` only                                         | the same: the models of `config_api.txt` decide; any other value refused   |
-| A run that annotates nothing | exit 1 when `FAIL_ON_EMPTY=true`; `--strict-empty` for all-skipped                                      | always `--strict-empty`: a 502                            | differs: one document is one request, so nothing done is a failure         |
-| The word limit               | none                                                                                                    | `MAX_WORDS`, counted before the row filter                | differs: the service bounds a request                                      |
-| Outputs                      | files under `OUTPUT_DIR`                                                                                | the JSON envelope, or `format=zip` of the same files      | the same files                                                             |
-| Paradata                     | a file per stage and a merged one in `PARADATA_DIR`                                                     | the envelope's `paradata`, a `CreateAction`               | the same merged record (atrium-project#71)                                 |
-
-The record names its TEITOK file in `derived_from.teitok` by its name, on both sides; it held the absolute path
-before v1.3.0-beta, and from the service its private workspace.
-
-## Docker
+## Run it in Docker
 
 The published images are `ghcr.io/ufal/atrium-nlp-enrich:<version>` (the batch runner, `run_pipeline.py`) and
 `ghcr.io/ufal/atrium-nlp-enrich-api:<version>` (the service). `<version>` is the release **without** its leading
 `v`: `1.3.1-beta` for the release `v1.3.1-beta`. The target is part of the image name, not the tag.
-`atrium-nlp-enrich-llm` was published up to 0.23.0 only; it is not built any more (the keyword and LLM code left,
-see [the repository split](decisions/2026-10-01-repository-split.md)).
 
 ```bash
 docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # the service
@@ -374,7 +338,7 @@ To tie a container run to its image and commit, set `ATRIUM_RUNNER_IMAGE`, `ATRI
 **Docker on Linux: run as yourself.** `./data` is part of the clone and belongs to you, while the images run as uid
 10001 by default. `docker-compose.yaml` runs every service as `user: "${ATRIUM_UID:-10001}:0"`, so put your uid in
 `.env` once (`echo "ATRIUM_UID=$(id -u)" >> .env`) and the container writes `./data` as you. With `docker run`,
-pass `--user "$(id -u):0"`. Docker Desktop (macOS, Windows) needs neither. (atrium-project#69)
+pass `--user "$(id -u):0"`. Docker Desktop (macOS, Windows) needs neither.
 
 ## Importing into a TEITOK project
 
@@ -400,14 +364,14 @@ committed samples, 2026-09-24):
 | flexipipe `load_teitok` (Python loader) | kept                   | kept                            | kept                                       | **wrong**: `head="w-N"` becomes token N of the *document*, wrong from sentence 2 on |
 | this repo's `teitok_read.py`            | kept                   | kept, one row per page part     | kept, the surface form                     | not read                                                                            |
 
-The two defects are upstream, recorded in issue #38 for an upstream report; `@ord` gives each word's
-sentence-local number for a reader that needs it.
+`@ord` gives each word's sentence-local number for a reader that needs it. The two defects are upstream and are
+recorded for an upstream report ([#38](https://github.com/ufal/atrium-nlp-enrich/issues/38)).
 
-## Other input formats: flexiconv
+## Convert other input formats with flexiconv
 
 This section matters when your documents come from an OCR or digitisation pipeline that does **not** produce ALTO
-XML (PAGE XML, hOCR, plain-text exports, or office and PDF documents) and ocr-postprocess's line table is not
-enough. If you have ALTO XML, the pipeline generates TEITOK XML natively in stage 4.
+XML, and ocr-postprocess's line table is not enough. Such documents are PAGE XML, hOCR, plain-text exports, or office
+and PDF documents. If you have ALTO XML, the pipeline generates TEITOK XML natively in stage 4.
 
 ### What flexiconv is
 
@@ -442,8 +406,8 @@ So the downstream readers (keyword extraction in atrium-keyword-extract, LLM enr
 can work on it; a lemma-based method cannot, because there are no lemmas.
 
 A PDF converted with flexiconv's default reader (`pdf=smart`) has no word boxes and no page images, so its TEITOK
-has no facsimile; flexiconv's `pdf=bbox` reader gives word boxes but needs Poppler's `pdftotext` (not wired into
-`api_flexiconv.sh`). See also [Pitfalls](reference/teitok.md#pitfalls) 6–8.
+has no facsimile. flexiconv's `pdf=bbox` reader gives word boxes but needs Poppler's `pdftotext`, which
+`api_flexiconv.sh` does not wire in. See also [Pitfalls](reference/teitok.md#pitfalls) 6–8.
 
 ### How to use it in this pipeline
 
@@ -472,7 +436,7 @@ has no facsimile; flexiconv's `pdf=bbox` reader gives word boxes but needs Poppl
    CLI is installed. Either way it never `pip install`s missing extras in the middle of a run. Without flexiconv
    installed the stage stops at once with exit code `3`. A file that cannot be converted is reported in one line
    and recorded, with its reason, in the paradata record of the run (`--program nlp-enrich`, component
-   `flexiconv`); the stage converts the rest and then exits `1`, so `run_pipeline.py --with-flexiconv` does not end
+   `flexiconv`). The stage converts the rest and then exits `1`, so `run_pipeline.py --with-flexiconv` does not end
    green with documents missing. The output directory is then checked with `validate_teitok_xml.py --profile core`,
    the rules any TEITOK document must meet. This is not this writer's XSD, and `api_4_stats.sh` leaves this
    directory out of its own gate.
@@ -484,7 +448,7 @@ For a single file, the CLI directly: `flexiconv -t teitok input.page.xml output.
 (`flexiconv --list-formats` lists every input format).
 
 `run_pipeline.py --with-flexiconv` runs `api_flexiconv.sh` as its first stage (`--start-from` any later stage skips
-it). The REST service never runs flexiconv (it is not in its image), but it takes flexiconv's output: upload a
+it). The REST service never runs flexiconv, which is not in its image. It does take flexiconv's output: upload a
 converted `.teitok.xml` to `/enrich` and it is annotated with its own layout
 ([service/README.md, Layout inputs](../service/README.md#layout-inputs)).
 
@@ -531,6 +495,40 @@ Upstream, flexiconv can also annotate its own output (`flexiconv --flexipipe`, o
 its own UDPipe/NameTag stages instead, so that every document gets the same writer and ids. If your format is not
 supported by flexiconv, please open an issue on the [flexiconv GitHub repository](https://github.com/ufal/flexiconv).
 
+## The command line and the service
+
+Stage 1 and the service read every input through [api_util/line_inputs.py](../api_util/line_inputs.py), and the
+service runs `run_pipeline.py` itself on what it was sent, in a workspace of its own. A scratch harness ran 38
+combinations through both on 2026-10-28, with one deterministic stand-in for UDPipe and NameTag on both sides. The
+inputs were a table, a table named `zpráva 1.csv`, a `.txt` with form feeds, a TEITOK file, a table with its ALTO,
+and a record as the text. Each ran with and without a record, with a seed saved with a BOM, with `include_record`
+against `--document-json-out` alone, with the untrustworthy-row filter on and off, and with the record projection on
+and off. The TEITOK, the entity summary, the doc_id and the record were the same in every case
+([tests/test_cli_service_parity.py](../tests/test_cli_service_parity.py) keeps the main ones).
+
+| Input or setting             | Command line                                                                                            | Service                                                   | Same?                                                                      |
+|------------------------------|---------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|----------------------------------------------------------------------------|
+| How much per run             | every document in `INPUT_TABLES_DIR`                                                                    | one document per request                                  | differs: the service is stateless                                          |
+| Table, `.txt`                | files in `INPUT_TABLES_DIR`                                                                             | the `file` part, handed to stage 1 as sent                | the same                                                                   |
+| The doc_id                   | the file name without its extension                                                                     | the same                                                  | the same (`zpráva 1`)                                                      |
+| Lines as JSON                | none; write them to a `.txt` or a table                                                                 | `POST /enrich_text`                                       | an HTTP convenience                                                        |
+| TEITOK (flexiconv's)         | files in `TEITOK_FLEXICONV_DIR` with `FLEXICONV_ANNOTATE=true`                                          | the `file` part                                           | the same                                                                   |
+| PDF, office files, PAGE XML  | converted by flexiconv (`--with-flexiconv`)                                                             | not read; send flexiconv's TEITOK                         | differs: flexiconv is not in the service image                             |
+| ALTO layout                  | `INPUT_ALTO_DIR`, for any document of the same name                                                     | the `alto` part, with a `.csv` or `.xlsx` only (else 422) | the same for a table; the service refuses ALTO with a `.txt` or TEITOK     |
+| Page images                  | `INPUT_PAGES_DIR`, scaled into the TEITOK file                                                          | not taken; `POST /rescale` scales a finished TEITOK file  | differs: the images are large; `fix_teitok_bboxes.py` is the CLI's rescale |
+| The record                   | `--document-json`, `--document-json-out`                                                                | `document_json`; `include_record` without one             | the same record                                                            |
+| The record as the text       | `--text-from-record`                                                                                    | `document_json` without `file`                            | the same                                                                   |
+| Untrustworthy rows           | `--skip-untrustworthy-lines`, or `SKIP_UNTRUSTWORTHY_LINES`                                             | `skip_untrustworthy_lines`, the request's only            | the same; the service ignores the environment value                        |
+| Record projection            | `--teitok-enrichment`, or `TEITOK_ENRICHMENT`                                                           | `teitok_enrichment`, the request's only                   | the same; the service ignores the environment value                        |
+| Projection onto a TEITOK     | `api_util/teitok_project.py`; `--force` also takes a TEITOK this writer did not make, or an invalid one | `POST /project_record`, which refuses those (422)         | the same projection; the service has no `--force`                          |
+| Language                     | `--lang`, `cs` only                                                                                     | `lang`, `cs` only                                         | the same: the models of `config_api.txt` decide; any other value refused   |
+| A run that annotates nothing | exit 1 when `FAIL_ON_EMPTY=true`; `--strict-empty` for all-skipped                                      | always `--strict-empty`: a 502                            | differs: one document is one request, so nothing done is a failure         |
+| The word limit               | none                                                                                                    | `MAX_WORDS`, counted before the row filter                | differs: the service bounds a request                                      |
+| Outputs                      | files under `OUTPUT_DIR`                                                                                | the JSON envelope, or `format=zip` of the same files      | the same files                                                             |
+| Paradata                     | a file per stage and a merged one in `PARADATA_DIR`                                                     | the envelope's `paradata`, a `CreateAction`               | the same merged record                                                     |
+
+The record names its TEITOK file in `derived_from.teitok` by its name, on both sides.
+
 ## Troubleshooting
 
 ### Fixing bounding box alignments
@@ -543,8 +541,8 @@ frontend is exactly 1200 pixels wide and 1800 pixels high. The TEITOK bounding b
 There are two ways to fix that without re-running the pipeline.
 
 **Method 1: the API (single files or web integrations).** Send the misaligned XML to the service's `/rescale`
-endpoint, with the exact dimensions of your target image, and ask for the output as an XML file instead of the
-default JSON envelope:
+endpoint, with the exact dimensions of your target image. Ask for the output as an XML file instead of the default
+JSON envelope:
 
 ```bash
 curl -X POST "http://localhost:8000/rescale" \
@@ -556,9 +554,9 @@ curl -X POST "http://localhost:8000/rescale" \
 ```
 
 The service reads each page's coordinate space from its `<surface>` tag and scales the bounding boxes (`bbox`) of
-that page to the new 1200×1800 size; boxes are clamped to the page, and a `<change type="rescaled">` in the header
+that page to the new 1200×1800 size. Boxes are clamped to the page, and a `<change type="rescaled">` in the header
 records what was done. It also repairs malformed named-entity tags (like `<name>...</n>`) in the document. When the
-pages of a document differ in size, width and height would distort some of them: give a factor instead
+pages of a document differ in size, width and height would distort some of them. Give a factor instead
 (`-F "scale=0.5"`), and every page image is taken to be that fraction of its surface. Every field and the response:
 [service/README.md](../service/README.md#post-rescale-multipart-form).
 
@@ -577,14 +575,14 @@ script does that arithmetic:
 python3 fix_teitok_bboxes.py -i my_document.teitok.xml --unit mm10 --dpi 72
 ```
 
-If the original scans included a scanner bed margin (e.g. 50 pixels on the left and 20 on the top) that was cropped
-out of the final web image, shift everything left and up:
+If the original scans included a scanner bed margin that was cropped out of the final web image, shift everything
+left and up. The margin here is 50 pixels on the left and 20 on the top:
 
 ```bash
 python3 fix_teitok_bboxes.py -i my_document.teitok.xml --dx -50 --dy -20
 ```
 
-A shift moves content near the edge off the page; such coordinates are clamped to the page (0, or the page's
+A shift moves content near the edge off the page. Such coordinates are clamped to the page (0, or the page's
 width/height) and counted, rather than written as negative values the stage-4 gate would reject. Each `<surface>`
 is rescaled by its own size, and a `<change type="rescaled">` records the rewrite.
 
@@ -592,11 +590,11 @@ Both methods let you overlay the annotations on the page images without re-runni
 off in the first place (image names, ALTO units, the origin, two readers):
 [Pitfalls](reference/teitok.md#pitfalls).
 
-### Files from an older format
+### Rewrite files from an older format
 
 A resumed run keeps existing `.teitok.xml` files, also those written by an older writer. After a format change,
-rewrite them once with `REGENERATE_TEITOK=true bash api_4_stats.sh`; to correct the pages of a collection run up to
-v0.21.0, follow [Format changes](reference/teitok.md#format-changes).
+rewrite them once with `REGENERATE_TEITOK=true bash api_4_stats.sh`; to correct the pages of a collection written by
+v0.21.0 or earlier, follow [Format changes](reference/teitok.md#format-changes).
 
 ### When a run stops
 

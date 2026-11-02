@@ -1,14 +1,19 @@
 # NLP enrichment API service
 
-Single-file entry point for the ATRIUM NLP enrichment pipeline (issue
-[#8](https://github.com/ufal/atrium-nlp-enrich/issues/8)): upload ordered text
-lines — a table, a `.txt`, or a TEITOK file converted by flexiconv — get back enriched
-**TEITOK XML + named entities + paradata**. The four core
+Single-file entry point for the ATRIUM NLP enrichment pipeline: upload ordered text
+lines — a table, a `.txt`, or a TEITOK file converted by flexiconv — and get back enriched
+**TEITOK XML, named entities and paradata** (the run's provenance log). The four core
 stages (`manifest → udp → nt → stats`) always run. Keyword extraction is not part of this
-service (since 1.0.0): it is [atrium-keyword-extract](https://github.com/ufal/atrium-keyword-extract)'s
+service: it is [atrium-keyword-extract](https://github.com/ufal/atrium-keyword-extract)'s
 `POST /extract_keywords`.
 
 ## Start
+
+**At a glance:**
+
+| Image                                          | CPU / GPU                            | Memory       | Volumes                                                                                                                   | Calls out to                                                                                     | Ready after                                                                       |
+|------------------------------------------------|--------------------------------------|--------------|---------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------|
+| `ghcr.io/ufal/atrium-nlp-enrich-api:<version>` | CPU only; no model runs in the image | not measured | none needed; the compose file mounts `./data` at `/data`, and each request works under `TEMP/api_jobs/` (`API_JOBS_ROOT`) | LINDAT's UDPipe 2 and NameTag 3 (`UDPIPE_URL`, `NAMETAG_URL`) on every request; nothing at start | as soon as the process serves, since no model is loaded; the time is not measured |
 
 The published image first: it is what a deployment runs, and it needs no checkout.
 
@@ -27,10 +32,9 @@ Run from a virtual environment, the service needs no activation: the pipeline pu
 environment's `bin` first for its stage scripts, and refuses with exit 3 (HTTP 500) when their
 `python3` lacks a package (see [Errors](#errors)).
 
-Two-terminal smoke test:
+Smoke test, with the service running in another terminal:
 
 ```bash
-# terminal 2
 python service/test_api.py -f data_samples/DOC_LINE_CATEG/CTX000000001.csv
 ```
 
@@ -46,20 +50,20 @@ LINDAT services, so the service needs outbound HTTPS to them.
 
 ## Endpoints
 
-| Method | Path                | Purpose                                                                                                                                                                               |
-|--------|---------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| GET    | `/`                 | minimal landing page (see `/docs` for OpenAPI UI)                                                                                                                                     |
-| GET    | `/info`             | service id, endpoints, stage plan, pinned models, `limits` (every [limit](#limits), current value) and `limits_meta` (the variable behind each)                                       |
-| GET    | `/health`           | liveness — 200 always, even mid-shutdown. `?deep=true` adds config validity via `run_pipeline.py --dry-run` + UDPipe/NameTag reachability (503 on failure or while draining)          |
-| GET    | `/ready`            | readiness — 503 until warmup finishes, 200 while serving, 503 the instant `SIGTERM` arrives. The Kubernetes `readinessProbe`/`startupProbe` target                                    |
-| POST   | `/enrich`           | **single-file entry point** — upload CSV/XLSX/TXT, or a converted TEITOK `.xml`; optionally the ALTO of a table's pages                                                               |
-| POST   | `/enrich_text`      | same pipeline for inline JSON                                                                                                                                                         |
-| POST   | `/jobs`             | the `/enrich` form as a background job: returns `{"job_id", "status": "queued"}` at once; 429 `busy` when `MAX_QUEUED_JOBS` jobs already wait                                         |
-| GET    | `/jobs/{id}`        | the job's `status` (`queued` until it holds a slot, `running`, `done`, `failed`), `error` and `reason` (`limit_exceeded` when `API_JOB_TIMEOUT` stopped it)                           |
-| GET    | `/jobs/{id}/result` | the `/enrich` JSON envelope of a finished job (409 while it runs)                                                                                                                     |
-| DELETE | `/jobs/{id}`        | forget a job (finished jobs are also forgotten `JOB_TTL_S`, an hour, after they end); job ids are local to the replica                                                                |
-| POST   | `/rescale`          | rescale a TEITOK's bboxes to page images of another size, page by page                                                                                                                |
-| POST   | `/project_record`   | project a finished record's page categories, its TEATER/AMČR categories and controlled keywords, and its statistical keywords onto its TEITOK header (opt-in, atrium-project#70, #73) |
+| Method | Path                | Purpose                                                                                                                                                                      |
+|--------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| GET    | `/`                 | redirects to the demo form at `/frontend` (`/docs` is the OpenAPI UI)                                                                                                        |
+| GET    | `/info`             | service id, endpoints, stage plan, pinned models, `limits` (every [limit](#limits), current value) and `limits_meta` (the variable behind each)                              |
+| GET    | `/health`           | liveness — 200 always, even mid-shutdown. `?deep=true` adds config validity via `run_pipeline.py --dry-run` + UDPipe/NameTag reachability (503 on failure or while draining) |
+| GET    | `/ready`            | readiness — 503 until warmup finishes, 200 while serving, 503 the instant `SIGTERM` arrives. The Kubernetes `readinessProbe`/`startupProbe` target                           |
+| POST   | `/enrich`           | **single-file entry point** — upload CSV/XLSX/TXT, or a converted TEITOK `.xml`; optionally the ALTO of a table's pages                                                      |
+| POST   | `/enrich_text`      | same pipeline for inline JSON                                                                                                                                                |
+| POST   | `/jobs`             | the `/enrich` form as a background job: returns `{"job_id", "status": "queued"}` at once; 429 `busy` when `MAX_QUEUED_JOBS` jobs already wait                                |
+| GET    | `/jobs/{id}`        | the job's `status` (`queued` until it holds a slot, `running`, `done`, `failed`), `error` and `reason` (`limit_exceeded` when `API_JOB_TIMEOUT` stopped it)                  |
+| GET    | `/jobs/{id}/result` | the `/enrich` JSON envelope of a finished job (409 while it runs)                                                                                                            |
+| DELETE | `/jobs/{id}`        | forget a job (finished jobs are also forgotten `JOB_TTL_S`, an hour, after they end); job ids are local to the replica                                                       |
+| POST   | `/rescale`          | rescale a TEITOK's bboxes to page images of another size, page by page                                                                                                       |
+| POST   | `/project_record`   | project a finished record's page categories, its TEATER/AMČR categories and controlled keywords, and its statistical keywords onto its TEITOK header (opt-in)                |
 
 ### `POST /enrich` (multipart form)
 
@@ -68,16 +72,15 @@ LINDAT services, so the service needs outbound HTTPS to them.
 | `file`                     | *required*, or a record | `.csv` (needs a `text` column; optional `page_num` or `page`, `line_num` or `line`, `page_label`, `categ`), `.xlsx`, `.txt` (a form feed starts a new page), or a TEITOK `.xml` (`*.teitok.xml`, or any `.xml` starting with `<TEI`) — see [Layout inputs](#layout-inputs). Read as stage 1 reads the same file (`api_util/line_inputs.py`). Optional when `document_json` is a record whose `lines[]` carry the text |
 | `alto`                     | *optional*              | ALTO XML of the pages a `.csv`/`.xlsx` lists the lines of — see [Layout inputs](#layout-inputs)                                                                                                                                                                                                                                                                                                                       |
 | `lang`                     | `cs`                    | `cs` only, as the command line's `--lang`: the UDPipe and NameTag models of `config_api.txt` decide the language; any other value → 422                                                                                                                                                                                                                                                                               |
-| `format`                   | `json`                  | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`; any other value → 422 (it silently became `json` before atrium-project#32 round 2)                                                                                                                                                                                                                                                                           |
+| `format`                   | `json`                  | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`; any other value → 422                                                                                                                                                                                                                                                                                                                                        |
 | `document_json`            | *optional*              | baseline ATRIUM Document JSON (or an AMČR seed) to accrete onto — see below; not a JSON object → 422 `invalid_record`. A born-digital record is also a layout — see [Layout inputs](#layout-inputs)                                                                                                                                                                                                                   |
-| `teitok_enrichment`        | `false`                 | opt-in (atrium-project#70): the returned TEITOK also carries the record's page categories (`pb/@ana`) and the record's controlled keywords in its header — see [`POST /project_record`](#post-project_record-multipart-form). `/jobs` takes it too                                                                                                                                                                    |
-| `skip_untrustworthy_lines` | `false`                 | opt-in (atrium-project#72): a table's rows whose `categ` is `Trash`, `Garbage` or `Inverted` are left out, as the command line's `SKIP_UNTRUSTWORTHY_LINES`. A record sent as the text is filtered always. `/jobs` and `/enrich_text` take it too                                                                                                                                                                     |
-| `include_record`           | `false`                 | opt-in (since v1.3.0-beta): `document_json` comes back even when none was sent, a new record with nlp-enrich's blocks, as `run_pipeline.py --document-json-out` alone writes. `/jobs` and `/enrich_text` take it too                                                                                                                                                                                                  |
+| `teitok_enrichment`        | `false`                 | opt-in: the returned TEITOK also carries, in its header, the record's page categories (`pb/@ana`), its controlled keywords and its statistical keywords — see [`POST /project_record`](#post-project_record-multipart-form). `/jobs` takes it too                                                                                                                                                                     |
+| `skip_untrustworthy_lines` | `false`                 | opt-in: a table's rows whose `categ` is `Trash`, `Garbage` or `Inverted` are left out, as the command line's `SKIP_UNTRUSTWORTHY_LINES`. A record sent as the text is filtered always. `/jobs` and `/enrich_text` take it too                                                                                                                                                                                         |
+| `include_record`           | `false`                 | opt-in: `document_json` comes back even when none was sent, a new record with nlp-enrich's blocks, as `run_pipeline.py --document-json-out` alone writes. `/jobs` and `/enrich_text` take it too                                                                                                                                                                                                                      |
 
 ### Layout inputs
 
-The TEITOK the service returns has the layout of what it was given (issue
-[#38](https://github.com/ufal/atrium-nlp-enrich/issues/38)); `layout_source` in the envelope says which:
+The TEITOK the service returns has the layout of what it was given; `layout_source` in the envelope says which:
 
 | Upload                                                          | `layout_source` | The TEITOK                                                                                                                                                   |
 |-----------------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -95,8 +98,7 @@ The TEITOK the service returns has the layout of what it was given (issue
 * An **`alto` part** goes with a `.csv`/`.xlsx` (e.g. ocr-postprocess's `DOC_LINE_CATEG` table and
   the ALTO it was made from); with a `.txt` or a TEITOK file it is refused (422). A PAGE XML or
   hOCR file in its place is refused with the hint to convert it with `api_flexiconv.sh`.
-* A **born-digital record** (digital-convert's `POST /reformat` of a PDF, issue
-  [#42](https://github.com/ufal/atrium-nlp-enrich/issues/42)) sent as `document_json` (also to
+* A **born-digital record** (digital-convert's `POST /reformat` of a PDF) sent as `document_json` (also to
   `/enrich_text`) is a layout when its pages have a `canvas` and its lines a `bbox`; an `alto` or
   TEITOK upload wins over it.
   Sent **without `file`**, the record is the text as well: its `lines[]` (less `Garbage`,
@@ -111,8 +113,8 @@ The TEITOK the service returns has the layout of what it was given (issue
   record has line boxes only, so a token's box is its share of the line box by character offset
   — approximate, and the header says so. A DOCX record has no geometry: `layout_source` is `rows`.
 * The `doc_id` is the file name without `.teitok.xml`, `.alto.xml` or the table extension, as the
-  command line derives it from the same file: `zpráva 1.csv` is `zpráva 1` (since v1.3.0-beta; it
-  was `zpr_va_1`). Only control characters and path separators are replaced. For a record sent
+  command line derives it from the same file: `zpráva 1.csv` is `zpráva 1`. Only control characters and path
+  separators are replaced. For a record sent
   alone, the record's `doc_id`.
 
 ### `POST /enrich_text` (JSON)
@@ -125,39 +127,35 @@ The TEITOK the service returns has the layout of what it was given (issue
 ```
 
 A line may also be an object: `text`, and optional `page_num` (or `page`), `line_num` (or `line`),
-`page_label` and `categ`. `skip_untrustworthy_lines` was accepted and ignored before v1.3.0-beta.
+`page_label` and `categ`.
 
 ### The `document_json` accretion part
 
-Rule 1 of the document-JSON contract (the hub's `docs/document_schema.md`, issue
-[atrium-llm-enrich#13](https://github.com/ufal/atrium-llm-enrich/issues/13)): a service **accepts
-and returns an optional `document_json` part**. `/enrich` and `/jobs` take it as an upload part;
-`/enrich_text` takes it as an embedded object.
+The hub's [document contract](https://ufal.github.io/atrium-project/ecosystem/document-contract/)
+(`docs/document_schema.md`) asks a service to **accept and return an optional `document_json` part**.
+`/enrich` and `/jobs` take it as an upload part; `/enrich_text` takes it as an embedded object.
 
 When supplied, the response's `document_json` carries the record back with only
 nlp-enrich's contribution merged in — its `entities[]` rows, whose `teitok_ref` is the
 entity's `<name id>` (`n-1`, …) in the returned TEITOK — while every other tool's block
 (`page_categories`, `lines`, `translations`, `enrichment`, …) passes through **untouched**.
-(`pages[].teitok_surface`, the `<surface id>` `facs-P` of a page, is written for pages that
-have a surface: with an `alto` part, or a TEITOK upload whose pages name an image or a size.)
-This is the same accretion the CLI performs via
-`run_pipeline.py --document-json/--document-json-out`; the service simply threads the flags
-through to it, so there is one implementation, not two.
+`pages[].teitok_surface`, the `<surface id>` `facs-P` of a page, is written for pages that
+have a surface: with an `alto` part, or a TEITOK upload whose pages name an image or a size.
+This is the same accretion the CLI performs via `run_pipeline.py --document-json/--document-json-out`.
+The service threads the flags through to it, so there is one implementation, not two.
 
 * Omit the part and the key is **absent** from the envelope — not `null`. Existing clients
   see no change at all.
 * Supply it and get `null` back, and the pipeline produced no record (no CoNLL-U reached the
-  document hook, or the hook failed and degraded per rule 3). `run_pipeline.py` prints
+  document hook, or the hook failed and the run went on without it). `run_pipeline.py` prints
   `[document-json] NOT WRITTEN` on stdout in that case; the service's `stages` and the
   pipeline log say why.
-* A baseline that does not validate against `atrium_document.schema.json` is still accepted
-  (rule 6): the pipeline warns, names the schema error, and accretes onto it anyway rather
+* A baseline that does not validate against `atrium_document.schema.json` is still accepted:
+  the pipeline warns, names the schema error, and accretes onto it anyway rather
   than turning one bad upstream record into a stalled pipeline.
 * A baseline that cannot be opened at all — not UTF-8 JSON, not a JSON object, or a
   `schema_version` with a newer major — is refused before the pipeline runs, with 422
-  `reason: invalid_record` (atrium-project#32 round 2). It used to reach the stats stage,
-  which warned and ran on, so the envelope came back with `document_json: null` and no word
-  of why.
+  `reason: invalid_record`.
 
 ### JSON envelope
 
@@ -177,16 +175,16 @@ through to it, so there is one implementation, not two.
 ```
 
 `limits_applied` lists every [limit](#limits) that shaped the result without refusing it
-(atrium-project#53) — pages whose entity summary kept its top N. The stages record them in their paradata;
+— pages whose entity summary kept its top N. The stages record them in their paradata;
 this is the merged record's list (`[]` when no limit applied).
 
-**`paradata`** is the call's provenance (atrium-project#71): one Process Run Crate `CreateAction`,
+**`paradata`** is the call's provenance: one Process Run Crate `CreateAction`,
 built by `atrium_rocrate.create_action()` from the run's merged pipeline-run record (its
 `paradataRecord`, with the components of every stage). Its `@id` is the `run_uuid` the stats
 stage stamped on the blocks it wrote into `document_json`, or, without a record, the merged run's
-own; `object` is what the call was sent (the upload or `lines.json`, a separate `alto` part, the
-record), `result` the blocks written and the TEITOK; `agent` is `ATRIUM_RUN_AGENT` when set. It
-is `null` only for a run that left no paradata. An error response carries no action. Hub
+own. `object` is what the call was sent (the upload or `lines.json`, a separate `alto` part, the
+record), and `result` is the blocks written and the TEITOK. `agent` is `ATRIUM_RUN_AGENT` when set. The
+field is `null` only for a run that left no paradata. An error response carries no action. Hub
 [`docs/rocrate_export.md`](https://github.com/ufal/atrium-project/blob/main/docs/rocrate_export.md) §5
 describes it.
 
@@ -203,14 +201,14 @@ never gets here — stage 4 stops with exit code 5, answered as 500.
 
 A standalone coordinate transform — **not** part of the NLP pipeline (no
 subprocess, no models, no workspace). Given a TEITOK document and the size of its page
-images, it rescales every facsimile coordinate (the `bbox="x1 y1 x2 y2"` pixel boxes,
-`pb@bbox` and the `<surface>` `lrx`/`lry` extents) from the document's own coordinate space,
-page by page, so annotations line up exactly on top of images of that size. Each box is
+images, it rescales every facsimile coordinate from the document's own coordinate space, page by page. The
+coordinates are the `bbox="x1 y1 x2 y2"` pixel boxes, `pb@bbox` and the `<surface>` `lrx`/`lry` extents. Annotations
+then line up exactly on top of images of that size. Each box is
 scaled by the `<surface>` of the page it is on (the one its `<pb corresp>` names, or the k-th
 surface for the k-th `<pb>`) and clamped to that page; `clamped` counts the coordinates that
-had to move. A `<change type="rescaled">` in `<revisionDesc>` records the transform. This works for both coordinate origins the writer offers
-(`BBOX_ORIGIN=page`, the default, and `printspace`): in both, `<surface>` declares the
-extent the boxes are measured in.
+had to move. A `<change type="rescaled">` in `<revisionDesc>` records the transform. This works for both
+coordinate origins the writer offers (`BBOX_ORIGIN=page`, the default, and `printspace`): in both, `<surface>`
+declares the extent the boxes are measured in.
 
 | Field       | Default    | Notes                                                                                                                             |
 |-------------|------------|-----------------------------------------------------------------------------------------------------------------------------------|
@@ -271,7 +269,7 @@ curl -s -F "file=@mixed_pages.teitok.xml" -F "scale=0.5" \
 ### `POST /project_record` (multipart form)
 
 A standalone header transform (no pipeline) for a record that is complete only after this
-service ran: after page-classification and the stage that writes the controlled keywords (atrium-project#70 item 2, ufal/flexiconv#1).
+service ran: after page-classification and keyword-extract have written their blocks.
 Opt-in by being called; AMČR's stored TEITOK keeps linguistics and layout only.
 
 | Field           | Default    | Notes                                                                                   |
@@ -305,69 +303,33 @@ curl -F file=@TEITOK/CTX000000001.teitok.xml -F document_json=@CTX000000001.docu
   "schema_valid": true, "schema_errors": [] }
 ```
 
-## How it works
+## Errors
 
-`PipelineManager` treats `run_pipeline.py` as the **only** execution interface —
-it never calls the stage scripts directly. Each request gets a fresh workspace
-under `TEMP/api_jobs/<job_id>/` with every pipeline directory relocated inside
-it, so resume / paradata-collision / `FAIL_ON_EMPTY` semantics behave as a clean
-first run and concurrent requests can't collide. A `.csv`, `.xlsx` or `.txt` upload goes to
-stage 1 as sent (`in/<doc_id>.<ext>`), as the command line hands it the user's file, so the
-TEITOK names the file that was sent (since v1.3.0-beta). A TEITOK upload, a record sent as the
-text and `/enrich_text`'s lines are written as the canonical table (`text`, `page_num`,
-`line_num`, `page_label`, `categ`). Every input goes through stage 1; none bypasses it.
+Every error has one JSON body (hub `docs/agent_skill_strategy.md` §4.4): `{"status": <int>, "reason": <code or null>,
+"detail": "<text>"}`. `detail` is always
+a string. A limit refusal adds `limit` (`{key, env, value, observed, unit}`); a request
+validation error adds FastAPI's list of problems as `errors`.
 
-The runner's exit codes map to HTTP: `0`→200; `3` (a dependency of the stages is missing, e.g.
-their `python3` cannot import `lxml` — a deployment defect)→500, its `detail` starting with what is
-missing and how to install it; `5` (the TEITOK failed its
-output contract — a writer defect, "please report it")→500; `1` (empty run)/`2` (missing
-stage)/other→502; the LINDAT clients' own codes (`api_util/lindat_errors.py`, #41) travel through
-their stage scripts unchanged: `6` (UDPipe or NameTag did not answer after the retries)→502
-`upstream_unavailable`, `7` (every attempt timed out)→504 `limit_exceeded` naming
-`lindat_timeout_s`, `8` (LINDAT refused the request, a 4xx)→500 — each detail starts with the
-client's `LINDAT …` line; an input over a limit → 413/422 `limit_exceeded`, a run over
-`API_JOB_TIMEOUT` → 504 `limit_exceeded`, every slot or the queue full → 429 `busy`
-([Limits](#limits), [Errors](#errors)); an unusable upload→422.
-
-UDPipe/NameTag models stay operator-pinned in `config_api.txt` and are surfaced
-read-only via `/info`. The layout comes with the upload ([Layout inputs](#layout-inputs)):
-an uploaded TEITOK file is written to `<workspace>/layout/flexiconv/<doc_id>.teitok.xml`
-(`TEITOK_FLEXICONV_DIR`, `FLEXICONV_ANNOTATE=true`), an `alto` part to
-`<workspace>/layout/alto/<doc_id>.alto.xml` (`INPUT_ALTO_DIR`); both are outside `in/`, which
-stage 1 reads as tables. Page images are never uploaded, so a surface keeps the size its
-layout declares.
-
-## Configuration (environment)
-
-| Variable              | Default   | Meaning                                                                                   |
-|-----------------------|-----------|-------------------------------------------------------------------------------------------|
-| `PORT`                | `8000`    | port the service **binds**, and the one `service/healthcheck.py` probes (issues #55, #58) |
-| `HOST`                | `0.0.0.0` | bind address (issue #58); see the warning below                                           |
-| `GRACEFUL_SHUTDOWN_S` | `20`      | seconds uvicorn waits for in-flight requests (issue #55)                                  |
-| `RELOAD`              | `false`   | filesystem auto-reload — development only                                                 |
-| `LOG_LEVEL`           | `INFO`    | root logger level for the `python -m service.api` start path (issue #61)                  |
-| `ALLOWED_ORIGINS`     | `*`       | CORS origins                                                                              |
-| `UDPIPE_URL`          | LINDAT    | attachable UDPipe 2 endpoint (issue #63); same variable name as atrium-translator         |
-| `NAMETAG_URL`         | LINDAT    | attachable NameTag 3 endpoint (issue #63)                                                 |
-| `API_JOBS_ROOT`       | see below | where per-job workspaces are created; computed from the repo root, not a literal          |
-| `API_KEEP_WORKSPACES` | unset     | keep per-request workspaces for debugging -- survives only as long as the pod (#35)       |
-
-Every limit — `MAX_UPLOAD_MB`, `MAX_WORDS`, `MAX_CONCURRENT_JOBS`, `API_JOB_TIMEOUT` and the
-rest — is listed under [Limits](#limits).
-
-`PORT` and `HOST` are read by `service/api.py`'s `__main__` block, which is what the `api`
-image's `ENTRYPOINT` (`python -m service.api`) runs. Before issue #58 the entrypoint baked
-`--port 8000` into an exec-form array — which runs no shell, so `$PORT` could not expand —
-while `service/healthcheck.py` read it. Setting `PORT` therefore moved the health *probe*
-and not the listener, and the container reported unhealthy forever.
-
-> **Note:** `HOST=127.0.0.1` yields a container that reports **healthy** and serves nobody:
-> `service/healthcheck.py` always probes loopback by design and never reads `HOST`, so a
-> loopback bind passes every probe while being unreachable from outside the container.
+| Status | `reason`                 | Meaning                                                                                                                                                                | What to do                                                                           |
+|--------|--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| 404    | `null`                   | `/jobs/{id}` or its `/result` names a job this replica does not hold: deleted, forgotten `JOB_TTL_S` after it ended, lost in a restart, or accepted by another replica | submit it again with `POST /jobs`; route a client's job calls to one replica         |
+| 409    | `null`                   | `/jobs/{id}/result` of a job that is not `done`                                                                                                                        | poll `GET /jobs/{id}` until `done`                                                   |
+| 413    | `limit_exceeded`         | over `MAX_UPLOAD_MB` or `MAX_WORDS`                                                                                                                                    | split the input, or raise the setting `limit.env` names                              |
+| 415    | `unsupported_media_type` | the upload is not `.csv`, `.xlsx`, `.txt` or a TEITOK `.xml`; `accepted` lists them                                                                                    | send one of the types in `accepted`                                                  |
+| 422    | `invalid_record`         | the `document_json` sent cannot be opened (not UTF-8 JSON, not an object, a newer `schema_version` major), or its `entities` or `pages` is not a list of objects       | send the record the previous stage wrote; update this service if the record is newer |
+| 422    | `limit_exceeded`         | `/rescale` over `MAX_RESCALE_DIM`                                                                                                                                      | lower `scale`, or raise `MAX_RESCALE_DIM`                                            |
+| 422    | `null`                   | an unusable upload, a bad parameter (a value outside the spec's enums or bounds), or request validation (`errors`)                                                     | fix the field `errors` or `detail` names                                             |
+| 429    | `busy`                   | every processing slot taken (synchronous endpoints), or the `/jobs` queue full; retry after `Retry-After` seconds                                                      | retry after `Retry-After`; add replicas if it persists                               |
+| 500    | `null`                   | the TEITOK failed its output contract (exit 5) — a writer defect, please report it; LINDAT refused the request (exit 8, a 4xx)                                         | report it with `detail`; for a LINDAT 4xx, check the model names in `config_api.txt` |
+| 500    | `null`                   | a dependency the stages need is missing (exit 3, a deployment defect); `detail` says what and how to install it                                                        | install what `detail` names into the service's Python, or run the image              |
+| 502    | `upstream_unavailable`   | UDPipe or NameTag did not answer after their retries (exit 6); `detail` starts `LINDAT UDPipe …` or `LINDAT NameTag …`                                                 | retry later; check that `UDPIPE_URL` and `NAMETAG_URL` are reachable                 |
+| 502    | `null`                   | a stage failed: an empty run, a missing stage                                                                                                                          | fix the input `detail` names; do not retry it unchanged                              |
+| 503    | `null`                   | the replica is shutting down                                                                                                                                           | retry on another replica                                                             |
+| 504    | `limit_exceeded`         | the run took longer than `API_JOB_TIMEOUT` and was stopped; or every LINDAT attempt timed out (exit 7, `limit.key` `lindat_timeout_s`)                                 | send a smaller input, or raise the setting `limit.env` names                         |
 
 ## Limits
 
-Every limit is an environment setting (atrium-project#53, factor III), declared in
+Every limit is an environment setting, declared in
 `tool_limits.py` and reported with its current value by `GET /info` (`limits`; `limits_meta`
 says which variable sets it and whether the value came from the environment, `config_api.txt`
 or the default). A malformed value stops the service at startup, naming the variable. An input
@@ -394,30 +356,6 @@ config. `tests/test_limits_contract.py` checks this table against `tool_limits.p
 
 Not settings: Starlette's multipart parser keeps its own defaults.
 
-## Errors
-
-Every error has one JSON body (hub `docs/agent_skill_strategy.md` §4.4, atrium-project#32
-item 2): `{"status": <int>, "reason": <code or null>, "detail": "<text>"}`. `detail` is always
-a string. A limit refusal adds `limit` (`{key, env, value, observed, unit}`); a request
-validation error adds FastAPI's list of problems as `errors`.
-
-| Status | `reason`                 | When                                                                                                                                                                   | What to do                                                                           |
-|--------|--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| 404    | `null`                   | `/jobs/{id}` or its `/result` names a job this replica does not hold: deleted, forgotten `JOB_TTL_S` after it ended, lost in a restart, or accepted by another replica | submit it again with `POST /jobs`; route a client's job calls to one replica         |
-| 409    | `null`                   | `/jobs/{id}/result` of a job that is not `done`                                                                                                                        | poll `GET /jobs/{id}` until `done`                                                   |
-| 413    | `limit_exceeded`         | over `MAX_UPLOAD_MB` or `MAX_WORDS`                                                                                                                                    | split the input, or raise the setting `limit.env` names                              |
-| 415    | `unsupported_media_type` | the upload is not `.csv`, `.xlsx`, `.txt` or a TEITOK `.xml`; `accepted` lists them (a 422 before atrium-project#32 round 2)                                           | send one of the types in `accepted`                                                  |
-| 422    | `invalid_record`         | the `document_json` sent cannot be opened (not UTF-8 JSON, not an object, a newer `schema_version` major), or its `entities` or `pages` is not a list of objects       | send the record the previous stage wrote; update this service if the record is newer |
-| 422    | `limit_exceeded`         | `/rescale` over `MAX_RESCALE_DIM`                                                                                                                                      | lower `scale`, or raise `MAX_RESCALE_DIM`                                            |
-| 422    | `null`                   | an unusable upload, a bad parameter (a value outside the spec's enums or bounds), or request validation (`errors`)                                                     | fix the field `errors` or `detail` names                                             |
-| 429    | `busy`                   | every processing slot taken (synchronous endpoints), or the `/jobs` queue full; retry after `Retry-After` seconds                                                      | retry after `Retry-After`; add replicas if it persists                               |
-| 500    | `null`                   | the TEITOK failed its output contract (exit 5) — a writer defect, please report it; LINDAT refused the request (exit 8, a 4xx)                                         | report it with `detail`; for a LINDAT 4xx, check the model names in `config_api.txt` |
-| 500    | `null`                   | a dependency the stages need is missing (exit 3, a deployment defect); `detail` says what and how to install it                                                        | install what `detail` names into the service's Python, or run the image              |
-| 502    | `upstream_unavailable`   | UDPipe or NameTag did not answer after their retries (exit 6); `detail` starts `LINDAT UDPipe …` or `LINDAT NameTag …`                                                 | retry later; check that `UDPIPE_URL` and `NAMETAG_URL` are reachable                 |
-| 502    | `null`                   | a stage failed: an empty run, a missing stage                                                                                                                          | fix the input `detail` names; do not retry it unchanged                              |
-| 503    | `null`                   | the replica is shutting down                                                                                                                                           | retry on another replica                                                             |
-| 504    | `limit_exceeded`         | the run took longer than `API_JOB_TIMEOUT` and was stopped; or every LINDAT attempt timed out (exit 7, `limit.key` `lindat_timeout_s`)                                 | send a smaller input, or raise the setting `limit.env` names                         |
-
 ## Partial results
 
 A 200 can carry less than was asked for. Read these before using the result:
@@ -435,7 +373,7 @@ A 200 can carry less than was asked for. Read these before using the result:
 - UDPipe and NameTag run at LINDAT under the [LINDAT Terms of Use](https://lindat.mff.cuni.cz/en/terms-of-use);
   their models are CC BY-NC-SA 4.0. The paradata lists them with these licences, which are not the licence
   of the output: the rights in an output depend on the source document and are stated by whoever holds them
-  ([Licences and paradata](https://ufal.github.io/atrium-project/ecosystem/licences/), atrium-project#6).
+  ([Licences and paradata](https://ufal.github.io/atrium-project/ecosystem/licences/)).
 - Every request needs LINDAT: there is no local fallback for UDPipe or NameTag.
 - A born-digital record has line boxes only. Word boxes are shared out from them by character
   offset, are approximate, and the TEITOK header says so.
@@ -444,15 +382,81 @@ A 200 can carry less than was asked for. Read these before using the result:
 - Named entities come from NameTag's general model (OntoNotes types), not an archaeological one.
 - `/jobs` are not persistent. A job lives in the memory of the replica that accepted it: a restart, a redeploy
   or a call that reaches another replica answers 404, and the client submits the job again. Accepted for the
-  pilot (atrium-project#77); `/enrich` is the synchronous alternative.
+  [S2 pilot](https://ufal.github.io/atrium-project/pilot/); `/enrich` is the synchronous alternative.
 
-## Shutdown behavior (issue #55)
+## Configuration (environment)
+
+| Variable              | Default   | Meaning                                                                          |
+|-----------------------|-----------|----------------------------------------------------------------------------------|
+| `PORT`                | `8000`    | port the service **binds**, and the one `service/healthcheck.py` probes          |
+| `HOST`                | `0.0.0.0` | bind address; see the note below                                                 |
+| `GRACEFUL_SHUTDOWN_S` | `20`      | seconds uvicorn waits for in-flight requests                                     |
+| `RELOAD`              | `false`   | filesystem auto-reload — development only                                        |
+| `LOG_LEVEL`           | `INFO`    | root logger level for the `python -m service.api` start path                     |
+| `ALLOWED_ORIGINS`     | `*`       | CORS origins                                                                     |
+| `UDPIPE_URL`          | LINDAT    | UDPipe 2 endpoint, attachable; the same variable name as atrium-translator       |
+| `NAMETAG_URL`         | LINDAT    | NameTag 3 endpoint, attachable                                                   |
+| `API_JOBS_ROOT`       | see below | where per-job workspaces are created; computed from the repo root, not a literal |
+| `API_KEEP_WORKSPACES` | unset     | keep per-request workspaces for debugging -- survives only as long as the pod    |
+
+Every limit — `MAX_UPLOAD_MB`, `MAX_WORDS`, `MAX_CONCURRENT_JOBS`, `API_JOB_TIMEOUT` and the
+rest — is listed under [Limits](#limits).
+
+`PORT` and `HOST` are read by `service/api.py`'s `__main__` block, which is what the `api`
+image's `ENTRYPOINT` (`python -m service.api`) runs. The start command lives there, not in an
+exec-form `ENTRYPOINT` array, because an exec-form array runs no shell and `$PORT` could not
+expand in it. `service/healthcheck.py` reads the same `PORT`, so the listener and the health
+probe move together.
+
+> **Note:** `HOST=127.0.0.1` yields a container that reports **healthy** and serves nobody:
+> `service/healthcheck.py` always probes loopback by design and never reads `HOST`, so a
+> loopback bind passes every probe while being unreachable from outside the container.
+
+## How it works
+
+`PipelineManager` treats `run_pipeline.py` as the **only** execution interface —
+it never calls the stage scripts directly. Each request gets a fresh workspace
+under `TEMP/api_jobs/<job_id>/` with every pipeline directory relocated inside
+it, so resume / paradata-collision / `FAIL_ON_EMPTY` semantics behave as a clean
+first run and concurrent requests can't collide. A `.csv`, `.xlsx` or `.txt` upload goes to
+stage 1 as sent (`in/<doc_id>.<ext>`), as the command line hands it the user's file, so the
+TEITOK names the file that was sent. A TEITOK upload, a record sent as the
+text and `/enrich_text`'s lines are written as the canonical table (`text`, `page_num`,
+`line_num`, `page_label`, `categ`). Every input goes through stage 1; none bypasses it.
+
+The runner's exit code decides the HTTP answer:
+
+| Exit code | Meaning                                                                                               | Answer                                                   |
+|-----------|-------------------------------------------------------------------------------------------------------|----------------------------------------------------------|
+| `0`       | the run completed                                                                                     | 200                                                      |
+| `1`       | an empty run                                                                                          | 502                                                      |
+| `2`       | a stage script is missing                                                                             | 502                                                      |
+| `3`       | a dependency of the stages is missing, e.g. their `python3` cannot import `lxml`: a deployment defect | 500; `detail` says what is missing and how to install it |
+| `5`       | the TEITOK failed its output contract: a writer defect, "please report it"                            | 500                                                      |
+| `6`       | UDPipe or NameTag did not answer after the retries                                                    | 502 `upstream_unavailable`                               |
+| `7`       | every attempt at a LINDAT call timed out                                                              | 504 `limit_exceeded`, naming `lindat_timeout_s`          |
+| `8`       | LINDAT refused the request (a 4xx)                                                                    | 500                                                      |
+| other     | a stage failed in another way                                                                         | 502                                                      |
+
+Codes 6 to 8 come from the LINDAT clients (`api_util/lindat_errors.py`) and travel through their stage
+scripts unchanged; each `detail` starts with the client's `LINDAT …` line. An input over a limit gives 413
+or 422 `limit_exceeded`, a run over `API_JOB_TIMEOUT` gives 504 `limit_exceeded`, and every slot or the
+queue taken gives 429 `busy` ([Limits](#limits), [Errors](#errors)). An unusable upload gives 422.
+
+UDPipe/NameTag models stay operator-pinned in `config_api.txt` and are surfaced
+read-only via `/info`. The layout comes with the upload ([Layout inputs](#layout-inputs)):
+an uploaded TEITOK file is written to `<workspace>/layout/flexiconv/<doc_id>.teitok.xml`
+(`TEITOK_FLEXICONV_DIR`, `FLEXICONV_ANNOTATE=true`), an `alto` part to
+`<workspace>/layout/alto/<doc_id>.alto.xml` (`INPUT_ALTO_DIR`); both are outside `in/`, which
+stage 1 reads as tables. Page images are never uploaded, so a surface keeps the size its
+layout declares.
+
+## Shutdown behaviour
 
 The `api` image declares `HEALTHCHECK` (shallow `GET /health`, via the vendored
 `service/healthcheck.py`) and `STOPSIGNAL SIGTERM`, and sets `ENV GRACEFUL_SHUTDOWN_S=20`,
 which `service/api.py`'s `__main__` block passes to uvicorn as
-`timeout_graceful_shutdown`. (It was the `--timeout-graceful-shutdown 20` CLI flag until
-issue #58 moved the whole start command into that block so `$PORT` could be honoured.)
+`timeout_graceful_shutdown`.
 
 On `SIGTERM` the service:
 
@@ -468,26 +472,31 @@ On `SIGTERM` the service:
 
 A job that needs longer than that drain budget is still cut short, and the job
 **record** is in-memory (`service/jobs.py`) — so a client polling `/jobs/{id}` across a
-restart gets 404 rather than a result. Durable job storage is out of scope here (hub
-issue #53, factors IV/VI). See `docs/k8s_deployment.md` in the hub for the full
+restart gets 404 rather than a result. Durable job storage is out of scope. See `docs/k8s_deployment.md` in the hub
+for the full
 grace-period budget and the Kubernetes probe contract.
 
 The container exits **143** (128 + SIGTERM) after a clean shutdown, not 0 — uvicorn
 re-raises the captured signal on purpose so a supervisor sees the real cause. That is a
 normal stop, not a crash.
 
+## Frontend(s)
+
+`GET /` redirects to `/frontend`, a form that sends a table, a `.txt` or a flexiconv TEITOK file, with an
+optional ALTO file, to `POST /enrich`. It shows the JSON envelope, or downloads the workspace as a ZIP.
+`/frontend-lindat` is the same form in LINDAT's page frame: it loads LINDAT's header and footer script from
+`lindat.mff.cuni.cz`. Both pages load the Milligram style sheet from `cdnjs.cloudflare.com`, so the viewer's
+browser needs to reach those hosts.
+
 ## OpenAPI (the typed contract)
 
 The service's OpenAPI document is committed as [`service/openapi.json`](openapi.json) and
-attached to every release as `openapi.json` with its `openapi.json.sha256` (atrium-project#32
-round 2). It is what a client is generated from: every request and response field is typed
-(the envelope as `EnrichResponse`, the jobs API, `/rescale`), every error response is the
-body above, the registered `reason` codes are listed in `x-atrium-reason-codes`, and a
-returned record is typed by the vendored record schema (`AtriumDocument`). `paradata` is
-typed as the `CreateAction` of atrium-project#67 R2; until R2 lands it holds the merged
-pipeline-run record, which carries the action's paradata properties without its own members.
-`GET /info` reports `openapi_sha256`, the digest of the spec the running image serves — equal
-to the release's `openapi.json.sha256` for an image built from that tag.
+attached to every release as `openapi.json` with its `openapi.json.sha256`. It is what a client is generated from.
+Every request and response field is typed (the envelope as `EnrichResponse`, the jobs API, `/rescale`), and every
+error response is the body above. The registered `reason` codes are listed in `x-atrium-reason-codes`. A returned
+record is typed by the vendored record schema (`AtriumDocument`), and `paradata` by its `CreateAction`.
+`GET /info` reports `openapi_sha256`, the digest of the spec the running image serves. It equals the release's
+`openapi.json.sha256` for an image built from that tag.
 
 - **After an API change**, regenerate and commit it:
   `python atrium_openapi.py export --app service.api:app --out service/openapi.json`.

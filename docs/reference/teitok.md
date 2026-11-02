@@ -70,7 +70,7 @@ rules (`pb-K` increasing, `lb-P.L` on page P). A file that fails stops the stage
 `SAVE_TEITOK=true`. The source ALTO XML files must be present in `INPUT_ALTO_DIR` for spatial coordinates to be
 included. Without a layout, TEITOK XML is still produced: its pages and lines are those of the input table (`<pb>`
 per page, `<lb>` per line), without bounding boxes and without a facsimile. If your documents are not in ALTO
-format, see [Other input formats: flexiconv](../usage.md#other-input-formats-flexiconv).
+format, see [Convert other input formats with flexiconv](../usage.md#convert-other-input-formats-with-flexiconv).
 
 ## Format changes
 
@@ -80,7 +80,9 @@ run keeps existing `.teitok.xml` files. Rewrite them once, so that old and new f
 
 **Pages changed after v0.21.0** (issue #38): runs up to v0.21.0 counted UDPipe's ~900-word chunks as pages in
 `NE/<doc>-N.tsv`, `summary_ne_counts.csv`, `UDP_NE/<doc>.csv` and the document record, and left a sentence that
-runs over a page on its first page in the TEITOK. To correct a collection: re-run it from stage 1 (which writes the
+runs over a page on its first page in the TEITOK. Their CoNLL-U files marked each chunk start with
+`# page_break = true`, and every stage read it as a page; it is now `# chunk_start = K`, read as a chunk start. To
+correct a collection: re-run it from stage 1 (which writes the
 rows files pages now come from); or, keeping the CoNLL-U and NE files, rebuild the rows files with stage 1, copy
 each `TEMP_TXT_DIR/<doc>.rows.tsv` to `UDP/`, re-split the NE files by page without calling NameTag
 (`python3 api_util/page_rows.py resplit --conllu-dir <OUTPUT_DIR>/UDP --ne-dir <OUTPUT_DIR>/NE`), delete
@@ -116,8 +118,8 @@ The writer is [api_util/teitok_alto.py](../../api_util/teitok_alto.py) (`write_t
 (`contract` profile). Keywords, TEATER topics, page categories and line quality are not written into TEITOK by
 default: they live in the document record (the three-format decision recorded on ufal/atrium-project#24,
 2026-08-01; the AMČR storage contract keeps page classification and line quality "only in the record"). The opt-in
-projection below writes page categories, TEATER categories and the controlled keywords a record already carries,
-never line quality, and since v1.0.0-beta it no longer computes keywords of its own.
+projection below writes page categories, TEATER categories and the controlled and statistical keywords a record
+already carries, never line quality, and it computes no keywords of its own.
 
 ## Record projection onto TEITOK (opt-in)
 

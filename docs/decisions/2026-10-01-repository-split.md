@@ -1,5 +1,22 @@
 # 2026-10-01: keywords and the LLM stage leave nlp-enrich
 
+**In short:** keyword extraction and the LLM stage left nlp-enrich on 2026-10-01. It now covers morphology, named
+entities and TEITOK only, and keywords are atrium-keyword-extract's `POST /extract_keywords`. For a user, the keyword
+parameters and response fields are gone from this API, and records written before the change read as before. The
+page does not describe how keywords are produced today: that is in atrium-keyword-extract's README.
+
+**Decision:** keyword extraction and the LLM controlled-vocabulary stage leave nlp-enrich; it keeps the morphology,
+named-entity and TEITOK stage.
+
+**Status:** done, released as v1.0.0-beta. The API change is breaking, hence the major version.
+
+**Why:** the meeting of 30 September 2026 cut the ATRIUM tools along the pipeline's stages instead of along their
+history ([the hub's development history](https://ufal.github.io/atrium-project/development-history/)).
+
+**Consequence:** the API lost the `kw_method` and `num_keywords` parameters, some response fields and a block of
+`/info`; the image `atrium-nlp-enrich-llm` is not built any more; the keyword licences moved with the code. The
+details are in the record below.
+
 > Dated note, released as v1.0.0-beta. Moved from the README's "Where things went" in the documentation overhaul
 > ([atrium-project#79](https://github.com/ufal/atrium-project/issues/79)); the text is as last edited on 2026-10-05.
 

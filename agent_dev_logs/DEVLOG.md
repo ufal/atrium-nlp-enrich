@@ -894,3 +894,16 @@ this file is a derived reading aid in `agent_dev_logs/`._
   licences page's "What the computed label means" becomes "What the list does not say", which links the hub's note.
 * **Checks:** 1118 passed, 11 skipped; with flexiconv v0.3.11 installed, 1126 passed, 3 skipped (torch), the same
   as with v0.3.10; `validate_teitok_xml.py --profile core` 5/5 on the fixtures.
+
+## 2026-11-02 — atrium-project#79 phase F, tool round: the docs for each kind of reader
+
+Documentation only; no code, test or configuration change.
+* **F3:** `docs/development.md` § Working records is the one Markdown pointer into `agent_dev_logs/`; other pages cite
+  the issue. CONTRIBUTING's documentation table follows the hub template.
+* **F4:** the opening is 79 words; the split paragraph moved to `docs/development.md`; "Start here" is gone.
+* **F5:** the runbook follows the template's order, with "At a glance" under Start and "Shutdown behaviour"; tracker
+  shorthand and version history are out of its running text. Corrected: the projection also writes the statistical keywords, and `schemas/teitok/README.md` names `app-kw-controlled` and `app-kw-statistical`.
+* **F6/F7:** task headings on `docs/usage.md`; "In short" on the flexiconv check and the split decision, which also gets Decision · Status · Why · Consequence; `how-it-works.md` 24.5 → 16.8.
+* **Map:** the hub's `agent_dev_logs/plans/79.F-relocation_map.md` § atrium-nlp-enrich (every moved block, corrected facts,
+  renamed anchors).
+* **Checks:** `docs_check` and `runbook_check` pass; 1118 passed, 11 skipped, as at the head.

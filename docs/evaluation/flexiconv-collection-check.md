@@ -1,6 +1,13 @@
-# Checking a real collection with flexiconv (issue #10)
+# Checking a real collection with flexiconv
 
-For anyone about to use the [flexiconv path](../usage.md#other-input-formats-flexiconv) on a new collection: how to
+**In short:** this page measures what flexiconv's conversion keeps: rows, tokens, boxes and the TEITOK-core rules,
+for one file at a time. A reference run on flexiconv v0.3.10's own examples plus one Czech text (six files in all)
+converted every file, and every file passed `--profile core`. Before you use the flexiconv path on a collection, run
+the same report on a few real files of each kind. The page does not show how good the annotation is, or how flexiconv
+behaves on your collection.
+
+For anyone about to use the [flexiconv path](../usage.md#convert-other-input-formats-with-flexiconv) on a new
+collection: how to
 check what the conversion keeps, document by document, and what a reference run on flexiconv's own examples gave.
 It measures the conversion (rows, tokens, boxes, the TEITOK-core rules), not the quality of the annotation.
 
