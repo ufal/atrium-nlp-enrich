@@ -916,3 +916,10 @@ Documentation only; no code, test or configuration change.
 * **`scheduled-smoke.yml`** installs `requirements_flexiconv.txt`, so the conversion and round-trip tests run there.
 * `httpx2` beside `httpx`; the comment pointing at a missing `gpu-inference.yml` fixed; pre-commit `ruff-check`; the weekly scan targets `-api`.
 * **Checks:** 1119 passed, 11 skipped (+1); no INFO line under `LOG_LEVEL=WARNING`.
+
+## 2026-11-03 — v1.3.2-beta
+
+* **Version:** v1.3.1-beta → v1.3.2-beta in `para_config.txt`, `CITATION.cff`, `service/openapi.json`, the version examples in README, `docs/usage.md`, `docs/reference/paradata.md` and `service/README.md`. `CITATION.cff` `date-released` 2026-11-03.
+* **CONTRIBUTING.md:** the release row. It covers the 11-02 licence wording (atrium-project#6), the documentation
+  round (#79) and the 11-03 CI fixes, with the hub's workflows pinned to `6a10787` (the pin sweep, committed
+  before this one).

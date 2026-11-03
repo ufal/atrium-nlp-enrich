@@ -325,7 +325,7 @@ empty failure. Set `FAIL_ON_EMPTY=false` to permit genuinely empty stages.
 
 The published images are `ghcr.io/ufal/atrium-nlp-enrich:<version>` (the batch runner, `run_pipeline.py`) and
 `ghcr.io/ufal/atrium-nlp-enrich-api:<version>` (the service). `<version>` is the release **without** its leading
-`v`: `1.3.1-beta` for the release `v1.3.1-beta`. The target is part of the image name, not the tag.
+`v`: `1.3.2-beta` for the release `v1.3.2-beta`. The target is part of the image name, not the tag.
 
 ```bash
 docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # the service
