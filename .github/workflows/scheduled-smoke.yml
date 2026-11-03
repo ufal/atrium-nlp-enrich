@@ -20,7 +20,7 @@
 # PARAM block (mirrors docker.yml build args for consistency):
 #   APT_PACKAGES     — no extra apt deps for the base nlp-enrich image
 #   PRE_INSTALL_TORCH — torch is not pre-installed for the CPU-only smoke run
-#   REQUIREMENTS     — base + test requirements (no LLM stack)
+#   REQUIREMENTS     — base + test requirements + the pinned flexiconv (no LLM stack)
 #
 # Infra note: this job runs on GitHub-hosted ubuntu-latest (CPU-only).
 
@@ -48,7 +48,7 @@ on:
 env:
   APT_PACKAGES: ""
   PRE_INSTALL_TORCH: ""
-  REQUIREMENTS: "requirements.txt requirements-test.txt"
+  REQUIREMENTS: "requirements.txt requirements-test.txt requirements_flexiconv.txt"
 
 jobs:
   smoke:
@@ -69,7 +69,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cache/pip
-          key: pip-smoke-${{ runner.os }}-${{ hashFiles('requirements.txt', 'requirements-test.txt') }}
+          key: pip-smoke-${{ runner.os }}-${{ hashFiles('requirements.txt', 'requirements-test.txt', 'requirements_flexiconv.txt') }}
           restore-keys: |
             pip-smoke-${{ runner.os }}-
 
@@ -77,8 +77,10 @@ jobs:
         # transformers unlocks tests/test_lazy_imports.py's transformers case. It is NOT
         # in requirements-test.txt because it pulls tokenizers/safetensors, which is too
         # much to add to every PR run; torch stays out entirely: nothing here needs it since 1.0.0.
+        # The pinned flexiconv (requirements_flexiconv.txt) runs the conversion and round-trip
+        # tests that skip without it in the PR lane.
         run: |
-          pip install -r requirements.txt -r requirements-test.txt
+          pip install -r requirements.txt -r requirements-test.txt -r requirements_flexiconv.txt
           pip install transformers
 
       - name: Run the full suite

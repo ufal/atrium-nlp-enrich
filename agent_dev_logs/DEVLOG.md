@@ -907,3 +907,12 @@ Documentation only; no code, test or configuration change.
 * **Map:** the hub's `agent_dev_logs/plans/79.F-relocation_map.md` § atrium-nlp-enrich (every moved block, corrected facts,
   renamed anchors).
 * **Checks:** `docs_check` and `runbook_check` pass; 1118 passed, 11 skipped, as at the head.
+
+## 2026-11-03 — What the green CI runs on the 11-02 `test` head hid (atrium-project, CI audit)
+
+* **uvicorn gets the configured log level:** `uvicorn.run(…, log_level=…)` in `service/api.py`. Under `LOG_LEVEL=WARNING` uvicorn still logged its start-up lines and the access log, and the hub's probe, which read only the service's own format, reported none.
+* **`tests/test_nametag.py`:** the tag-parsing test no longer skips without torch; only the placeholder `process_data` test needs it.
+* **`teitok-schema.yml`:** installs `jsonschema` (the record-schema test in `test_flexiconv_annotate.py` had skipped), lists skips (`-rs`), and its flexiconv comment names the v0.3.11 pin.
+* **`scheduled-smoke.yml`** installs `requirements_flexiconv.txt`, so the conversion and round-trip tests run there.
+* `httpx2` beside `httpx`; the comment pointing at a missing `gpu-inference.yml` fixed; pre-commit `ruff-check`; the weekly scan targets `-api`.
+* **Checks:** 1119 passed, 11 skipped (+1); no INFO line under `LOG_LEVEL=WARNING`.

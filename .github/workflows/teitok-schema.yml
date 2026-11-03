@@ -130,6 +130,9 @@ jobs:
     name: Validate TEITOK output contract
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Every pytest step lists its skips, so a test that stops running shows in the log.
+      PYTEST_ADDOPTS: "-rs"
 
     steps:
       - name: Checkout
@@ -148,8 +151,9 @@ jobs:
         # step with "No module named pytest", *before* it could even report the
         # wrong test filename the same commit introduced. Both defects had to be
         # fixed for the gate to run at all, which is why the run's conclusion
-        # named neither.
-        run: pip install lxml pytest
+        # named neither. jsonschema: tests/test_flexiconv_annotate.py checks the converted
+        # record against the shared schema and skipped without it.
+        run: pip install lxml pytest jsonschema
 
       - name: Schema compiles
         run: |
@@ -213,7 +217,8 @@ jobs:
         run: python3 -m pytest tests/test_validate_teitok.py -v --tb=short
 
       - name: flexiconv output passes the TEITOK-core profile
-        # The gate api_flexiconv.sh applies, on real flexiconv v0.3.10 output.
+        # The gate api_flexiconv.sh applies, on real flexiconv output (the fixtures were written
+        # by v0.3.10; v0.3.11, the pin, writes the same).
         run: python3 api_util/validate_teitok_xml.py tests/fixtures/teitok/flexiconv --profile core
 
       - name: Upstream conformance (stdlib reader) and TEITOK readers

@@ -1,9 +1,8 @@
 import pytest
 
-torch = pytest.importorskip("torch")
-transformers = pytest.importorskip("transformers")
-
-from api_util.call_nametag import _get_ne_suffix, process_data  # noqa: E402
+# call_nametag loads torch and transformers lazily, so only the process_data test needs them.
+# The module-level skip this replaced kept the tag-parsing test out of every CI lane.
+from api_util.call_nametag import _get_ne_suffix, process_data
 
 
 def test_get_ne_suffix_ontonotes():
@@ -22,5 +21,7 @@ def test_get_ne_suffix_ontonotes():
 
 
 def test_process_data_smoke():
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
     result = process_data({"text": "Hello"})
     assert result == {"text": "Hello"}
