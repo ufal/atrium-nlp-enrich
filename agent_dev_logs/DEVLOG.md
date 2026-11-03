@@ -923,3 +923,11 @@ Documentation only; no code, test or configuration change.
 * **CONTRIBUTING.md:** the release row. It covers the 11-02 licence wording (atrium-project#6), the documentation
   round (#79) and the 11-03 CI fixes, with the hub's workflows pinned to `6a10787` (the pin sweep, committed
   before this one).
+
+## 2026-11-03 (evening) — v1.3.2-beta was built at the old pin; the hub pin moves again
+
+* **`CONTRIBUTING.md`:** the v1.3.2-beta row said the hub's workflows were pinned to `6a10787`. The tag is on
+  `af74dea`, the commit before the pin move (`17bbf81`), so its release ran with `439488bb`. The row now says so;
+  the GitHub release's CI line needs the same edit.
+* **Hub pin:** the callers move to the hub commit that turns the build cache off on tags and lists each CRITICAL
+  and HIGH finding in the scan summary.
