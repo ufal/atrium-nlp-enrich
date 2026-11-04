@@ -28,7 +28,8 @@ bear on the annotations is an open question ([atrium-project#78](https://github.
 [#6](https://github.com/ufal/atrium-project/issues/6)).
 
 The paradata and the document record also carry an older calculated field, `license`; it is not a licence and should
-not be used ([Licences and paradata](https://ufal.github.io/atrium-project/ecosystem/licences/) on the hub).
+not be used. The record marks it `provenance.license_basis: "calculated"`
+([Licences and paradata](https://ufal.github.io/atrium-project/ecosystem/licences/) on the hub).
 
 Keyword extraction (KER, YAKE, KeyBERT) and the AMČR/TEATER vocabularies (CC0) are declared in
 [atrium-keyword-extract](https://github.com/ufal/atrium-keyword-extract)'s `para_config.txt` since v1.0.0-beta of
