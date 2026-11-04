@@ -1,4 +1,4 @@
-pytest>=9.1.1
+pytest>=9.2.0
 pytest-cov
 requests
 # atrium_document.schema.json validation (issue atrium-project#10, D4). Also in
