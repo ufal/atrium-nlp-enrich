@@ -105,7 +105,7 @@ information in a consistent, machine-readable structure:
 |-----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Layout**            | Page, text-block, and line boundaries with pixel bounding boxes from the source ALTO XML (page origin), scaled to the stored page images when those are available; without a layout, the pages and lines of the input table |
 | **Morphology/syntax** | Per-token lemma, UPOS/XPOS tags, morphological features, and dependency relations produced by UDPipe 2; multi-word tokens ("abych" = aby + bych) as one surface `<tok>` with `<dtok>` words                                 |
-| **Named entities**    | Entity spans with a coarse category (`PER`, `ORG`, `LOC`, `MISC`) and the raw NameTag label in `@onto` (OntoNotes, the default model), `@cnec` (CNEC 2.0) or `@archaeo` (the archaeological model)                          |
+| **Named entities**    | Entity spans with a coarse category (`PER`, `ORG`, `LOC`, `MISC`) and the raw NameTag label in `@onto` (OntoNotes, the default model), `@cnec` (CNEC 2.0) or `@archaeo` (reserved for #7's model, not trained yet)          |
 | **Facsimile links**   | `<surface>` elements in `<facsimile>` that tie each page to its companion image, enabling TEITOK's side-by-side text/image view                                                                                             |
 
 The structure of a file, element by element: [TEITOK XML structure at a glance](reference/teitok.md#teitok-xml-structure-at-a-glance).
@@ -259,7 +259,8 @@ the token ids. `@type` holds the coarse category (`PER`, `ORG`, `LOC`, or `MISC`
 [api_util/ner_types.py](../api_util/ner_types.py), the same map the document record's `entities[].type_teitok`
 uses). The raw NameTag label goes in the attribute of its tag set: `@onto` for the default multilingual
 OntoNotes model (`<name type="PER" onto="PERSON">`), `@cnec` for the Czech CNEC 2.0 model
-(`<name type="PER" cnec="pf">`), `@archaeo` for the archaeological model.
+(`<name type="PER" cnec="pf">`), `@archaeo` for the archaeological model once
+[#7](https://github.com/ufal/atrium-nlp-enrich/issues/7) trains one (none is trained yet).
 
 ### How tokens are matched to OCR strings
 
