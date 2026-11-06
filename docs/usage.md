@@ -325,7 +325,14 @@ empty failure. Set `FAIL_ON_EMPTY=false` to permit genuinely empty stages.
 
 The published images are `ghcr.io/ufal/atrium-nlp-enrich:<version>` (the batch runner, `run_pipeline.py`) and
 `ghcr.io/ufal/atrium-nlp-enrich-api:<version>` (the service). `<version>` is the release **without** its leading
-`v`: `1.3.3-beta` for the release `v1.3.3-beta`. The target is part of the image name, not the tag.
+`v`: `1.3.4-beta` for the release `v1.3.4-beta`. The target is part of the image name, not the tag.
+
+The batch image passes its arguments to `run_pipeline.py` (`docker run IMAGE --config /data/config.txt --stages udp
+nt`). Since `v1.3.4-beta` its entry point is the hub-canonical `container_entrypoint.py`, which names
+`run_pipeline.py` by its absolute path: a first argument that names a shell or Python runs that program instead
+(`docker run IMAGE /bin/sh job.sh`), which is how Galaxy starts a tool's container. Only those interpreters run; the
+pipeline's stage scripts still start from `/app`, the image's `WORKDIR`, so a job script that runs it changes there
+first.
 
 ```bash
 docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # the service

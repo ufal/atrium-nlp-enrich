@@ -957,3 +957,15 @@ Documentation only; no code, test or configuration change.
 * **Released:** v1.3.3-beta (10:04Z), the pilot release (atrium-project#77).
 * **Hub pin:** the workflows move from `14110d7` to `51aad6c` (`v1`), with the Trivy scan's pause and the CVE gate's retry (atrium-project#81). No release; the next one carries it. `workflow_lint --require-sha-pins` OK; shared files in parity.
 * **Records:** the header names the pilot release.
+
+## 2026-11-06 — v1.3.4-beta prepared: the batch image starts Galaxy's job script (atrium-project#66)
+
+* **Why:** Galaxy starts a tool's container as `docker run … IMAGE /bin/sh tool_script.sh` in the job's working
+  directory. The old relative ENTRYPOINT passed `/bin/sh` to the program as an argument (exit 2) and failed outside `/app`.
+* **Change:** the hub-canonical `container_entrypoint.py` and its shared test, vendored by `revendor_shared.sh`; the
+  ENTRYPOINT names the program by its absolute path: `base` → `/app/run_pipeline.py`. Arguments still go to the program; a first argument
+  naming `sh`, `bash`, `dash`, `python` or `python3` runs as given. The stage scripts still start from `/app`; a Galaxy wrapper writes its own config with absolute paths.
+  `tests/test_batch_entrypoint.py` pins the stages; `ruff.toml` excludes the two vendored files from formatting.
+* **Version v1.3.4-beta** (prepared, not tagged): `CITATION.cff`, `para_config.txt`, `service/openapi.json`, the version
+  examples in the docs; the `CONTRIBUTING.md` row; a paragraph on the entry point in `docs/usage.md`.
+* **Yours:** push the hub commit with `container_entrypoint.py` and move `v1`; here, `python3 ../atrium-project/scripts/pin_hub_reusables.py --sha <v1>` committed with these files (para-drift checks the copy only at a pin that has it); push `test`; then `python3 ../atrium-project/scripts/tag_release.py v1.3.4-beta`, which tags the pushed HEAD only and pushes that one tag.
