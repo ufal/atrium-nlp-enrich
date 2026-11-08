@@ -969,3 +969,15 @@ Documentation only; no code, test or configuration change.
 * **Version v1.3.4-beta** (prepared, not tagged): `CITATION.cff`, `para_config.txt`, `service/openapi.json`, the version
   examples in the docs; the `CONTRIBUTING.md` row; a paragraph on the entry point in `docs/usage.md`.
 * **Yours:** push the hub commit with `container_entrypoint.py` and move `v1`; here, `python3 ../atrium-project/scripts/pin_hub_reusables.py --sha <v1>` committed with these files (para-drift checks the copy only at a pin that has it); push `test`; then `python3 ../atrium-project/scripts/tag_release.py v1.3.4-beta`, which tags the pushed HEAD only and pushes that one tag.
+
+## 2026-11-08 — Review fix: `fix_teitok_bboxes.py` is not the CLI form of `POST /rescale`
+
+* **`docs/usage.md`:** the "Page images" row of the command-line and service table called `fix_teitok_bboxes.py`
+  "the CLI's rescale". The cell now says what each does: `/rescale` fits one file to `width` × `height` or a
+  `scale` and repairs `</n>` unless `fix_names=false`; `fix_teitok_bboxes.py` rewrites files in place by a shift
+  (`--dx`, `--dy`) and a scale (`--sx`, `--sy`, or `--dpi` with `--unit` and `--alto-dpi`) and always repairs
+  `</n>`. They share the helpers of `api_util/bbox_scale.py` and `api_util/page_boxes.py`, no parameters. The
+  table is realigned.
+* **Checked:** the fast suite with `requirements.txt` and `requirements-test.txt`: 1142 passed, 11 skipped; the
+  hub's `docs_check.py`.
+* **Yours:** review and commit. No version bump.
