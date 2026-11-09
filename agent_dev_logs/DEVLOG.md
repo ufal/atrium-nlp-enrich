@@ -989,7 +989,9 @@ Documentation only; no code, test or configuration change.
 * **Found:** five of the six `archaeo` types are facets of keyword-extract's 4,711-term vocabulary (Artefact 728;
   Feature, Activity Area and Finds Context 651; Material 160; Chronology 272; Cultural & Geographic Context 965 beside
   NameTag's own places); species only in part. The answer carries AMČR/TEATER ids, and NameTag's entities already get
-  vocabulary ids (`entities[].pid`). Not covered: character spans; more than one term per line.
+  vocabulary ids (`entities[].pid`). Not covered: character offsets (the
+  document-level path gives a verbatim snippet per term). One term per line is the line-level schema's choice, not a
+  limit: the document-level path already returns several located terms.
 * **Written:** `digests/7.digest.md` (section 2026-11-09, status). A comment proposing to close #7 as not planned is
   drafted, not posted.
 * **Yours:** post it; close #7 if nobody needs spans. Not pushed.
