@@ -992,6 +992,6 @@ Documentation only; no code, test or configuration change.
   vocabulary ids (`entities[].pid`). Not covered: character offsets (the
   document-level path gives a verbatim snippet per term). One term per line is the line-level schema's choice, not a
   limit: the document-level path already returns several located terms.
-* **Written:** `digests/7.digest.md` (section 2026-11-09, status). A comment proposing to close #7 as not planned is
-  drafted, not posted.
-* **Yours:** post it; close #7 if nobody needs spans. Not pushed.
+* **Written:** `digests/7.digest.md` (section 2026-11-09, status).
+* **Posted by K4TEL** ([11-09 13:54](https://github.com/ufal/atrium-nlp-enrich/issues/7#issuecomment-6741768360)): the comment, plus decision models as the other route and a request for a
+  gold set annotated by a Czech-speaking archaeologist (tracked in keyword-extract#2's plan, step 5). Not pushed.
