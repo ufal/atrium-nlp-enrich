@@ -1,6 +1,19 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "ATRIUM's NLP enricher: a tool to apply remote NameTag and UDPipe LINDAT services"
+title: "ATRIUM nlp-enrich: lemmatisation, morphosyntactic annotation and named-entity recognition of text lines with the LINDAT UDPipe and NameTag services, exported as TEITOK XML"
+abstract: >-
+  nlp-enrich analyses the text lines of archival documents: it finds each word's lemma (dictionary
+  form), part of speech and grammar, and the people, places and organisations the text names. It
+  writes one TEITOK file per document, a format for searching text and showing it over the scan, with
+  tables beside it. Use it on the line tables from ocr-postprocess or on a born-digital record from
+  digital-convert. The analysis runs at LINDAT, so it needs network access to its servers.
+keywords:
+  - "natural language processing"
+  - "lemmatisation"
+  - "named-entity recognition"
+  - "UDPipe"
+  - "NameTag"
+  - "TEITOK"
 version: "1.3.4-beta"
 date-released: "2026-11-06"
 authors:
