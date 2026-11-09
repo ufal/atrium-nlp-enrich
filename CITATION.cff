@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "ATRIUM nlp-enrich: lemmatisation, morphosyntactic annotation and named-entity recognition of text lines with the LINDAT UDPipe and NameTag services, exported as TEITOK XML"
+title: "ATRIUM nlp-enrich"
 abstract: >-
   nlp-enrich analyses the text lines of archival documents: it finds each word's lemma (dictionary
   form), part of speech and grammar, and the people, places and organisations the text names. It
