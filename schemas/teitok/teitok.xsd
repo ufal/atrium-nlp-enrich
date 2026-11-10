@@ -20,9 +20,11 @@
   validates is a negative bbox coordinate.
 
   The opt-in record projection (api_util/teitok_project.py, atrium-project#70)
-  adds, additively and only in the header plus `pb/@ana`: `encodingDesc/classDecl`
+  adds, additively and only in the header plus attributes of `<pb>`: `encodingDesc/classDecl`
   (taxonomies of page categories and keyword schemes), `application/@id`,
-  `profileDesc/textClass/keywords/term`, and a `change` of type "enriched".
+  `profileDesc/textClass/keywords/term` (a page's lists with `@id`), a `change` of type
+  "enriched", and on `<pb>` the category `@ana` and one pointer per page list
+  (`@teater`, `@kwcs`, `@kwen`, `@kwstat`; ufal/flexiconv#1).
   A document without them validates exactly as before.
 
   NO TARGET NAMESPACE — this is deliberate, not an oversight.
@@ -226,6 +228,8 @@
       <xs:sequence>
         <xs:element ref="term" maxOccurs="unbounded"/>
       </xs:sequence>
+      <!-- @id: a page's list, named by that page's <pb> pointer. -->
+      <xs:attribute name="id" type="xs:string" use="optional"/>
       <xs:attribute name="scheme" type="xs:string" use="optional"/>
       <xs:attribute name="resp" type="xs:string" use="optional"/>
       <xs:attribute name="lang" type="xs:string" use="optional"/>
@@ -360,6 +364,13 @@
       <xs:attribute name="bbox" type="bboxType" use="optional"/>
       <!-- "#pcat-…": the page's category (record projection, opt-in). -->
       <xs:attribute name="ana" type="xs:string" use="optional"/>
+      <!-- "#<name>-<pb id>": this page's <keywords> list of one type (record projection,
+           opt-in; ufal/flexiconv#1), for TEITOK to index as a multi-value page attribute:
+           TEATER/AMČR categories, controlled keywords cs / en, statistical keywords. -->
+      <xs:attribute name="teater" type="xs:string" use="optional"/>
+      <xs:attribute name="kwcs" type="xs:string" use="optional"/>
+      <xs:attribute name="kwen" type="xs:string" use="optional"/>
+      <xs:attribute name="kwstat" type="xs:string" use="optional"/>
     </xs:complexType>
   </xs:element>
 

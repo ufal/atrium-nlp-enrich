@@ -541,6 +541,32 @@ class TestCoreProfile:
         path = self._doc(tmp_path, '<p><tok id="w-1" bbox="-20 10 30 40">a</tok></p>')
         assert any("non-negative" in e for e in validate_document(path, profile="core"))
 
+    def test_relative_boxes_pass(self, tmp_path):
+        """flexiconv's ``--option bbox=pct`` (ufal/flexiconv#1): IIIF's pct:x,y,w,h."""
+        path = self._doc(
+            tmp_path,
+            '<pb bbox="0 0 1000 1500"/><p bbox="pct:8,5.33,84,6.67">'
+            '<tok id="w-1" bbox="pct:0,0,100,100">a</tok></p>',
+        )
+        assert validate_document(path, profile="core") == []
+
+    @pytest.mark.parametrize(
+        "bbox", ["pct:90,0,20,10", "pct:-1,0,5,5", "pct:1,2,3", "pct:1,2,0,4", "pct:1,2,3,4px"]
+    )
+    def test_malformed_or_overflowing_relative_boxes_fail(self, tmp_path, bbox):
+        path = self._doc(tmp_path, f'<p><tok id="w-1" bbox="{bbox}">a</tok></p>')
+        assert any("pct:x,y,w,h" in e for e in validate_document(path, profile="core"))
+
+    def test_the_writers_profile_keeps_absolute_pixels(self, tmp_path):
+        xml = (FIXTURES / "CTX_valid.teitok.xml").read_text(encoding="utf-8")
+        assert ' bbox="' in xml
+        path = tmp_path / "CTX_valid.teitok.xml"
+        start = xml.index(' bbox="', xml.index("<tok ")) + len(' bbox="')
+        path.write_text(
+            xml[:start] + "pct:1,1,1,1" + xml[xml.index('"', start) :], encoding="utf-8"
+        )
+        assert any("bboxType" in e or "pattern" in e for e in validate_document(path))
+
     def test_missing_text_element_fails(self, tmp_path):
         (tmp_path / "x.teitok.xml").write_text("<TEI><teiHeader/></TEI>", encoding="utf-8")
         assert "no <text> element" in validate_document(tmp_path / "x.teitok.xml", profile="core")

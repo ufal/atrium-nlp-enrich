@@ -47,6 +47,16 @@ def test_single_file_is_scaled_and_surface_follows(tmp_path):
     assert 'lrx="500"' in out and 'lry="1000"' in out
 
 
+def test_relative_boxes_are_left_as_they_are(tmp_path):
+    """pct:x,y,w,h is a share of the page (ufal/flexiconv#1): a scale or shift keeps it."""
+    path = _write(tmp_path, "d.teitok.xml", DOC.replace("100 200 150 240", "pct:10,10,5,2"))
+    assert (
+        fix_teitok_bboxes.main(["-i", str(path), "--dx", "-10", "--sx", "0.5", "--sy", "0.5"]) == 0
+    )
+    out = path.read_text(encoding="utf-8")
+    assert 'bbox="pct:10,10,5,2"' in out and 'bbox="45 100 445 200"' in out
+
+
 def test_directory_mode_rewrites_every_xml(tmp_path):
     a = _write(tmp_path, "a.teitok.xml")
     b = _write(tmp_path, "b.teitok.xml")

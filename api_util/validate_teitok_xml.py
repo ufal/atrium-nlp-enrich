@@ -122,6 +122,22 @@ def _strip_tei_namespace(doc) -> None:
 
 
 _BBOX_OK = re.compile(r"^\d+ \d+ \d+ \d+$")
+#: A relative box in IIIF's region syntax, percentages of the page (ufal/flexiconv#1; flexiconv
+#: ``--option bbox=pct``). The core profile accepts it; the XSD, i.e. the writer's own output,
+#: does not: the writer keeps absolute pixels until TEITOK's viewers read ``pct:``.
+_PCT_BBOX = re.compile(r"^pct:(\d+(?:\.\d+)?),(\d+(?:\.\d+)?),(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)$")
+
+
+def _bbox_ok(value: str) -> bool:
+    """Four non-negative integer pixels, or ``pct:x,y,w,h`` inside the page (2-decimal rounding
+    of flexiconv's percentages may overshoot 100 by a little)."""
+    if _BBOX_OK.match(value):
+        return True
+    match = _PCT_BBOX.match(value)
+    if not match:
+        return False
+    x, y, w, h = (float(g) for g in match.groups())
+    return w > 0 and h > 0 and x + w <= 100.05 and y + h <= 100.05
 
 
 def _local(tag) -> str:
@@ -161,10 +177,17 @@ def _token_gaps(root):
 
 
 _XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
-# Attributes holding space-separated local references ("#w-1 #w-2"). `ana`, `resp` and
-# `scheme` carry the opt-in record projection's pointers (api_util/teitok_project.py,
-# atrium-project#70); a "#" reference that names nothing is an error in any TEITOK profile.
-_REF_ATTRS = ("sameAs", "corresp", "ana", "resp", "scheme")
+#: The record projection's page-list pointers (api_util/teitok_project.py, ufal/flexiconv#1), in
+#: the order the projector writes them: a ``<pb>`` attribute naming that page's ``<keywords>``
+#: list of one type (``teater``: TEATER/AMČR categories; ``kwcs``/``kwen``: controlled keywords;
+#: ``kwstat``: statistical keywords), whose id is ``<pointer>-<pb id>``. Through it a TEITOK
+#: project indexes the list's terms as a multi-value attribute of the page.
+PAGE_LIST_POINTERS = ("teater", "kwcs", "kwen", "kwstat")
+# Attributes holding space-separated local references ("#w-1 #w-2"). `ana`, `resp`, `scheme`
+# and the page-list pointers carry the opt-in record projection's pointers
+# (api_util/teitok_project.py, atrium-project#70); a "#" reference that names nothing is an
+# error in any TEITOK profile.
+_REF_ATTRS = ("sameAs", "corresp", "ana", "resp", "scheme") + PAGE_LIST_POINTERS
 
 
 def lint_core(doc) -> list[str]:
@@ -211,8 +234,11 @@ def lint_core(doc) -> list[str]:
                         f"line {el.sourceline}: {attr} {ref!r} on <{tag}> does not resolve"
                     )
         bbox = el.get("bbox")
-        if bbox is not None and not _BBOX_OK.match(bbox.strip()):
-            errors.append(f"line {el.sourceline}: bbox {bbox!r} is not four non-negative integers")
+        if bbox is not None and not _bbox_ok(bbox.strip()):
+            errors.append(
+                f"line {el.sourceline}: bbox {bbox!r} is neither four non-negative integers "
+                "nor pct:x,y,w,h within the page"
+            )
 
     # join="right" says "no space follows"; whitespace before the next token contradicts it.
     for tok, _next_tok, gap in _token_gaps(root):
@@ -296,6 +322,7 @@ def lint_writer(doc) -> list[str]:
 #: element, and the element its ``#`` references must resolve to.
 _PROJECTION_TARGETS = (
     ("pb", "ana", "category"),
+    *(("pb", pointer, "keywords") for pointer in PAGE_LIST_POINTERS),
     ("keywords", "resp", "application"),
     ("keywords", "scheme", "taxonomy"),
     ("keywords", "corresp", "pb"),
@@ -307,15 +334,38 @@ def lint_projection(doc) -> list[str]:
     """The record projection's pointers name the right KIND of element (issue #70): a
     ``pb@ana`` a ``<category>``, a ``keywords@resp`` an ``<application>``, a
     ``keywords@scheme`` a ``<taxonomy>``, and a page reference (``term``/``keywords``
-    ``@corresp``) a ``<pb>``. ``core`` already checks that they resolve at all; a document
-    without a projection has none of these attributes and passes."""
+    ``@corresp``) a ``<pb>``. A page-list pointer (:data:`PAGE_LIST_POINTERS`) names one
+    ``<keywords>`` list, and that list is the pointing page's (``@corresp``). ``core`` already
+    checks that they resolve at all; a document without a projection has none of these
+    attributes and passes."""
     root = doc.getroot()
     kinds = {}
+    elements = {}
     for el in root.iter():
         el_id = el.get("id") or el.get(_XML_ID)
         if el_id:
             kinds[el_id] = _local(el.tag)
+            elements[el_id] = el
     errors = []
+    for el in root.iter():
+        if _local(el.tag) != "pb":
+            continue
+        page = el.get("id") or el.get(_XML_ID)
+        for pointer in PAGE_LIST_POINTERS:
+            refs = (el.get(pointer) or "").split()
+            if len(refs) > 1:
+                errors.append(
+                    f"line {el.sourceline}: pb@{pointer} names {len(refs)} lists, expected one"
+                )
+                continue
+            target = elements.get(refs[0][1:]) if refs and refs[0].startswith("#") else None
+            if target is None or _local(target.tag) != "keywords":
+                continue
+            if (target.get("corresp") or "").strip() != f"#{page}":
+                errors.append(
+                    f"line {el.sourceline}: pb@{pointer} {refs[0]!r} names the list of "
+                    f"{target.get('corresp')!r}, not of this page"
+                )
     for el in root.iter():
         tag = _local(el.tag)
         for on, attr, target in _PROJECTION_TARGETS:

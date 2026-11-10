@@ -2,9 +2,9 @@
 tests/test_teitok_project.py — the opt-in record projection onto TEITOK (atrium-project#70
 item 2, flexiconv#1): api_util/teitok_project.py, its pipeline stage and ``POST /project_record``.
 
-What is pinned: the encoding (pb/@ana + classDecl, textClass keywords with @resp/@scheme/@corresp),
-that nothing below the header changes except pb/@ana (so every reader of the text sees the same
-document), idempotence, the refusals (another document's TEITOK, an invalid input), the page
+What is pinned: the encoding (pb/@ana + classDecl, textClass keywords with @resp/@scheme/@corresp,
+each page's lists with an @id its <pb> points to), that nothing below the header changes except the
+<pb> attributes (so every reader of the text sees the same document), idempotence, the refusals (another document's TEITOK, an invalid input), the page
 resolution order, and that the switch is off unless asked.
 """
 
@@ -110,11 +110,12 @@ def _tree(xml):
 
 
 def _body(xml):
-    """Everything from <text> on, with the projection's one body attribute removed."""
+    """Everything from <text> on, with the projection's <pb> attributes removed."""
     import re
 
     body = xml[xml.index("<text>") :]
-    return re.sub(r' ana="#pcat-[^"]*"', "", body)
+    body = re.sub(r' ana="#pcat-[^"]*"', "", body)
+    return re.sub(r' (?:teater|kwcs|kwen|kwstat)="#[^"]*"', "", body)
 
 
 # ── the encoding ───────────────────────────────────────────────────────────────────────────
@@ -172,6 +173,60 @@ def test_projection_encodes_categories_keywords_and_provenance():
     assert validate_xml_text(out, profile="contract") == []
 
 
+def test_each_page_gets_its_lists_and_its_pb_points_to_them():
+    """ufal/flexiconv#1: one list per type and page, with an @id its <pb> names, so a TEITOK
+    project indexes the terms as multi-value attributes of the page."""
+    out, _ = _project(_sample(), RECORD_KW)
+    root = _tree(out)
+    pointers = {
+        pb.get("id"): {name: pb.get(name) for name in tp.PAGE_LIST_POINTERS if pb.get(name)}
+        for pb in root.iter("pb")
+    }
+    assert pointers == {
+        page: {name: f"#{name}-{page}" for name in ("teater", "kwcs", "kwen", "kwstat")}
+        for page in ("pb-1", "pb-2")
+    }
+    lists = {k.get("id"): k for k in root.iter("keywords") if k.get("id")}
+    assert sorted(lists) == sorted(ref[1:] for refs in pointers.values() for ref in refs.values())
+    assert all(k.get("corresp") == "#" + k.get("id").split("-", 1)[1] for k in lists.values())
+
+    def terms(list_id):
+        return [t.text for t in lists[list_id]]
+
+    assert terms("kwcs-pb-1") == ["gotický kostel"]
+    assert terms("kwcs-pb-2") == ["gotický kostel", "hradiště"]
+    assert terms("kwen-pb-2") == ["hillfort"]
+    assert terms("kwstat-pb-2") == ["keramika", "středověk"]
+    assert (lists["kwen-pb-1"].get("lang"), lists["kwen-pb-1"].get("resp")) == (
+        "en",
+        "#app-kw-controlled",
+    )
+    # a page's TEATER category is certain as that page's items say: 0.92 on page 1, 0.7 on 2
+    (on_1,), (on_2,) = list(lists["teater-pb-1"]), list(lists["teater-pb-2"])
+    assert (on_1.text, on_1.get("cert"), on_2.text, on_2.get("cert")) == (
+        "kostel",
+        "0.92",
+        "kostel",
+        "0.7",
+    )
+    assert on_2.get("ref") == on_1.get("ref") != ""
+    # the list says the page; its terms do not repeat it
+    assert all(t.get("corresp") is None for k in lists.values() for t in k)
+    # the document's lists keep no id and no page
+    assert all(k.get("id") is None for k in root.iter("keywords") if not k.get("corresp"))
+
+
+def test_an_item_without_a_page_stays_in_the_document_lists():
+    record = copy.deepcopy(RECORD_1)
+    record["enrichment"]["items"].append(
+        {"teater_category": "hrad", "confidence_score": 0.5, "extracted_keywords_cs": ["hrad"]}
+    )
+    root = _tree(_project(_sample(), record)[0])
+    on_pages = {t.text for k in root.iter("keywords") if k.get("id") for t in k}
+    in_document = {t.text for k in root.iter("keywords") if not k.get("id") for t in k}
+    assert "hrad" in in_document and "hrad" not in on_pages
+
+
 def test_the_meta_sentinel_is_not_a_category():
     out, report = _project(_sample())
     assert tp.META_TERM not in out
@@ -197,7 +252,7 @@ def test_the_writer_header_lines_are_kept_byte_for_byte():
 
 
 @pytest.mark.parametrize("name", ["CTX000000001", "CTX000000002"])
-def test_the_body_is_unchanged_but_for_pb_ana(name, tmp_path):
+def test_the_body_is_unchanged_but_for_pb_attributes(name, tmp_path):
     original = _sample(name)
     base = RECORD_KW if name.endswith("1") else RECORD_1
     record = dict(copy.deepcopy(base), doc_id=name, source={"filename": f"{name}.alto.xml"})
@@ -303,6 +358,16 @@ def test_a_new_projection_replaces_the_old_one():
     assert "app-kw-controlled" not in again and "app-kw-statistical" not in again
 
 
+def test_a_new_projection_removes_the_pointers_it_no_longer_writes():
+    once, _ = _project(_sample(), RECORD_KW)
+    record = copy.deepcopy(RECORD_1)
+    del record["enrichment"]
+    again, _ = _project(once, record)
+    assert not any(pb.get(name) for pb in _tree(again).iter("pb") for name in tp.PAGE_LIST_POINTERS)
+    assert "<textClass>" not in again
+    assert validate_xml_text(again, profile="contract") == []
+
+
 def test_a_projection_of_an_earlier_release_is_replaced_too():
     """Up to v1.0.0-beta the applications were `app-llm-enrich` and `app-kw`; they are still ours."""
     once, _ = _project(_sample(), RECORD_KW)
@@ -355,7 +420,7 @@ def test_statistical_keywords_come_from_the_record_capped_and_by_rank():
 
 def test_a_record_without_keywords_projects_no_statistical_list():
     out, report = _project(_sample(), RECORD_1)
-    assert "app-kw-statistical" not in out and "#kw-" not in out
+    assert "app-kw-statistical" not in out and "#kw-" not in out and "kwstat" not in out
     assert report["statistical_keywords"] == {"document": 0, "pages": 0}
 
 
@@ -446,6 +511,10 @@ def test_the_committed_projected_fixture_is_what_the_projector_writes():
         ('cert="0.92"', 'cert="1.5"', "cert"),
         ('resp="#app-kw-statistical"', 'resp="#tax-amcr-teater"', "expected a <application>"),
         ('corresp="#pb-2"', 'corresp="#facs-2"', "expected a <pb>"),
+        ('kwen="#kwen-pb-2"', 'kwen="#kwen-pb-9"', "does not resolve"),
+        ('kwen="#kwen-pb-2"', 'kwen="#kwen-pb-1"', "not of this page"),
+        ('kwcs="#kwcs-pb-1"', 'kwcs="#pcat-TEXT_P"', "expected a <keywords>"),
+        ('kwstat="#kwstat-pb-1"', 'kwstat="#kwstat-pb-1 #kwen-pb-1"', "expected one"),
     ],
 )
 def test_the_validator_rejects_a_broken_projection(old, new, message):

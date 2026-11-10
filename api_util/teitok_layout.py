@@ -18,7 +18,7 @@ for ALTO -- ``(strings, pages, graphics, blocks, meta)`` -- so the alignment, th
   ``<pb>`` is page 1, as in ``teitok_read``). A page's ``<surface>`` is the one ``pb@corresp``
   names, else the k-th ``<surface>`` of the ``<facsimile>``; its image is ``pb@facs``, else
   ``surface@facs``, else the surface's ``<graphic url>``; its size is ``pb@bbox``, else
-  ``surface@lrx/lry``, else ``graphic@width/height``. Only pages with an image or a size get
+  ``surface@bbox``, else ``surface@lrx/lry``, else ``graphic@width/height``. Only pages with an image or a size get
   an entry, i.e. a ``<surface>`` in the output: a PDF page without an image stays a page
   break, not a facsimile. ``meta["page_labels"]`` keeps ``pb@n`` (``"I"``, ``"7a"``) for the
   writer's ``<pb n>``, and ``meta["page_count"]`` the number of pages.
@@ -30,8 +30,10 @@ for ALTO -- ``(strings, pages, graphics, blocks, meta)`` -- so the alignment, th
 * **meta** -- ``layout_source="teitok"``, the converter and its version (``appInfo``), and the
   original document's name (``note[@n="source_file"|"orgfile"]`` or the "Converted from" change).
 
-Coordinates are taken as they are: flexiconv writes page-image pixels with the page origin,
-which is the space the writer uses.
+Coordinates are page-image pixels with the page origin, the space the writer uses. That is
+flexiconv's default; a relative box (``bbox="pct:x,y,w,h"``, ``--option bbox=pct``,
+ufal/flexiconv#1) becomes pixels by its page's size (``page_boxes.parse_bbox``), and one on a
+page of unknown size is dropped, with a warning.
 """
 
 import re
@@ -42,6 +44,7 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+from api_util.page_boxes import is_relative_bbox, parse_bbox  # noqa: E402
 from api_util.teitok_alto import _norm_lang  # noqa: E402
 from api_util.teitok_read import _local, _tok_form, parse_teitok  # noqa: E402
 
@@ -80,16 +83,6 @@ def source_name(root) -> str:
             if match:
                 return match.group(1)
     return ""
-
-
-def _ints(value, n=4):
-    parts = (value or "").split()
-    if len(parts) != n:
-        return None
-    try:
-        return tuple(int(float(p)) for p in parts)
-    except ValueError:
-        return None
 
 
 def _dimension(value) -> str:
@@ -156,6 +149,14 @@ def parse_teitok_layout(path):
     text = next((el for el in root.iter() if _local(el.tag) == "text"), root)
     tokenized = any(_local(el.tag) == "tok" for el in text.iter())
     state = {"page": 0, "line": None, "line_bbox": "", "lines": 0, "blocks": 0, "pbs": 0}
+    state.update(size=None, dropped=0)  # the page's pixel size; relative boxes without one
+
+    def box_of(el):
+        value = el.get("bbox")
+        box = parse_bbox(value, state["size"])
+        if box is None and is_relative_bbox(value):
+            state["dropped"] += 1
+        return box
 
     def page_idx():
         return state["page"] or 1
@@ -186,13 +187,17 @@ def parse_teitok_layout(path):
             or ""
         )
         width = height = ""
-        size = _ints(pb.get("bbox"))
+        size = parse_bbox(pb.get("bbox"))
+        surface_size = parse_bbox(surface.get("bbox")) if surface is not None else None
         if size:
             width, height = str(size[2]), str(size[3])
+        elif surface_size:
+            width, height = str(surface_size[2]), str(surface_size[3])
         elif surface is not None and surface.get("lrx") and surface.get("lry"):
             width, height = surface.get("lrx"), surface.get("lry")
         elif graphic is not None and graphic.get("width") and graphic.get("height"):
             width, height = _dimension(graphic.get("width")), _dimension(graphic.get("height"))
+        state["size"] = (int(width), int(height)) if width.isdigit() and height.isdigit() else None
         if facs and not meta["source_image"]:
             meta["source_image"] = facs
         if facs or width:
@@ -228,7 +233,7 @@ def parse_teitok_layout(path):
     def open_block(el):
         state["blocks"] += 1
         key = f"__teitok_block{state['blocks']}"
-        box = _ints(el.get("bbox"))
+        box = box_of(el)
         tag = _local(el.tag)
         blocks[key] = {
             "bbox": " ".join(map(str, box)) if box else "",
@@ -248,16 +253,16 @@ def parse_teitok_layout(path):
         if tag == "lb":
             state["lines"] += 1
             state["line"] = f"__teitok_line{state['lines']}"
-            box = _ints(el.get("bbox"))
+            box = box_of(el)
             state["line_bbox"] = " ".join(map(str, box)) if box else ""
             return
         if tag == "tok":
             form = _tok_form(el)
             if form:
-                add_string(form, _ints(el.get("bbox")), block_key, lang)
+                add_string(form, box_of(el), block_key, lang)
             return
         if tag == "figure":
-            box = _ints(el.get("bbox"))
+            box = box_of(el)
             if box:
                 graphics.append(
                     {
@@ -284,4 +289,10 @@ def parse_teitok_layout(path):
                 visit(child, block_key, lang)
 
     visit(text, None, _lang(root, None))
+    if state["dropped"]:
+        print(
+            f"  [Warn] {path}: {state['dropped']} relative (pct:) boxes on pages of unknown "
+            "size were dropped",
+            file=sys.stderr,
+        )
     return strings, pages, graphics, blocks, meta

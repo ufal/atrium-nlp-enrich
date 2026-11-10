@@ -280,10 +280,10 @@ Opt-in by being called; AMČR's stored TEITOK keeps linguistics and layout only.
 
 What is written — `pb/@ana` and a `classDecl` taxonomy for the page categories,
 `profileDesc/textClass/keywords` for the TEATER/AMČR categories and controlled
-keywords and for the `keywords` block's statistical keywords, each pointing at its pages — is
-the table in the TEITOK reference's
+keywords and for the `keywords` block's statistical keywords, each pointing at its pages, and
+each page's lists, which its `<pb>` names — is the table in the TEITOK reference's
 [Record projection onto TEITOK](../docs/reference/teitok.md#record-projection-onto-teitok-opt-in). Nothing
-below the header changes but `pb/@ana`; projecting again replaces an earlier projection. 422
+below the header changes but the attributes of `<pb>`; projecting again replaces an earlier projection. 422
 when the TEITOK is not the record's document (its `<title>` is neither `doc_id` nor the id of
 `source.filename`), is not this writer's `teitok-2` output, or does not validate.
 

@@ -25,19 +25,19 @@ write or read it, and the pitfalls a valid file can still hit are in the documen
 conventions of the TEITOK tools themselves (flexiconv, flexipipe, teitok-tools,
 xmltokenizer), not just a shape of its own:
 
-| Aspect      | Format 2                                                                                                                                                                                                                                                                                                                                                                                     |
-|-------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Root        | `<TEI xmlnsoff="http://www.tei-c.org/ns/1.0" lang="cs">`. `lang` comes from ALTO `LANG` (majority), else the UDPipe model name, else it is omitted. It is mirrored in `profileDesc/langUsage/language@ident`.                                                                                                                                                                                |
-| Spacing     | Text-faithful. Tokens are inline in `<s>`, whitespace between `</tok>` and the next `<tok>` is a space and none is `SpaceAfter=No`. This also holds across `<lb/>` and `</name>` (an entity's trailing space sits inside `</name>`). `join="right"` is kept as the TEI-P5 marker.                                                                                                            |
-| Tokens      | `<tok id type ord lemma upos xpos feats head deprel join bbox>`. `@head` is the head word's `@id`; `@ord` is the CoNLL-U ID.                                                                                                                                                                                                                                                                 |
-| MWT         | `<tok id bbox>abych<dtok id form ord lemma …/><dtok …/></tok>`. The surface token carries the text and bbox; `<dtok>` carries the words.                                                                                                                                                                                                                                                     |
-| Ids         | `w-N` (document-global), `w-N.K` (dtok), `s-N`, `n-N` (name), `facs-P` (surface), `pb-P`, `lb-P.L`, `b-P.K` (div), `fig-P.K`. The atrium_document record's `entities[].teitok_ref` and `pages[].teitok_surface` are these local ids.                                                                                                                                                         |
-| Entities    | `<name id type sameAs>`. `@type` is PER/ORG/LOC/MISC (`api_util/ner_types.py`), and the raw label goes in `@cnec`, `@onto`, `@archaeo` or `@label`.                                                                                                                                                                                                                                          |
-| Layout      | `<div type="TextBlock" [subtype=<ALTO TAGREFS label>] [lang]>`, or `type="text"` without ALTO. `<pb n id [facs corresp bbox]>`, `<figure>`. A `<div>` stays on the page it opens on.                                                                                                                                                                                                         |
-| Pages       | From the layout (ALTO, a converted file, else the input table's pages via stage 1's rows file), never from UDPipe's chunks (issue #38). `<pb/>` may sit inside `<s>` and `<name>` when a sentence or entity runs over a page break; pages only move forward; `@n` is the label (`"I"`, `"7a"`); `@facs`, `@corresp` and `@bbox="0 0 W H"` only for a page with a `<surface>`.                |
-| Coordinates | `bbox="x1 y1 x2 y2"`: non-negative page-image pixels, origin at the page's top-left corner (`BBOX_ORIGIN=page`, the TEITOK norm). `BBOX_ORIGIN=printspace` measures from the ALTO PrintSpace instead. `<surface lrx lry>` (and `pb@bbox`) is always the extent the boxes are measured in. Punctuation split off an OCR string has no bbox; the word keeps the string's.                      |
-| Header      | `notesStmt/note[@n="orgfile"]` (the ALTO file, the converted file's original, or the input table); `revisionDesc/change@type` = `converted`, `tagged` + `subtype="parsed"`, `ner` (the phases TEITOK/flexicorp detect); `rescaled` after `/rescale` or `fix_teitok_bboxes.py`.                                                                                                               |
-| Projection  | Opt-in (atrium-project#70, `api_util/teitok_project.py`): `encodingDesc/classDecl/taxonomy/category[@id @corresp]/catDesc`, `application@id` (`app-pc`, `app-kw-controlled`, `app-kw-statistical`), `profileDesc/textClass/keywords[@scheme @resp @lang @corresp]/term[@type @ref @cert @score @corresp @n]`, `pb@ana` (`#pcat-…`), and `change@type="enriched"`. Absent unless switched on. |
+| Aspect      | Format 2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Root        | `<TEI xmlnsoff="http://www.tei-c.org/ns/1.0" lang="cs">`. `lang` comes from ALTO `LANG` (majority), else the UDPipe model name, else it is omitted. It is mirrored in `profileDesc/langUsage/language@ident`.                                                                                                                                                                                                                                                                                    |
+| Spacing     | Text-faithful. Tokens are inline in `<s>`, whitespace between `</tok>` and the next `<tok>` is a space and none is `SpaceAfter=No`. This also holds across `<lb/>` and `</name>` (an entity's trailing space sits inside `</name>`). `join="right"` is kept as the TEI-P5 marker.                                                                                                                                                                                                                |
+| Tokens      | `<tok id type ord lemma upos xpos feats head deprel join bbox>`. `@head` is the head word's `@id`; `@ord` is the CoNLL-U ID.                                                                                                                                                                                                                                                                                                                                                                     |
+| MWT         | `<tok id bbox>abych<dtok id form ord lemma …/><dtok …/></tok>`. The surface token carries the text and bbox; `<dtok>` carries the words.                                                                                                                                                                                                                                                                                                                                                         |
+| Ids         | `w-N` (document-global), `w-N.K` (dtok), `s-N`, `n-N` (name), `facs-P` (surface), `pb-P`, `lb-P.L`, `b-P.K` (div), `fig-P.K`. The atrium_document record's `entities[].teitok_ref` and `pages[].teitok_surface` are these local ids.                                                                                                                                                                                                                                                             |
+| Entities    | `<name id type sameAs>`. `@type` is PER/ORG/LOC/MISC (`api_util/ner_types.py`), and the raw label goes in `@cnec`, `@onto`, `@archaeo` or `@label`.                                                                                                                                                                                                                                                                                                                                              |
+| Layout      | `<div type="TextBlock" [subtype=<ALTO TAGREFS label>] [lang]>`, or `type="text"` without ALTO. `<pb n id [facs corresp bbox]>`, `<figure>`. A `<div>` stays on the page it opens on.                                                                                                                                                                                                                                                                                                             |
+| Pages       | From the layout (ALTO, a converted file, else the input table's pages via stage 1's rows file), never from UDPipe's chunks (issue #38). `<pb/>` may sit inside `<s>` and `<name>` when a sentence or entity runs over a page break; pages only move forward; `@n` is the label (`"I"`, `"7a"`); `@facs`, `@corresp` and `@bbox="0 0 W H"` only for a page with a `<surface>`.                                                                                                                    |
+| Coordinates | `bbox="x1 y1 x2 y2"`: non-negative page-image pixels, origin at the page's top-left corner (`BBOX_ORIGIN=page`, the TEITOK norm). `BBOX_ORIGIN=printspace` measures from the ALTO PrintSpace instead. `<surface lrx lry>` (and `pb@bbox`) is always the extent the boxes are measured in. Punctuation split off an OCR string has no bbox; the word keeps the string's.                                                                                                                          |
+| Header      | `notesStmt/note[@n="orgfile"]` (the ALTO file, the converted file's original, or the input table); `revisionDesc/change@type` = `converted`, `tagged` + `subtype="parsed"`, `ner` (the phases TEITOK/flexicorp detect); `rescaled` after `/rescale` or `fix_teitok_bboxes.py`.                                                                                                                                                                                                                   |
+| Projection  | Opt-in (atrium-project#70, `api_util/teitok_project.py`): `encodingDesc/classDecl/taxonomy/category[@id @corresp]/catDesc`, `application@id` (`app-pc`, `app-kw-controlled`, `app-kw-statistical`), `profileDesc/textClass/keywords[@id @scheme @resp @lang @corresp]/term[@type @ref @cert @score @corresp @n]`, `pb@ana` (`#pcat-…`), the page-list pointers `pb@teater @kwcs @kwen @kwstat` (each `#<type>-pb-K`, ufal/flexiconv#1), and `change@type="enriched"`. Absent unless switched on. |
 
 Format-1 documents (before 2026-09: TEI namespace, `CTX.s1.w1` ids, `MarginTextZone-P`,
 one `<tok>` per line) still validate — `tests/fixtures/teitok/legacy/CTX_format1.teitok.xml`
@@ -45,7 +45,8 @@ keeps it that way — except for negative bbox coordinates, which the old PrintS
 could produce. Set `REGENERATE_TEITOK=true` once to rewrite them.
 
 The stamp stays `teitok-2` with the opt-in record projection (atrium-project#70) too: the
-schema grew by the header elements in the table above and `pb@ana`, all optional, so a file
+schema grew by the header elements in the table above and the `<pb>` attributes `ana`, `teater`,
+`kwcs`, `kwen` and `kwstat`, all optional, so a file
 without a projection validates exactly as before; an older gate refuses a projected file, so
 the projector and this XSD ship in the same release. `tests/fixtures/teitok/CTX_projected.teitok.xml`
 is `data_samples/TEITOK/CTX000000001.teitok.xml` projected (regenerate with
@@ -101,7 +102,7 @@ separately, by reading the output the way the tools do:
   `tok.tail`, words from `<dtok>`, heads through `@id`. It then compares sentence texts,
   every `SpaceAfter`, MWT, heads, ids and entity attributes with the input.
 - The same file's last test repeats the round-trip through the pinned flexiconv
-  (`requirements_flexiconv.txt`, v0.3.11) when it is installed. The `teitok-schema`
+  (`requirements_flexiconv.txt`, v0.3.12) when it is installed. The `teitok-schema`
   workflow installs it for that step.
 - `api_util/validate_teitok_xml.py --profile core` checks rules that hold for *any*
   TEITOK document: `<TEI>` root, `<text>`, `@id` unique across all elements, resolvable
@@ -115,7 +116,8 @@ separately, by reading the output the way the tools do:
   strings: a duplicate `pb` id or a `sameAs` pointing nowhere passed it. `lint_projection`
   (also for `teitok-2` files) checks that each projection pointer names the right kind of
   element: `pb@ana` a `<category>`, `keywords@resp` an `<application>`, `keywords@scheme` a
-  `<taxonomy>`, and a page reference (`term`/`keywords` `@corresp`) a `<pb>`.
+  `<taxonomy>`, and a page reference (`term`/`keywords` `@corresp`) a `<pb>`; a page-list pointer
+  (`pb@teater`, `@kwcs`, `@kwen`, `@kwstat`) names one `<keywords>`, and it is that page's list.
 - `tests/test_teitok_pages.py` also reads a `<pb/>` inside `<s>` and `<name>` through the pinned
   flexiconv. (xmltokenizer, too, treats `pb`/`lb`/`cb` as anchors that may sit inside `<s>`.)
 
@@ -173,13 +175,14 @@ different depths, on purpose:
 | `fix_teitok_bboxes.py` | the CLI, rewriting files in place (`api_util/page_boxes.py`, like `/rescale`)                                                                                                                                                                                | **None of its own**: the next stage-4 run gates the directory; boxes are clamped to their page, so a shift cannot produce the negative values the gate rejects                                       |
 
 flexiconv output comes from a third-party converter across the `FLEXICONV_FORMATS`
-of `config_api.txt`. It is a *different* TEITOK profile: no `<s>`; `<p>` text for
+of `config_api.txt`. It is a *different* TEITOK profile: no `<s>` (by design: flexiconv converts
+the layout, and sentences come from the tagging step); `<p>` text for
 txt/md/docx/pdf/html; `<tok bbox>` + `<lb/>` for PAGE XML/hOCR/ALTO; split punctuation
 without `@id`. This schema would reject it for not being this writer's output rather
 than for being broken. So it goes to its own `$TEITOK_FLEXICONV_DIR` (default
 `$TEITOK_OUTPUT_DIR/flexiconv`), which `api_4_stats.sh` excludes (`--exclude`), and it is
 checked with the core profile. Real flexiconv v0.3.10 output is committed as fixtures in
-`tests/fixtures/teitok/flexiconv/`; the pinned v0.3.11 writes the same for these formats.
+`tests/fixtures/teitok/flexiconv/`; v0.3.11 and the pinned v0.3.12 write the same for these formats.
 
 With `FLEXICONV_ANNOTATE=true` that output is an intermediate. Its text is annotated by stages
 2–3, and stage 4 writes **this** format (full XSD) with the converted file as the layout source.
@@ -250,8 +253,9 @@ else, which is why upstream conformance now has its own test lane.
 
 ## Future direction
 
-Resolution-independent (relative, 0–1) bounding boxes were proposed to the TEITOK
-maintainers (ufal/flexiconv#1); there has been no reply, and every TEITOK tool writes
-absolute page-image pixels. If relative coordinates are ever adopted upstream,
-`bboxType` will need to accept them alongside or instead of the current
-`"x1 y1 x2 y2"` integer pattern.
+Relative bounding boxes are adopted upstream (ufal/flexiconv#1): flexiconv's `main` writes
+IIIF's region syntax, `bbox="pct:x,y,w,h"`, beside the absolute boxes, with the page's pixel
+size on `<pb>` and `<surface>`. The core profile accepts it and `teitok_layout` converts it
+(`api_util/page_boxes.parse_bbox`). `bboxType` here stays the absolute
+`"x1 y1 x2 y2"` pattern: the writer keeps pixels until TEITOK's viewers read `pct:`, and
+then the type takes the `pct:` form beside it.

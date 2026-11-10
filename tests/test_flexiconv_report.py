@@ -71,3 +71,19 @@ def test_empty_directory_and_usage_errors(tmp_path):
     assert flexiconv_report.main([str(tmp_path)]) == 1
     assert flexiconv_report.main([str(tmp_path / "missing")]) == 2
     assert flexiconv_report.main([str(tmp_path), "--inputs", str(tmp_path / "missing")]) == 2
+
+
+@needs_lxml
+def test_relative_boxes_are_counted_apart(tmp_path):
+    """flexiconv's ``--option bbox=pct`` (ufal/flexiconv#1): the boxes column says how many
+    are relative; they pass the core profile."""
+    doc = tmp_path / "rel.teitok.xml"
+    doc.write_text(
+        "<TEI><teiHeader><fileDesc><notesStmt><note n='source_file'>rel.xml</note></notesStmt>"
+        "</fileDesc></teiHeader><text><pb id='p1' bbox='0 0 1000 1500'/>"
+        "<p bbox='pct:8,5,84,7'><tok id='w-1' bbox='pct:8,5,6,1'>The</tok></p></text></TEI>",
+        encoding="utf-8",
+    )
+    row = flexiconv_report.describe(doc)
+    assert (row["bbox"], row["relative"], row["core"]) == (3, 2, [])
+    assert "| 3 (2 relative) | ✅ |" in flexiconv_report.markdown([row])

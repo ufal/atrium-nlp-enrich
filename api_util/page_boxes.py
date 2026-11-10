@@ -6,6 +6,9 @@ for one page, wrong for a document whose pages differ in size. They also let a s
 coordinates below zero, which the next stage-4 gate then rejected, and left no trace in the
 header.
 
+Relative boxes (``bbox="pct:x,y,w,h"``, ufal/flexiconv#1) are relative to the page, so a
+rewrite leaves them as they are; :func:`parse_bbox` reads either form in pixels.
+
 This module walks the text with the regexes of ``api_util/bbox_scale.py`` (no XML parser, so
 legacy exports that close ``<name>`` with ``</n>`` still work) and knows, at every ``bbox``,
 which page it is on: the ``<surface>`` the last ``<pb corresp="#...">`` named, or -- for a
@@ -29,6 +32,47 @@ _CORRESP_RE = re.compile(r'\bcorresp\s*=\s*"#?([^"]*)"')
 # <pb> tags and bbox attributes outside them, in document order
 _WALK_RE = re.compile(r"<pb\b[^>]*>|" + BBOX_RE.pattern)
 _REVISION_END_RE = re.compile(r"</revisionDesc\s*>")
+# IIIF's region syntax for a relative box: percentages of the page (ufal/flexiconv#1)
+_PCT_RE = re.compile(r"pct:\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)")
+
+
+def is_relative_bbox(value: Optional[str]) -> bool:
+    """True for a relative box, ``bbox="pct:x,y,w,h"``."""
+    return (value or "").strip().startswith("pct:")
+
+
+def parse_bbox(
+    value: Optional[str], page_size: Optional[Tuple[int, int]] = None
+) -> Optional[Tuple[int, int, int, int]]:
+    """A TEITOK ``bbox`` as ``(x1, y1, x2, y2)`` in page-image pixels, else ``None``.
+
+    An absolute box is ``"x1 y1 x2 y2"``. A relative one is ``"pct:x,y,w,h"``: IIIF's region
+    syntax, percentages of the page's width and height, which flexiconv writes with
+    ``--option bbox=pct`` (ufal/flexiconv#1). It becomes pixels with ``page_size`` =
+    ``(width, height)``, and is ``None`` without one."""
+    text = (value or "").strip()
+    match = _PCT_RE.fullmatch(text)
+    if match:
+        if not page_size or not all(page_size):
+            return None
+        try:
+            x, y, w, h = (float(g) for g in match.groups())
+        except ValueError:
+            return None
+        width, height = page_size
+        return (
+            round(x * width / 100),
+            round(y * height / 100),
+            round((x + w) * width / 100),
+            round((y + h) * height / 100),
+        )
+    parts = text.split()
+    if len(parts) != 4:
+        return None
+    try:
+        return tuple(int(float(part)) for part in parts)  # type: ignore[return-value]
+    except ValueError:
+        return None
 
 
 @dataclass

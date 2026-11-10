@@ -214,7 +214,7 @@ def test_document_record_entities_are_on_their_pages(tmp_path):
 
 
 def test_flexiconv_reads_a_page_break_inside_a_sentence(tmp_path):
-    """The pinned flexiconv (v0.3.10) reads the inner <pb/> as an anchor: the tokens, their
+    """The pinned flexiconv reads the inner <pb/> as an anchor: the tokens, their
     spacing and the sentences come back as written."""
     pytest.importorskip("flexiconv")
     from flexiconv.io.teitok_xml import load_teitok

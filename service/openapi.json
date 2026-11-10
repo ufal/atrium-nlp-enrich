@@ -434,7 +434,7 @@
     "/project_record": {
       "post": {
         "summary": "Project Record",
-        "description": "Project a finished record onto its TEITOK file (atrium-project#70, flexiconv#1).\n\nPure XML transform (no pipeline), for a record that is complete only after this service ran:\nthe page categories become ``pb/@ana`` plus a ``classDecl`` taxonomy, and keyword-extract's\nTEATER/AMČR categories and controlled keywords, and its statistical keywords (the record's\n``keywords`` block, atrium-project#73), become ``profileDesc/textClass/keywords``, each pointing\nat its pages. Only the header and ``pb/@ana`` change. Re-projecting replaces\nan earlier projection. Refused (422) when the TEITOK is not the record's document (its\n``<title>`` is neither ``doc_id`` nor the id of ``source.filename``), not this writer's\n``teitok-2`` output, or not valid. Off AMČR's production chain, whose stored TEITOK keeps\nlinguistics and layout only.",
+        "description": "Project a finished record onto its TEITOK file (atrium-project#70, flexiconv#1).\n\nPure XML transform (no pipeline), for a record that is complete only after this service ran:\nthe page categories become ``pb/@ana`` plus a ``classDecl`` taxonomy, and keyword-extract's\nTEATER/AMČR categories and controlled keywords, and its statistical keywords (the record's\n``keywords`` block, atrium-project#73), become ``profileDesc/textClass/keywords``, each pointing\nat its pages, and each page's lists get an id its ``<pb>`` names (ufal/flexiconv#1). Only the\nheader and the attributes of ``<pb>`` change. Re-projecting replaces\nan earlier projection. Refused (422) when the TEITOK is not the record's document (its\n``<title>`` is neither ``doc_id`` nor the id of ``source.filename``), not this writer's\n``teitok-2`` output, or not valid. Off AMČR's production chain, whose stored TEITOK keeps\nlinguistics and layout only.",
         "operationId": "project_record",
         "requestBody": {
           "content": {
@@ -2119,7 +2119,7 @@
           "teitok_enrichment": {
             "type": "boolean",
             "title": "Teitok Enrichment",
-            "description": "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and its controlled keywords, in `profileDesc/textClass`. AMČR's stored TEITOK leaves it off.",
+            "description": "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and its controlled and statistical keywords, in `profileDesc/textClass`, each page's lists named from its `<pb>`. AMČR's stored TEITOK leaves it off.",
             "default": false
           },
           "skip_untrustworthy_lines": {
@@ -2260,7 +2260,7 @@
           "teitok_enrichment": {
             "type": "boolean",
             "title": "Teitok Enrichment",
-            "description": "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and its controlled keywords, in `profileDesc/textClass`. AMČR's stored TEITOK leaves it off.",
+            "description": "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and its controlled and statistical keywords, in `profileDesc/textClass`, each page's lists named from its `<pb>`. AMČR's stored TEITOK leaves it off.",
             "default": false
           },
           "skip_untrustworthy_lines": {

@@ -541,7 +541,7 @@ async def _read_document_json(part: UploadFile | None) -> bytes | None:
 async def _read_layout(filename: str, data: bytes, alto: UploadFile | None) -> Layout | None:
     """The layout source of an upload (issue #38, F): the file itself when it is a TEITOK
     document (flexiconv's conversion: text *and* layout), else an optional ``alto`` part for
-    a table. No GPL code runs here: conversion to TEITOK stays in the CLI."""
+    a table. flexiconv does not run here: conversion to TEITOK stays in the CLI."""
     alto_data = (
         await read_upload_bounded(alto, MAX_UPLOAD.get(), "alto") if alto is not None else b""
     )
@@ -999,7 +999,8 @@ _INCLUDE_RECORD_HELP = (
 _TEITOK_ENRICHMENT_HELP = (
     "Opt-in, default false (atrium-project#70). When true, the returned TEITOK also carries the "
     "record's page categories (`pb/@ana` + a `classDecl` taxonomy; from `document_json`) and "
-    "its controlled keywords, in `profileDesc/textClass`. "
+    "its controlled and statistical keywords, in `profileDesc/textClass`, each page's lists "
+    "named from its `<pb>`. "
     "AMČR's stored TEITOK leaves it off."
 )
 
@@ -1209,7 +1210,8 @@ async def project_record(
     the page categories become ``pb/@ana`` plus a ``classDecl`` taxonomy, and keyword-extract's
     TEATER/AMČR categories and controlled keywords, and its statistical keywords (the record's
     ``keywords`` block, atrium-project#73), become ``profileDesc/textClass/keywords``, each pointing
-    at its pages. Only the header and ``pb/@ana`` change. Re-projecting replaces
+    at its pages, and each page's lists get an id its ``<pb>`` names (ufal/flexiconv#1). Only the
+    header and the attributes of ``<pb>`` change. Re-projecting replaces
     an earlier projection. Refused (422) when the TEITOK is not the record's document (its
     ``<title>`` is neither ``doc_id`` nor the id of ``source.filename``), not this writer's
     ``teitok-2`` output, or not valid. Off AMČR's production chain, whose stored TEITOK keeps

@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from api_util import teitok_alto
+from api_util.page_boxes import is_relative_bbox, parse_bbox
 from api_util.teitok_layout import is_teitok, parse_teitok_layout, source_name
 from api_util.teitok_read import parse_teitok, read_teitok_rows
 
@@ -179,3 +180,49 @@ def test_helpers(tmp_path):
     assert not is_teitok(alto)
     assert not is_teitok(tmp_path / "missing.xml")
     assert source_name(parse_teitok(FIXTURES / "alto.teitok.xml")) == "sample_alto.xml"
+
+
+# ── relative boxes (ufal/flexiconv#1) ───────────────────────────────────────────────────────
+
+
+def test_parse_bbox_reads_absolute_and_relative_boxes():
+    assert parse_bbox("80 80 140 100") == (80, 80, 140, 100)
+    assert parse_bbox("pct:8,5.33,6,1.33", (1000, 1500)) == (80, 80, 140, 100)
+    assert parse_bbox("pct:8,5.33,6,1.33") is None  # no page size, no pixels
+    assert parse_bbox("pct:8,5,6") is None and parse_bbox("1 2 3") is None
+    assert parse_bbox(None) is None and parse_bbox("") is None
+    assert is_relative_bbox(" pct:1,2,3,4") and not is_relative_bbox("1 2 3 4")
+
+
+def test_relative_boxes_become_pixels_by_their_page_size(tmp_path):
+    """flexiconv's ``--option bbox=pct``: pct:x,y,w,h is a share of the page, whose size comes
+    from pb@bbox or, as flexiconv main writes it too, surface@bbox."""
+    doc = tmp_path / "d.teitok.xml"
+    doc.write_text(
+        "<TEI><facsimile><surface id='s2' bbox='0 0 2000 1000'/></facsimile><text><body>"
+        "<pb n='1' bbox='0 0 1000 1500'/><p bbox='pct:8,5.33,84,6.67'>"
+        "<lb bbox='pct:8,5.33,84,1.33'/><tok bbox='pct:8,5.33,6,1.33'>The</tok></p>"
+        "<pb n='2' corresp='#s2'/><p><tok bbox='pct:10,10,5,5'>cat</tok></p>"
+        "</body></text></TEI>",
+        encoding="utf-8",
+    )
+    strings, pages, _, blocks, _ = parse_teitok_layout(doc)
+    assert [(s["content"], s["left"], s["top"], s["right"], s["bottom"]) for s in strings] == [
+        ("The", 80, 80, 140, 100),
+        ("cat", 200, 100, 300, 150),
+    ]
+    assert strings[0]["line_bbox"] == "80 80 920 100"
+    assert next(iter(blocks.values()))["bbox"] == "80 80 920 180"
+    assert [(p["width"], p["height"]) for p in pages] == [("1000", "1500"), ("2000", "1000")]
+
+
+def test_a_relative_box_on_a_page_of_unknown_size_is_dropped_with_a_warning(tmp_path, capsys):
+    doc = tmp_path / "d.teitok.xml"
+    doc.write_text(
+        "<TEI><text><body><pb n='1'/><p><tok bbox='pct:10,10,5,5'>a</tok> "
+        "<tok bbox='10 10 20 20'>b</tok></p></body></text></TEI>",
+        encoding="utf-8",
+    )
+    strings, *_ = parse_teitok_layout(doc)
+    assert [(s["content"], s["left"]) for s in strings] == [("a", None), ("b", 10)]
+    assert "1 relative (pct:) boxes" in capsys.readouterr().err

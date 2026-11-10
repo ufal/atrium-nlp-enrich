@@ -108,7 +108,7 @@ FAIL_ON_EMPTY=true
 # TEITOK_ENRICHMENT: opt-in, default false (atrium-project#70). When true, a `project` stage
 # after the four core stages writes the document record's page categories and the keywords
 # keyword-extract wrote into it (its controlled categories and its statistical keywords, per
-# document and per page) into the TEITOK headers and pb/@ana (api_util/teitok_project.py). AMČR's stored TEITOK stays linguistics + layout; switch
+# document and per page) into the TEITOK headers and <pb> attributes (api_util/teitok_project.py). AMČR's stored TEITOK stays linguistics + layout; switch
 # it on for flexiconv#1 / the LINDAT dataset. `run_pipeline.py --teitok-enrichment` sets it
 # for one run; keep the ${...:-} form so that setting survives `source`.
 TEITOK_ENRICHMENT="${TEITOK_ENRICHMENT:-false}"

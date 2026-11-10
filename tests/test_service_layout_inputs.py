@@ -3,7 +3,7 @@
 ``/enrich`` and ``/jobs`` used to take only .csv/.xlsx/.txt and ran with ``INPUT_ALTO_DIR=""``,
 so the service's TEITOK never had a box, and every page carried an invented page image.
 Now ``file`` may be a TEITOK document -- flexiconv's conversion of a PDF, DOCX or PAGE XML,
-made with the CLI (no GPL code in the service) -- and a table may come with an ``alto`` part.
+made with the CLI (flexiconv never runs in the service) -- and a table may come with an ``alto`` part.
 A born-digital record sent as ``document_json`` is a layout too, with or without a table
 (issue #42).
 

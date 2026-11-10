@@ -361,18 +361,19 @@ The files follow TEITOK's conventions, but a TEITOK project has a few of its own
 - **Page images.** `pb@facs` and `<graphic url>` name the images (`<doc_id>-N.png` for ALTO documents, the converted
   file's own names otherwise); place them where the project's facsimile settings look.
 
-What the TEITOK readers keep (flexiconv v0.3.11, the pinned version, is tested in
+What the TEITOK readers keep (flexiconv v0.3.12, the pinned version, is tested in
 `tests/test_teitok_conformance.py` and `tests/test_teitok_pages.py`; flexipipe `73188c5` was checked by hand on the
 committed samples, 2026-09-24):
 
-| Reader                                  | Spacing (`SpaceAfter`) | Sentences, `<pb/>` inside `<s>` | Multi-word tokens (`<dtok>`)               | Dependency heads                                                                    |
-|-----------------------------------------|------------------------|---------------------------------|--------------------------------------------|-------------------------------------------------------------------------------------|
-| flexiconv `load_teitok`                 | kept                   | kept                            | **lost**: the surface token only, no words | kept as the raw `@head` id                                                          |
-| flexipipe `load_teitok` (Python loader) | kept                   | kept                            | kept                                       | **wrong**: `head="w-N"` becomes token N of the *document*, wrong from sentence 2 on |
-| this repo's `teitok_read.py`            | kept                   | kept, one row per page part     | kept, the surface form                     | not read                                                                            |
+| Reader                                  | Spacing (`SpaceAfter`) | Sentences, `<pb/>` inside `<s>` | Multi-word tokens (`<dtok>`)                                                | Dependency heads                                                                    |
+|-----------------------------------------|------------------------|---------------------------------|-----------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
+| flexiconv `load_teitok`                 | kept                   | kept                            | kept: the words, and the surface token as a multi-word token (from v0.3.12) | kept; sentence-local again in its CoNLL-U export                                    |
+| flexipipe `load_teitok` (Python loader) | kept                   | kept                            | kept                                                                        | **wrong**: `head="w-N"` becomes token N of the *document*, wrong from sentence 2 on |
+| this repo's `teitok_read.py`            | kept                   | kept, one row per page part     | kept, the surface form                                                      | not read                                                                            |
 
-`@ord` gives each word's sentence-local number for a reader that needs it. The two defects are upstream and are
-recorded for an upstream report ([#38](https://github.com/ufal/atrium-nlp-enrich/issues/38)).
+`@ord` gives each word's sentence-local number for a reader that needs it. The flexipipe defect is upstream and is
+recorded for an upstream report ([#38](https://github.com/ufal/atrium-nlp-enrich/issues/38)); flexiconv's
+CoNLL-U export of these files keeps the multi-word tokens as range lines.
 
 ## Convert other input formats with flexiconv
 
@@ -410,7 +411,9 @@ contains:
 | txt, md, html, docx, odt, rtf, pdf, …  | `<p>`, `<head>`, `<item>` text, not tokenized                           | one row per paragraph/heading/item |
 
 So the downstream readers (keyword extraction in atrium-keyword-extract, LLM enrichment in atrium-digital-convert)
-can work on it; a lemma-based method cannot, because there are no lemmas.
+can work on it; a lemma-based method cannot, because there are no lemmas. There is no `<s>` by design: flexiconv
+converts the layout, and splitting the text into sentences belongs to the tagging step, here
+[annotating it](#annotating-converted-documents-flexiconv_annotate).
 
 A PDF converted with flexiconv's default reader (`pdf=smart`) has no word boxes and no page images, so its TEITOK
 has no facsimile. flexiconv's `pdf=bbox` reader gives word boxes but needs Poppler's `pdftotext`, which
@@ -421,7 +424,7 @@ has no facsimile. flexiconv's `pdf=bbox` reader gives word boxes but needs Poppl
 1. **Install** the pinned flexiconv and the format extras:
 
    ```bash
-   pip install -r requirements_flexiconv.txt   # flexiconv v0.3.11 + docx/odt/md/pdf/rtf extras
+   pip install -r requirements_flexiconv.txt   # flexiconv v0.3.12 + docx/odt/md/pdf/rtf extras
    ```
 
    flexiconv is **MIT** and optional: nothing else in the pipeline imports it, and `para_config.txt` records it as a

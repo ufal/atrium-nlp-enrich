@@ -99,6 +99,13 @@ def test_rescale_halves_coordinates_and_surface():
     assert 'bbox="50 100 75 120"' in out  # 100 200 150 240 → halved
 
 
+def test_rescale_leaves_relative_boxes_as_they_are():
+    """pct:x,y,w,h is a share of the page (ufal/flexiconv#1): scaling the page keeps it."""
+    res = rescale_teitok(SAMPLE_TEITOK.replace("100 200 150 240", "pct:10,10,5,2"), 500, 1000)
+    assert 'bbox="pct:10,10,5,2"' in res["teitok_xml"]
+    assert 'bbox="50 100 150 200"' in res["teitok_xml"] and res["boxes_rescaled"] == 1
+
+
 def test_rescale_does_not_depend_on_name_quirk():
     """The coordinate transform itself must not depend on the <name>...</n> quirk."""
     out = rescale_teitok(SAMPLE_TEITOK, 250, 500, fix_name_tags=False)["teitok_xml"]

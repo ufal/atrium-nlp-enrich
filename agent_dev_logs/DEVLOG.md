@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-10-21). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). **v1.2.0-beta** (2026-10-26, the CLI and the service read the same inputs) · **v1.3.0-beta** (2026-10-29, the two give the same results) · **pilot release: v1.3.3-beta** (`b0e80ca`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `51aad6c` (`v1`). Latest entry: 2026-11-09. **v1.1.0-beta** (2026-10-18, `9c126a5`) was published mutable, and its tag name was used once before, on 10-09. Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-10-21). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). **v1.2.0-beta** (2026-10-26, the CLI and the service read the same inputs) · **v1.3.0-beta** (2026-10-29, the two give the same results) · **pilot release: v1.3.3-beta** (`b0e80ca`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `4435ffb` (`v1`). Latest entry: 2026-11-10. **v1.1.0-beta** (2026-10-18, `9c126a5`) was published mutable, and its tag name was used once before, on 10-09. Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). The #6 saga (April→September) is condensed below; its full record moved with the issue to atrium-keyword-extract (`agent_dev_logs/digests/2.digest.md`). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -995,3 +995,36 @@ Documentation only; no code, test or configuration change.
 * **Written:** `digests/7.digest.md` (section 2026-11-09, status).
 * **Posted by K4TEL** ([11-09 13:54](https://github.com/ufal/atrium-nlp-enrich/issues/7#issuecomment-6741768360)): the comment, plus decision models as the other route and a request for a
   gold set annotated by a Czech-speaking archaeologist (tracked in keyword-extract#2's plan, step 5). Not pushed.
+
+## 2026-11-10 — flexiconv v0.3.12 and the maintainer's answer on ufal/flexiconv#1
+
+* **Asked (K4TEL):** align the tools with the 11-09 answer on ufal/flexiconv#1.
+* **Upstream, checked:** v0.3.12 (`5cfc483`) declares MIT in `pyproject.toml` (`pip show`: v0.3.11 GPL-3.0-or-later,
+  v0.3.12 MIT) and has a CITATION.cff. It writes the same TEITOK as v0.3.11 on nine inputs (ALTO×2, hOCR, PAGE×2,
+  MD×2, TXT, DOCX; the `when` stamp aside), so the fixtures stand. `main` (`ffee214`) adds the ALTO page size and
+  `--option bbox=pct`.
+* **Pin and licence:** `requirements_flexiconv.txt` and `teitok-schema.yml` at v0.3.12; `para_config.txt` and
+  `docs/reference/licences.md` drop the GPL note and point to the CITATION.cff; "no GPL code" in `service/api.py`
+  and a test docstring now says flexiconv does not run in the service.
+* **`<dtok>`:** `test_flexiconv_round_trip` reads the words (`tokens`), the multi-word token (`mwt`) and the surface
+  text (`surface_tokens`); a new test checks that flexiconv's CoNLL-U export of the writer's TEITOK gives back the
+  ids, range lines, forms, lemmas, tags, heads, relations and `SpaceAfter`. The reader table in `docs/usage.md`,
+  `docs/reference/teitok.md` and `plans/teitok_conformance_plan.md` follow.
+* **No `<s>`:** by design, said in `docs/usage.md`, `docs/reference/teitok.md` and `schemas/teitok/README.md`.
+* **Projection (`api_util/teitok_project.py`):** after the document's lists, one list per type and page, with
+  `@id="<type>-pb-K"`; the page's `<pb>` names each (`teater`, `kwcs`, `kwen`, `kwstat`). A page's TEATER term has
+  that page's `@cert`. `validate_teitok_xml.py` owns the pointer names (`PAGE_LIST_POINTERS`) and checks that a
+  pointer names one list of its own page; the XSD declares the attributes and `keywords/@id`. The report and the
+  `<change>` text are unchanged. `CTX_projected.teitok.xml` regenerated; 7 new test cases; the CI's rejection step
+  has a second case. Docs: the projection table, "Searching the projection in TEITOK" (the settings items),
+  `service/README.md`, `CONTRIBUTING.md`, `config_api.txt`, `service/api.py` and `service/openapi.json`.
+* **Relative boxes:** `page_boxes.parse_bbox` reads `x1 y1 x2 y2` and `pct:x,y,w,h`; `teitok_layout` converts `pct:`
+  by the page's size (`pb@bbox`, then `surface@bbox`, new) and drops it with a warning without one; the core gate
+  accepts it inside the page; `flexiconv_report.py` counts relative boxes; `/rescale` and `fix_teitok_bboxes.py`
+  leave them as they are. The XSD and the writer keep pixels. On flexiconv `main`'s output for two ALTO files, plain
+  and with `--option bbox=pct`, the core gate passes all four and `teitok_layout` gives the same pixels.
+* **Checked:** the suite without flexiconv 1,163 passed, 14 skipped (11-09: 1,143 and 11); with v0.3.12, 1,174
+  passed, 3 skipped (torch);
+  `test_openapi_contract.py` 12 of 12; ruff check and format; the CI's fixture and rejection steps by hand.
+* **Yours:** commit; then set digital-convert's `ADOPTED["commit"]` to this commit.
+* **No release.** Files delivered as per-repo archives.

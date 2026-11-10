@@ -13,11 +13,11 @@ them, and every run's paradata lists the ones it used ([paradata](paradata.md)).
 | UDPipe 2 model, `czech-pdt-ud-2.15-241121` (`MODEL_UDPIPE`)                                                      | CC BY-NC-SA 4.0                                                         | every run (stage 2); declared `always`                                                     |
 | NameTag 3 model: the multilingual OntoNotes model, the default `MODEL_NAMETAG`; the Czech CNEC 2.0 one, optional | CC BY-NC-SA 4.0                                                         | every run (stage 3); declared `always`                                                     |
 | UDPipe 2 and NameTag 3 engines                                                                                   | MPL 2.0                                                                 | the software behind the services, which this repository calls over HTTP; `conditional`     |
-| [flexiconv](https://github.com/ufal/flexiconv), pinned v0.3.11                                                   | MIT ([LICENSE](https://github.com/ufal/flexiconv/blob/v0.3.11/LICENSE)) | only when `api_flexiconv.sh` converts documents; never in the service image; `conditional` |
+| [flexiconv](https://github.com/ufal/flexiconv), pinned v0.3.12                                                   | MIT ([LICENSE](https://github.com/ufal/flexiconv/blob/v0.3.12/LICENSE)) | only when `api_flexiconv.sh` converts documents; never in the service image; `conditional` |
 
 `always` components are listed for every core run; `conditional` ones only when a run logs them. flexiconv's
-LICENSE file, added on 29 October 2026, says MIT; its `pyproject.toml` still says GPL-3.0-or-later, which is what
-`pip show` reports, and the mismatch is raised upstream ([ufal/flexiconv#1](https://github.com/ufal/flexiconv/issues/1)).
+LICENSE file and, from v0.3.12, its package metadata say MIT, so `pip show` reports MIT. If you publish work that
+used it, cite it as its [CITATION.cff](https://github.com/ufal/flexiconv/blob/v0.3.12/CITATION.cff) asks.
 
 ## What the list does not say
 

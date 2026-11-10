@@ -382,14 +382,45 @@ def test_atrium_readers_agree_with_the_upstream_reading(arm):
 
 
 def test_flexiconv_round_trip(arm):
+    """From v0.3.12 flexiconv reads ``<dtok>`` (ufal/flexiconv#1): its ``tokens`` layer holds the
+    syntactic words, its ``mwt`` layer the surface token of a multi-word token, and its surface
+    view gives the text as written, with its spacing."""
     pytest.importorskip("flexiconv")
+    from flexiconv.core.surface import surface_tokens
     from flexiconv.io.teitok_xml import load_teitok
 
     path, conllu_text, _ = arm
     doc = load_teitok(str(path))
-    tokens = [n.features for n in doc.layers["tokens"].nodes.values()]
-    exp = [u for s in _conllu_sentences(conllu_text) for u in s["units"]]
-    assert [t["form"] for t in tokens] == [u["form"] for u in exp]
-    assert [t["space_after"] for t in tokens[:-1]] == [u["space_after"] for u in exp[:-1]]
+    units = [u for s in _conllu_sentences(conllu_text) for u in s["units"]]
+    words = [n.features["form"] for n in doc.layers["tokens"].nodes.values()]
+    assert words == [w[1] for u in units for w in u["words"]]
+    surface = surface_tokens(doc)
+    assert [n.features["form"] for n in surface] == [u["form"] for u in units]
+    assert [n.features["space_after"] for n in surface[:-1]] == [
+        u["space_after"] for u in units[:-1]
+    ]
+    mwt = doc.layers.get("mwt")
+    assert sorted(n.features["form"] for n in (mwt.nodes.values() if mwt else [])) == sorted(
+        u["form"] for u in units if len(u["words"]) > 1
+    )
     sentences = [n.features["text"] for n in doc.layers["sentences"].nodes.values()]
     assert sentences == [s["text"] for s in _conllu_sentences(conllu_text)]
+
+
+def test_flexiconv_conllu_export_gives_back_the_parse(arm):
+    """flexiconv's CoNLL-U export of the TEITOK (v0.3.12: CoNLL-U <-> TEITOK keeps UD's
+    multi-word tokens) gives back the input's ids, range lines, forms, lemmas, tags, features,
+    sentence-local heads, relations and SpaceAfter. NER lives in ``<name>``, not in MISC."""
+    pytest.importorskip("flexiconv")
+    from flexiconv.io.conllu import save_conllu
+    from flexiconv.io.teitok_xml import load_teitok
+
+    path, conllu_text, _ = arm
+    out = path.with_suffix(".conllu")
+    save_conllu(load_teitok(str(path)), str(out))
+
+    def rows(text):
+        cols = (line.split("\t") for line in text.splitlines() if line and line[0] != "#")
+        return [(c[:8], "SpaceAfter=No" in c[9]) for c in cols]
+
+    assert rows(out.read_text(encoding="utf-8")) == rows(conllu_text)

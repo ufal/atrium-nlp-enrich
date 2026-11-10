@@ -9,7 +9,8 @@ Reads every ``*.teitok.xml`` in a directory (normally ``$TEITOK_FLEXICONV_DIR``,
 * **Pages** -- ``<pb>`` count;
 * **Rows / Tokens** -- what ``teitok_read`` gives keywords.py and llm-enrich;
 * **Elements with bbox** -- elements inside ``<text>`` carrying a ``bbox``: the layout kept
-  from PAGE XML / hOCR / ALTO ("—" for none);
+  from PAGE XML / hOCR / ALTO ("—" for none), with how many of them are relative
+  (``pct:x,y,w,h``, flexiconv ``--option bbox=pct``);
 * **``--profile core``** -- ``validate_teitok_xml``'s TEITOK-core verdict.
 
 Usage:
@@ -29,6 +30,7 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 from api_util.flexiconv_convert import FLEXICONV_EXTENSIONS  # noqa: E402
+from api_util.page_boxes import is_relative_bbox  # noqa: E402
 from api_util.teitok_layout import source_name  # noqa: E402
 from api_util.teitok_read import (  # noqa: E402
     _local,
@@ -45,7 +47,7 @@ def describe(path) -> dict:
     """One report row for one flexiconv TEITOK file."""
     path = Path(path)
     row = {"file": path.name, "source": "", "format": "", "pages": 0, "rows": 0, "tokens": 0}
-    row["bbox"] = 0
+    row["bbox"] = row["relative"] = 0
     try:
         root = parse_teitok(path)
     except Exception as exc:  # unreadable output is a finding, not a crash
@@ -58,6 +60,7 @@ def describe(path) -> dict:
     body = [el for el in root.iter() if _local(el.tag) == "text"]
     scope = body[0] if body else root
     row["bbox"] = sum(1 for el in scope.iter() if el.get("bbox"))
+    row["relative"] = sum(1 for el in scope.iter() if is_relative_bbox(el.get("bbox")))
     row["rows"] = len(read_teitok_rows(path))
     row["tokens"] = len(read_teitok_tokens(path))
     row["core"] = validate_document(path, profile="core")
@@ -78,9 +81,12 @@ def markdown(rows, missing=()) -> str:
         if row["format"]:
             label = f"{row['format']} `{label}`"
         core = "✅" if not row["core"] else "❌ " + row["core"][0].replace("|", "\\|")
+        boxed = str(row["bbox"] or "—")
+        if row.get("relative"):
+            boxed += f" ({row['relative']} relative)"
         lines.append(
             f"| {label} | {row['pages'] or '—'} | {row['rows']} | {row['tokens']} | "
-            f"{row['bbox'] or '—'} | {core} |"
+            f"{boxed} | {core} |"
         )
     for name in missing:
         lines.append(f"| `{name}` | — | — | — | — | ❌ no TEITOK output |")

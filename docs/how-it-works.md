@@ -224,8 +224,12 @@ In every tier `<surface lrx lry>` is the extent of the space the bboxes are meas
 `fix_teitok_bboxes.py` can therefore rescale a document to any other image size
 ([Fixing bounding box alignments](usage.md#fixing-bounding-box-alignments)).
 
-**Relative coordinates.** TEITOK uses absolute pixels. Resolution-independent (0–1) bounding boxes were proposed
-upstream and have not been answered or adopted ([ufal/flexiconv#1](https://github.com/ufal/flexiconv/issues/1)).
+**Relative coordinates.** The writer keeps absolute pixels, the form TEITOK's viewers read. flexiconv can also
+write relative boxes in IIIF's region syntax, `bbox="pct:x,y,w,h"` (percentages of the page image; from ALTO with
+`--option bbox=pct`, on flexiconv's `main` after v0.3.12; [ufal/flexiconv#1](https://github.com/ufal/flexiconv/issues/1)).
+The readers here accept them: the core gate passes them, the layout reader turns them into pixels by the page's
+size (`pb@bbox` or `surface@bbox`, which flexiconv writes beside them), and the rescale tools leave them as they
+are. `api_flexiconv.sh` does not ask for them.
 
 ### What the writer keeps of the ALTO hierarchy
 

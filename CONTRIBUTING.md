@@ -297,7 +297,7 @@ must stay green: it reads the output the way the TEITOK tools do. The writer has
 sources, ALTO (`_parse_alto`) and a flexiconv TEITOK file (`api_util/teitok_layout.py`), which
 return the same structures. A change to what one of them returns needs the other too, and
 `tests/test_teitok_layout.py` / `tests/test_flexiconv_annotate.py` stay green. The opt-in record
-projection (`api_util/teitok_project.py`, atrium-project#70) writes only the header and `pb/@ana`;
+projection (`api_util/teitok_project.py`, atrium-project#70) writes only the header and `<pb>` attributes;
 a change to what it writes moves the XSD and `tests/fixtures/teitok/CTX_projected.teitok.xml`
 (`python -m tests.test_teitok_project`) in the same commit.
 

@@ -9,7 +9,7 @@ unless asked: ``run_pipeline.py --teitok-enrichment`` (or ``TEITOK_ENRICHMENT=tr
 config_api.txt), ``teitok_enrichment=true`` on ``/enrich`` and ``/enrich_text``, ``POST
 /project_record``, or this module's CLI. flexiconv#1 and the LINDAT dataset are who switch it on.
 
-What is written — all of it in the header, plus one attribute on ``<pb>``; nothing inside
+What is written — all of it in the header, plus attributes on ``<pb>``; nothing inside
 ``<s>``/``<tok>``/``<name>``, so ``teitok_read``, ``teitok_layout``, alto-postprocess's reader and
 the E2E (which skip the header) see the same document:
 
@@ -30,13 +30,21 @@ statistical keywords (the record's    ``keywords[@resp="#app-kw-statistical"][@s
 ``keywords`` block, keyword-extract,  [@type="statistical-keyword"][@n=rank][@score]``, at most 20 per
 per document and per page)            list; a page's list is one more such ``keywords`` with
                                       ``@corresp="#pb-K"``
+each page's lists (ufal/flexiconv#1)  after the document's lists, one ``keywords`` per type and page
+                                      with ``@id="<type>-pb-K"`` and ``@corresp="#pb-K"`` (TEATER
+                                      categories with that page's ``@cert``, controlled keywords cs /
+                                      en, statistical keywords), named from the page's ``<pb
+                                      teater="#teater-pb-K" kwcs=… kwen=… kwstat=…>``
+                                      (:data:`~api_util.validate_teitok_xml.PAGE_LIST_POINTERS`); a
+                                      TEITOK project indexes their terms as page attributes
 provenance                            ``appInfo/application[@id="app-…"]`` appended after the writer's
                                       own (``teitok_layout``'s converter pick is unaffected), its
                                       ``@ident`` the program the record's stamp names, and one
                                       ``revisionDesc/change[@type="enriched"]``
 ====================================  ==================================================================
 
-``@score`` is a TEITOK-style attribute (like ``@bbox``); everything else is TEI P5.
+``@score`` and the ``<pb>`` pointers are TEITOK-style attributes (like ``@bbox``); everything else
+is TEI P5.
 
 **Pages** named by the record resolve, in order: ``pages[].teitok_surface`` (the ``<pb
 corresp>``), ``page_index`` (``pb-K``), a numeric page key (``pb-K`` — the physical index
@@ -49,7 +57,8 @@ llm-enrich, so there is no paragraph description to project.
 
 **Contract.** Reads only the record (no block owner changes). Refuses a TEITOK whose ``<title>``
 is neither the record's ``doc_id`` nor the canonical id of its ``source.filename`` (the seed-id
-risk). Idempotent: it owns ``classDecl``, ``textClass``, ``pb@ana``, the ``app-*`` applications
+risk). Idempotent: it owns ``classDecl``, ``textClass``, ``pb@ana``, the ``<pb>`` page-list
+pointers, the ``app-*`` applications
 and its own ``change``, strips them and writes them anew, and re-indents the header. Validates the
 result with ``validate_teitok_xml`` (profile ``contract``) before anything is written; never
 touches ``note[@n="orgfile"]``. A TEITOK regeneration (``REGENERATE_TEITOK``, a stage-4 re-run)
@@ -87,6 +96,7 @@ if str(_project_root) not in sys.path:
 import atrium_vocab  # noqa: E402
 from api_util.teitok_read import _local  # noqa: E402
 from api_util.validate_teitok_xml import (  # noqa: E402
+    PAGE_LIST_POINTERS,
     WRITER_FORMAT,
     _etree,
     validate_xml_text,
@@ -387,8 +397,12 @@ def _strip(root, header) -> None:
             if change.get("type") == "enriched" and change.get("who") == PROJECTOR:
                 _detach(change)
     for el in root.iter():
-        if _local(el.tag) == "pb" and (el.get("ana") or "").startswith(f"#{PCAT_PREFIX}"):
+        if _local(el.tag) != "pb":
+            continue
+        if (el.get("ana") or "").startswith(f"#{PCAT_PREFIX}"):
             del el.attrib["ana"]
+        for pointer in PAGE_LIST_POINTERS:
+            el.attrib.pop(pointer, None)
 
 
 def _check_identity(root, record: Dict[str, Any], paired_as: Optional[str] = None) -> None:
@@ -497,13 +511,16 @@ def project_record(
                 report["unresolved_pages"].append({"from": "enrichment", "page": item["page"]})
             else:
                 pb_ids.append(pb_id)
-        slot = teater.setdefault(label, {"uris": [], "cert": None, "pages": []})
+        slot = teater.setdefault(label, {"uris": [], "cert": None, "pages": [], "page_cert": {}})
         for uri in _category_uris(item.get("teater_category_ids")):
             if uri not in slot["uris"]:
                 slot["uris"].append(uri)
         conf = item.get("confidence_score")
         if isinstance(conf, (int, float)) and not isinstance(conf, bool):
             slot["cert"] = max(conf, slot["cert"]) if slot["cert"] is not None else conf
+            for pb_id in pb_ids:
+                known = slot["page_cert"].get(pb_id)
+                slot["page_cert"][pb_id] = conf if known is None else max(known, conf)
         slot["pages"].extend(pb_ids)
         for lang in ("cs", "en"):
             for kw in item.get(f"extracted_keywords_{lang}") or []:
@@ -635,11 +652,12 @@ def project_record(
         if has_stat:
             scheme = f"#{KW_SCHEME_PREFIX}{_ID_UNSAFE.sub('_', method)}"
 
-            def stat_list(kws: list, corresp: Optional[str] = None) -> None:
+            def stat_list(kws: list, corresp: Optional[str] = None, **ident: str) -> None:
                 el = _make(
                     tc,
                     "keywords",
                     {
+                        **ident,
                         "scheme": scheme,
                         "resp": f"#{APPLICATIONS['statistical'][0]}",
                         "corresp": corresp,
@@ -656,9 +674,65 @@ def project_record(
             if stat_document:
                 stat_list(stat_document)
                 report["statistical_keywords"]["document"] = len(stat_document)
-            for pb_id in pages.sort(stat_pages):
-                stat_list(stat_pages[pb_id], f"#{pb_id}")
             report["statistical_keywords"]["pages"] = len(stat_pages)
+
+        # One list per type and page after the document's lists, in page order, each named from
+        # its <pb> (ufal/flexiconv#1): TEITOK reads a <pb> as the region up to the next one, and
+        # through the pointer it indexes the list's terms as a multi-value page attribute.
+        on_page: Dict[str, Dict[str, list]] = {}
+        for label, slot in teater.items():
+            for pb_id in pages.sort(slot["pages"]):
+                on_page.setdefault(pb_id, {}).setdefault("teater", []).append(label)
+        for lang in ("cs", "en"):
+            for kw, pb_ids in controlled[lang].items():
+                for pb_id in pages.sort(pb_ids):
+                    on_page.setdefault(pb_id, {}).setdefault(f"kw{lang}", []).append(kw)
+        if has_stat:
+            for pb_id, kws in stat_pages.items():
+                on_page.setdefault(pb_id, {})["kwstat"] = kws
+        resp_controlled = f"#{APPLICATIONS['controlled'][0]}"
+        for pb_id in pages.sort(on_page):
+            lists = on_page[pb_id]
+            for pointer in PAGE_LIST_POINTERS:
+                if pointer not in lists:
+                    continue
+                list_id = f"{pointer}-{_ID_UNSAFE.sub('_', pb_id)}"
+                if pointer == "kwstat":
+                    stat_list(lists[pointer], f"#{pb_id}", id=list_id)
+                elif pointer == "teater":
+                    kws = _make(
+                        tc,
+                        "keywords",
+                        {
+                            "id": list_id,
+                            "scheme": f"#{TAX_VOCAB}",
+                            "resp": resp_controlled,
+                            "corresp": f"#{pb_id}",
+                        },
+                    )
+                    for label in lists[pointer]:
+                        slot = teater[label]
+                        cert = slot["page_cert"].get(pb_id)
+                        attrs = {
+                            "type": "teater-category",
+                            "ref": " ".join(slot["uris"]),
+                            "cert": _fmt_num(round(cert, 4)) if cert is not None else None,
+                        }
+                        _make(kws, "term", attrs, text=label)
+                else:
+                    kws = _make(
+                        tc,
+                        "keywords",
+                        {
+                            "id": list_id,
+                            "resp": resp_controlled,
+                            "lang": pointer[2:],
+                            "corresp": f"#{pb_id}",
+                        },
+                    )
+                    for kw in lists[pointer]:
+                        _make(kws, "term", {"type": "extracted-keyword"}, text=kw)
+                pages.by_id[pb_id].set(pointer, f"#{list_id}")
 
     if categories or teater or has_stat:
         revision = _child(header, "revisionDesc")
@@ -698,7 +772,11 @@ def _has_projection(root, header) -> bool:
     if profile is not None and _child(profile, "textClass") is not None:
         return True
     return any(
-        _local(el.tag) == "pb" and (el.get("ana") or "").startswith(f"#{PCAT_PREFIX}")
+        _local(el.tag) == "pb"
+        and (
+            (el.get("ana") or "").startswith(f"#{PCAT_PREFIX}")
+            or any(el.get(pointer) for pointer in PAGE_LIST_POINTERS)
+        )
         for el in root.iter()
     )
 
