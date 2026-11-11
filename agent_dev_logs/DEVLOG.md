@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-10-21). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). **v1.2.0-beta** (2026-10-26, the CLI and the service read the same inputs) · **v1.3.0-beta** (2026-10-29, the two give the same results) · **pilot release: v1.3.3-beta** (`b0e80ca`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `4435ffb` (`v1`). Latest entry: 2026-11-10. **v1.1.0-beta** (2026-10-18, `9c126a5`) was published mutable, and its tag name was used once before, on 10-09. Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-10-21). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). **v1.2.0-beta** (2026-10-26, the CLI and the service read the same inputs) · **v1.3.0-beta** (2026-10-29, the two give the same results) · **Starting set of the pilot phase: v1.3.3-beta** (`b0e80ca`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `4435ffb` (`v1`). Latest entry: 2026-11-11. **v1.1.0-beta** (2026-10-18, `9c126a5`) was published mutable, and its tag name was used once before, on 10-09. Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). The #6 saga (April→September) is condensed below; its full record moved with the issue to atrium-keyword-extract (`agent_dev_logs/digests/2.digest.md`). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -1028,3 +1028,33 @@ Documentation only; no code, test or configuration change.
   `test_openapi_contract.py` 12 of 12; ruff check and format; the CI's fixture and rejection steps by hand.
 * **Yours:** commit; then set digital-convert's `ADOPTED["commit"]` to this commit.
 * **No release.** Files delivered as per-repo archives.
+
+## 2026-11-11 — The output contract: this repository's part of doc-schema-v2 (atrium-project, issue to be opened)
+
+* **Asked (K4TEL):** align the logs with the meeting of 11-11 (ARÚP's output contract) and write this repository's
+  slice of the hub's consolidated schema issue
+  ([meeting digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/project_state_1111.md),
+  [hub plan](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md)).
+* **Decided in session:** plans only this round; the schema issue is not opened yet (placeholder name
+  `doc-schema-v2`); digital-convert's text-layer verdicts become their own marker set (`decode`), and `categ` is
+  ocr-postprocess's only, so this repository leaves lines out by `categ` alone (`Trash`, `Empty`).
+* **Found:**
+  * the `lines[]` fields granted here (`lemma`, `upos`, `feats`, `teitok_ref`) were never written: the `include_lines`
+    branch is `pass` (`api_util/document_hook.py:407-420`);
+  * `entities[].bbox` is in the raw ALTO unit (`api_util/teitok_alto.py:358-367`); `entities[].page` is the page
+    label and `line` a per-page count of layout lines, not the record's keys;
+  * `record_layout._converter()` and the service's `_run_action()` read `provenance.contributors`, which leaves the
+    record (D1);
+  * `note_summary_trimmed()` records `trimmed` for the per-page entity summary CSV, which is not a stored output;
+  * the umbrella plan's 11-10 note covered `<dtok>`, not flexiconv's MIT licence;
+  * the `lindat-daily.yml` and `scheduled-smoke.yml` crons go with atrium-project#81 (CI on pull requests and
+    releases only).
+* **Written here (not pushed):**
+  * **`plans/doc-schema-v2.plan.md` (new):** the slice: its fields, twelve tasks with their code locations, the
+    paradata (one action in two paradata files), what it depends on, the superseded statements (#42's three listed,
+    not edited).
+  * **`plans/teitok_conformance_plan.md`:** a dated note at the top: the GPL reason is gone; boxes from the
+    originator only, in pt, ATR at block level; the line-table + ALTO input superseded by the record (Q3).
+  * **`DEVLOG.md`:** the header names v1.3.3-beta the starting set of the pilot phase; this entry.
+* **Not posted:** the questions are the hub plan's Q1, Q3 and Q4; nothing on GitHub.
+* Plans only; no code changed. Files delivered as full files.
