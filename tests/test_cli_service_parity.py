@@ -197,12 +197,13 @@ def test_the_runner_flag_reaches_the_stages(tmp_path, monkeypatch):
 
 def _record(tmp_path: Path) -> Path:
     record = {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
+        "record_type": "atrium-document",
         "doc_id": "C-2020-17",
-        "pages": [{"page": "i"}, {"page": "1"}],
+        "pages": [{"page": "i", "page_index": 1}, {"page": "1", "page_index": 2}],
         "lines": [
             {"page": "i", "line": 1, "text": "Zpráva o výzkumu"},
-            {"page": "i", "line": 2, "text": "Ä‚Ä", "categ": "Garbage"},
+            {"page": "i", "line": 2, "text": "Ä‚Ä", "categ": "Trash"},
             {"page": "1", "line": 1, "text": "Hradiště, sonda 2"},
         ],
     }

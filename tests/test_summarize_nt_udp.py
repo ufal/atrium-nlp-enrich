@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 from api_util import summarize_nt_udp
 from api_util.summarize_nt_udp import get_ne_explanation
 from atrium_paradata import ParadataLogger
@@ -42,32 +40,71 @@ class TestNameTagExplanationMapping:
         assert "unknown_xyz" in explanation
 
 
-def test_the_record_is_stamped_with_the_stages_own_run(tmp_path, monkeypatch):
-    """atrium-project#71: the stats step reads its run from the stage's state file
-    (--para-state), not from whichever `.state_*.json` a shared paradata directory lists
-    first, and hands its run_id, run_uuid, paradata file and licences to the record write."""
+def _stage_state(tmp_path):
     para_dir = tmp_path / "paradata"
     para_dir.mkdir()
-    other = ParadataLogger("udpipe", {}, paradata_dir=str(para_dir))
-    (para_dir / ".state_0_aaa.json").write_text(
-        json.dumps(other._to_state_dict()), encoding="utf-8"
-    )
     stage = ParadataLogger("nlp-enrich", {}, paradata_dir=str(para_dir))
     state = para_dir / ".state_1_nlp-enrich.json"
     state.write_text(json.dumps(stage._to_state_dict()), encoding="utf-8")
+    return state
 
-    seen = {}
-    monkeypatch.setattr(
-        summarize_nt_udp, "process_single_document", lambda **kw: seen.update(kw) or True
+
+def _one_document(tmp_path, monkeypatch, hook):
+    """process_single_document over a merged CoNLL-U already there, with the record hook stubbed."""
+    import api_util.document_hook as document_hook
+
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "CTX.conllu").write_text("# sent_id = 1\n1\tPraha\tPraha\tPROPN\n\n", "utf-8")
+    records = tmp_path / "records"
+    records.mkdir()
+    (records / "CTX.document.json").write_text('{"doc_id": "CTX"}', encoding="utf-8")
+    monkeypatch.setattr(document_hook, "run_document_hook", hook)
+    state = _stage_state(tmp_path)
+    ok = summarize_nt_udp.process_single_document(
+        conllu_file=str(tmp_path / "CTX.conllu"),
+        ne_dir=str(tmp_path / "ne"),
+        output_dir=str(out),
+        save_csv=False,
+        document_json_dir=str(records),
+        para_state=str(state),
     )
-    with pytest.raises(SystemExit) as exit_:
-        summarize_nt_udp.main(
-            [
-                "--conllu", "x.conllu", "--ne-dir", "ne", "--output-dir", "out",
-                "--document-json-dir", str(tmp_path / "records"), "--para-state", str(state),
-            ]
-        )  # fmt: skip
-    assert exit_.value.code == 0
-    assert (seen["document_run_id"], seen["document_run_uuid"]) == (stage.run_id, stage.run_uuid)
-    assert seen["document_paradata_ref"] == stage.paradata_ref
-    assert seen["document_license_detail"] == stage.get_license_block()
+    return ok, json.loads(state.read_text(encoding="utf-8"))
+
+
+def test_the_record_read_and_written_go_into_the_stages_paradata(tmp_path, monkeypatch):
+    """Paradata 3.0 (atrium-project#84): the record carries no run data; the stage's state file
+    (--para-state) gets the record version read and the record written, each by SHA-512, the
+    output with the blocks and fields the hook wrote. No local path is recorded."""
+    import hashlib
+
+    read = {}
+
+    def hook(**kw):
+        read["bytes"] = open(kw["baseline_json"], "rb").read()
+        with open(kw["out_json"], "w", encoding="utf-8") as fh:
+            fh.write('{"doc_id": "CTX", "entities": []}')
+        return {"entities": ["surface", "page", "line"]}
+
+    ok, state = _one_document(tmp_path, monkeypatch, hook)
+    assert ok
+    (record_in,) = state["inputs"]
+    (record_out,) = state["outputs"]
+    assert record_in["name"] == record_out["name"] == "atrium/document-json"
+    assert record_in["sha512"] == hashlib.sha512(read["bytes"]).hexdigest()
+    written = b'{"doc_id": "CTX", "entities": []}'
+    assert record_out["sha512"] == hashlib.sha512(written).hexdigest()
+    assert record_out["record_fields"] == {"entities": ["surface", "page", "line"]}
+    assert str(tmp_path) not in json.dumps(state["inputs"] + state["outputs"])
+
+
+def test_a_record_write_that_fails_fails_the_document(tmp_path, monkeypatch):
+    """D13 (atrium-project#84): the hook raising is no warning any more; the document fails, so
+    api_4_stats.sh halts the run and nothing reaches AMČR. Nothing is recorded as written."""
+
+    def hook(**kw):
+        raise RuntimeError("schema says no")
+
+    ok, state = _one_document(tmp_path, monkeypatch, hook)
+    assert ok is False
+    assert state["outputs"] == []

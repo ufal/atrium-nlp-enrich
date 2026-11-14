@@ -118,8 +118,7 @@ class TestDocumentJsonOutReporting:
         cfg = self._config(tmp_path)
         out_json = tmp_path / "asked_for.document.json"
 
-        # Stage runs, exits 0, writes no document record — exactly what a swallowed
-        # document-hook failure looks like from out here.
+        # Stage runs, exits 0, writes no document record.
         monkeypatch.setattr(rp, "_run_subprocess", lambda cmd, env, cwd: 0)
 
         rc = rp.main(
@@ -127,7 +126,9 @@ class TestDocumentJsonOutReporting:
         )
 
         captured = capsys.readouterr()
-        assert rc == 0, "the graceful degradation must survive: detectable, not fatal"
+        # D13 (atrium-project#84): a record asked for and not written fails the run. Until #84
+        # it exited 0, "detectable, not fatal".
+        assert rc == 1
         assert not out_json.exists()
         assert rp.DOC_JSON_NOT_WRITTEN_MARKER in captured.out
         assert str(out_json) in captured.out
@@ -159,8 +160,8 @@ class TestDocumentJsonOutReporting:
         assert rp.DOC_JSON_NOT_WRITTEN_MARKER not in captured.out
 
     def test_a_seed_the_hook_never_rewrote_is_not_handed_back(self, tmp_path, monkeypatch, capsys):
-        """The hook raised (summarize_nt_udp.py warns and carries on): the scratch record is still
-        the caller's own seed. Copying it out returned the caller's record as if enriched."""
+        """The scratch record is still the caller's own seed. Copying it out returned the caller's
+        record as if enriched; since atrium-project#84 (D13) the run fails as well."""
         cfg = self._config(tmp_path)
         baseline = tmp_path / "baseline.document.json"
         baseline.write_text('{"schema_version": "1.0", "doc_id": "CTX000000001"}', encoding="utf-8")
@@ -173,7 +174,7 @@ class TestDocumentJsonOutReporting:
         )
 
         captured = capsys.readouterr()
-        assert rc == 0
+        assert rc == 1
         assert not out_json.exists()
         assert rp.DOC_JSON_NOT_WRITTEN_MARKER in captured.out
         assert "the document hook did not update the record" in captured.err

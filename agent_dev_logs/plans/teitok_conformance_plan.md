@@ -24,14 +24,14 @@
 > flexiconv-TEITOK layout sources stay for batch and research use. TEITOK remains the standard linguistic output with
 > its limits stated (block-level boxes on ATR text). Line boxes are written by ocr-postprocess, the record builder
 > (D16), in one coordinate space (D28) — not "by their originator" as on 11-11. Its outputs are not published until
-> atrium-project#78 is settled (D35). This repository's part: [`84.plan.md`](84.plan.md).
+> atrium-project#78 is settled (D35). This repository's part: [`doc-schema-v2.plan.md`](doc-schema-v2.plan.md).
 
 > **2026-11-11 — the output contract** ([meeting digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/project_state_1111.md)).
 > The GPL reason for keeping flexiconv off the production chain is gone: v0.3.12 is MIT (11-10); whether it enters the
 > chain is the pipeline's choice. Boxes follow doc-schema-v2: a line's box comes from its originator only, in pt
 > (digital-convert per line; ATR per block, so no word positions on an ATR page). The `/enrich` input of a line table
 > plus its ALTO, Trash and Empty left out, is superseded by the record (hub question Q3). This repository's part:
-> [`doc-schema-v2.plan.md`](84.plan.md) _(now `84.plan.md`)_.
+> [`doc-schema-v2.plan.md`](doc-schema-v2.plan.md).
 
 ## 0. Progress (updated 2026-09-24, round 4)
 

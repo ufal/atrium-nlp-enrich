@@ -17,11 +17,10 @@ comparing it with the CoNLL-U it came from:
 
 Lane (a) is stdlib-only and always runs. Lane (b) repeats the round trip through the
 pinned flexiconv (``requirements_flexiconv.txt``) when it is installed. The checks of the
-synthetic page run on two layouts of it: an ALTO file, and the ATRIUM record of a born-digital
+synthetic page run on two layouts of it: an ALTO file, and the ATRIUM record (schema 2.0) of a
 document with the same lines and boxes (issue #42). The checks that hold for any document also
-run on a third arm, ``two_column``: digital-convert's record of its own two-column fixture (two
-labelled pages, running header and footer), with the stand-in UDPipe of
-``tests/record_layout_data.py``.
+run on a third arm, ``two_column``: the record of digital-convert's two-column fixture (two
+labelled pages), with the stand-in UDPipe of ``tests/record_layout_data.py``.
 
 Before 2026-09 every one of these failed: each ``<tok>`` sat on its own line, so upstream
 readers saw a space after every token ("č . 1 / 2024"), and "abych" was written as two
@@ -156,24 +155,39 @@ def _upstream_read(path):
     return root, ids, sentences
 
 
-#: The ALTO page as digital-convert would record it: the same lines and line boxes, in pixels.
+#: The ALTO page as the record builder would record it (record schema 2.0): the same lines and
+#: line boxes, in pixels (a PCSS page whose original was not matched).
 RECORD = {
-    "schema_version": "1.0",
+    "schema_version": "2.0",
     "record_type": "atrium-document",
     "doc_id": "CTX",
-    "source": {"filename": "CTX.pdf", "origin": "digital-born-pdf"},
-    "provenance": {"contributors": [{"program": "digital-convert", "blocks": "pages,lines"}]},
+    "source": {"filename": "CTX.pdf", "origin": "legacy"},
     "pages": [
-        {"page": "1", "page_index": 1, "canvas": {"width": 2000, "height": 3000, "unit": "px"}}
+        {
+            "page": "1",
+            "page_index": 1,
+            "content_status": "text",
+            "canvas": {"width": 2000, "height": 3000, "unit": "px"},
+        }
     ],
     "lines": [
-        {"page": "1", "line": n, "text": text, "bbox": [100, y, 1500, y + 40], "lang": "cs"}
+        {
+            "page": "1",
+            "line": n,
+            "text": text,
+            "bbox": [100, y, 1500, y + 40],
+            "block": "p1-b1",
+            "text_source": "legacy",
+            "bbox_precision": "measured",
+            "lang": "cs",
+        }
         for n, (y, text) in enumerate(
             [
                 (100, "Karel Novák přijel do Prahy,"),
                 (160, "abych viděl hrad."),
                 (220, "Hrad stál v roce 1998."),
-            ]
+            ],
+            start=1,
         )
     ],
 }
@@ -182,8 +196,9 @@ RECORD = {
 #: Which converter each arm's header names, and the original file.
 CONVERTERS = {
     "alto": ("altoconvert", "CTX.alto.xml"),
-    "record": ("digital-convert", "CTX.pdf"),
-    "two_column": ("digital-convert", "two_column.pdf"),
+    # a 2.0 record names no contributor: its lines are the record builder's (BLOCK_OWNERS)
+    "record": ("ocr-postprocess", "CTX.pdf"),
+    "two_column": ("ocr-postprocess", "two_column.pdf"),
 }
 
 #: The stand-in NameTag's entity on the two_column record.

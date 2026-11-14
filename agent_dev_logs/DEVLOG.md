@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-10-21). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). **v1.2.0-beta** (2026-10-26, the CLI and the service read the same inputs) · **v1.3.0-beta** (2026-10-29, the two give the same results) · **Starting set of the pilot phase: v1.3.3-beta** (`b0e80ca`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `4435ffb` (`v1`). Latest entry: 2026-11-12 (this repository's part of atrium-project#84: `plans/84.plan.md`). **v1.1.0-beta** (2026-10-18, `9c126a5`) was published mutable, and its tag name was used once before, on 10-09. Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-10-21). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). **v1.2.0-beta** (2026-10-26, the CLI and the service read the same inputs) · **v1.3.0-beta** (2026-10-29, the two give the same results) · **Starting set of the pilot phase: v1.3.3-beta** (`b0e80ca`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `4435ffb` (`v1`). Latest entry: 2026-11-13 (this repository's part of atrium-project#84: `plans/doc-schema-v2.plan.md`). **v1.1.0-beta** (2026-10-18, `9c126a5`) was published mutable, and its tag name was used once before, on 10-09. Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). The #6 saga (April→September) is condensed below; its full record moved with the issue to atrium-keyword-extract (`agent_dev_logs/digests/2.digest.md`). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -1034,7 +1034,7 @@ Documentation only; no code, test or configuration change.
 * **Asked (K4TEL):** align the logs with the meeting of 11-11 (ARÚP's output contract) and write this repository's
   slice of the hub's consolidated schema issue
   ([meeting digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/project_state_1111.md),
-  [hub plan](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md)).
+  [hub plan](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md)).
 * **Decided in session:** plans only this round; the schema issue is not opened yet (placeholder name
   `doc-schema-v2`); digital-convert's text-layer verdicts become their own marker set (`decode`), and `categ` is
   ocr-postprocess's only, so this repository leaves lines out by `categ` alone (`Trash`, `Empty`).
@@ -1064,7 +1064,7 @@ Documentation only; no code, test or configuration change.
 * **Asked (K4TEL):** align the logs with ARÚP's output contract of 12 November (the .docx of that day, replacing the
   meeting document of 10 November) and with David Novák's comments of 11-12 (atrium-project#84 opened, #13, #16,
   #78); `test` fetched first (all seven working branches = `test`).
-  Anchor: [contract digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/project_state_1211.md) · [hub plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md).
+  Anchor: [contract digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/project_state_1211.md) · [hub plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md).
 * **Decided in session:** the tool slices are named `plans/84.plan.md`; the translator keeps `amcr-fields.txt` as a
   documented example that nothing loads (no default list, D34); the hub's #84 plan carries a reply draft agreeing on
   points 1 and 2.
@@ -1079,3 +1079,38 @@ Documentation only; no code, test or configuration change.
   * **`DEVLOG.md`:** the header and this entry.
 * **Not posted:** nothing on GitHub; questions stay on the hub's list for the next meeting.
 * Plans only; no code changed. Files delivered as full files.
+
+## 2026-11-13 — atrium-project#84 round 2: layout from the record
+
+* **Asked (K4TEL):** adapt the tool repositories to the hub side of doc-schema-v2, on the re-vendored shared
+  modules; every new or edited file delivered, the vendored ones excepted. Decided: adapt plus the tasks that need
+  no docproc answer from ARÚP; windows as `split`, prompt budgets as `sampled`, every other cut fails (D13).
+* **Done (local branch, delivered as an archive):** the record layout by `block` and `bbox_precision`; per-line `lemma`/`upos`/`feats`/`teitok_ref`; TEITOK's limits in its header; one paradata action; D35 in the docs.
+* **Checked:** the full test suite; ruff; the regenerated spec; the local chain check (UDPipe and NameTag stood in).
+* **Detail and what is deferred:** `plans/doc-schema-v2.plan.md`, "Status — round 2". Hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md).
+* **Not posted; not pushed.**
+
+## 2026-11-13 — atrium-project#84 round 4: not pushed yet; #78
+
+* **Asked (K4TEL):** fetch the pushed branches and the comments since 12 November, and bring the logs up to them.
+* **Found:** round 3's changes are not on the remote yet; checked on the round-3 tree with the addendum: 1085 pass.
+* **Written here (not pushed):** `plans/doc-schema-v2.plan.md` (the round-2 status, atrium-project#78 → the hub's Q14). This file: the round-2 entry of 11-13 and this one.
+* **Detail:** `plans/doc-schema-v2.plan.md`, "Status — round 2"; hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md).
+* **Not posted; not pushed.**
+
+## 2026-11-14 — atrium-project#84 round 5: the PR's checks
+
+* **Asked (K4TEL):** check the doc-schema-v2 PRs and fix their problems.
+* **Found:** [atrium-nlp-enrich#45](https://github.com/ufal/atrium-nlp-enrich/pull/45) fails drift (the hub pin at `v1`) and api-contract (record major 1.0 → 2.0, no major version yet).
+* **Written here (not pushed):** the re-vendored `atrium_rocrate.py` and `tests/test_atrium_rocrate.py` (`#no-licence-asserted` on the crate root again); `plans/doc-schema-v2.plan.md`, "Status — PR".
+* **Checked:** the full suite, 1087 passed.
+* **Next:** the pin commit after the hub's PR merges; the major version at the release. Hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md), "Status — PRs".
+* **Not posted; not pushed.**
+
+## 2026-11-14 (afternoon) — atrium-project#84 round 6: the rest of this repository's part
+
+* **Asked (K4TEL):** complete the doc-schema-v2 update in every repository.
+* **Done (local, not pushed):** `atrium_document.py`, its schema and `tests/test_document_originators.py` re-vendored: rows may carry `lines[].unit: "block"` (rule 5, written by ocr-postprocess only), and `quality_summary.lines` counts them as `block_units`. `v2.0.0-beta` as the unreleased version: `para_config.txt`, `CITATION.cff`, `service/openapi.json` (re-exported) and a CONTRIBUTING.md row marked Unreleased; api-contract passes with it; `api_2_udp.sh` is 100755 again (`git update-index --chmod=+x`): the push of 11-14 had stored it as 100644 once more; The hub's scanned E2E lane now runs this image with `--text-from-record` and no ALTO (atrium-project task 7).
+* **Checked:** the full suite, 1088 passed; the spec export; `compare` against the latest release: compatible at v2.0.0-beta.
+* **Next:** the hub's second PR for #84, then the pins; then this PR. Hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md), "Status — round 6".
+* **Not posted; not pushed.**

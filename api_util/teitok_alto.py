@@ -1168,7 +1168,8 @@ def _header_xml(
     alto_meta = parsed["alto_meta"]
     today = datetime.date.today().isoformat()
     converted = alto_meta.get("layout_source") == "teitok"
-    # a born-digital document's ATRIUM record (issue #42): the converter read the original
+    # the document's ATRIUM record (issue #42; schema 2.0, atrium-project#84): the record
+    # builder made its lines from the original
     record = alto_meta.get("layout_source") == "record"
     has_alto = bool(parsed["alto_pages"]) and not converted and not record
     if converted or record:
@@ -1187,9 +1188,11 @@ def _header_xml(
     source_info = alto_meta.get("source_image", "")
     record_file = escape(alto_meta.get("record_file") or Path(alto_path or "").name)
     if record:
+        sources = ", ".join(alto_meta.get("text_sources") or [])
+        text_from = f" (line text from: {escape(sources)})" if sources else ""
         h.append(
-            f"      <sourceDesc><p>Born-digital {escape(orgfile)}; page layout from the ATRIUM "
-            f"record {record_file}</p></sourceDesc>"
+            f"      <sourceDesc><p>{escape(orgfile)}; text and page layout from the ATRIUM "
+            f"record {record_file}{text_from}</p></sourceDesc>"
         )
     elif source_info:
         h.append(f"      <sourceDesc><p>Source image: {escape(source_info)}</p></sourceDesc>")
@@ -1200,7 +1203,11 @@ def _header_xml(
     h.append("    <encodingDesc>")
     h.append("      <appInfo>")
     # A record has line boxes only: token boxes are the line's, shared out by character offset.
+    # A derived line box is its block's (lines[].bbox_precision): it bounds the block only.
     approximate = "; token boxes apportioned from line boxes (approximate)" if record else ""
+    derived = alto_meta.get("derived_boxes") or 0
+    if record and derived:
+        approximate += f"; {derived} line(s) with only their block's box carry no coordinates"
     h.append(
         f'        <application ident="atrium-nlp-enrich" version="{WRITER_FORMAT}">'
         f"<label>atrium-nlp-enrich TEITOK writer</label>"
@@ -1223,7 +1230,7 @@ def _header_xml(
         version = alto_meta.get("converter_version")
         version_attr = f' version="{escape(version)}"' if version else ""
         source = (
-            f"page canvases and line boxes in {record_file}"
+            f"lines, page canvases and line boxes in {record_file}"
             if record
             else f"text and layout from {escape(Path(alto_path).name)}"
         )
@@ -1256,7 +1263,7 @@ def _header_xml(
             f"Converted from {escape(orgfile)} by {who}</change>"
         )
     elif record:
-        who = escape(alto_meta.get("converter") or "digital-convert")
+        who = escape(alto_meta.get("converter") or "ocr-postprocess")
         when = escape(alto_meta.get("converted_on") or today)
         h.append(
             f'      <change when="{when}" who="{who}" type="converted">'

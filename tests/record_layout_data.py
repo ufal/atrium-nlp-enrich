@@ -7,6 +7,11 @@ The records in ``tests/fixtures/record_layout/`` were made by atrium-digital-con
     python tests/fixtures/digital/make_fixtures.py --outdir OUT
     python api_util/digital_to_json.py OUT/two_column.pdf --out-dir RECORDS
 
+and rewritten as record schema 2.0 records (atrium-project#84), as the record builder writes
+them: no run data, no ``sha256``; lines numbered from 1, each with its docproc ``block``
+(``p1-b2``, from the old ``group_id``), ``text_source: text-layer``, ``bbox_precision`` and
+``categ``; pages with ``content_status``. Since 2.0 digital-convert writes docproc, not records.
+
 ``two_column`` (two pages labelled ``i``/``ii``, running header and footer, two columns),
 ``image_only`` (a text page, then a scanned plate and a blank page with a canvas and no
 lines) and ``minimal_docx`` (``minimal.docx``: pages and lines, no geometry). No real AMČR

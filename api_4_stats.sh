@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # api_4_stats.sh – statistics + TEITOK generation + paradata
+#
+# Paradata 3.0 (atrium-project#84): summarize_nt_udp.py records in this stage's state file,
+# by AMČR distribution name and SHA-512, the record version read (atrium/document-json), the
+# record written with the blocks and fields it wrote, and the TEITOK written (atr/teitok-xml).
+# A failed document fails the run (D13): the run is recorded as failed and the stage halts.
 set -euo pipefail
 
 DOC_JSON_DIR=""
@@ -126,11 +131,11 @@ while IFS= read -r -d '' conllu; do
                 python3 atrium_paradata.py success --state "$PARA_STATE" --type xml
         fi
     else
-        # P1 FIX: Log the failure and exit immediately to halt the pipeline
-        python3 atrium_paradata.py skip \
+        # D13: a failed document fails the run, recorded as failed, and halts the pipeline.
+        python3 atrium_paradata.py fail \
             --state "$PARA_STATE" \
-            --file  "$doc" \
-            --reason "summarize_nt_udp failed"
+            --error "summarize_nt_udp failed for $(basename "$doc")"
+        python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"
 
         echo "[CRITICAL ERROR] summarize_nt_udp aggregation failed for ${doc}. Halting pipeline." >&2
         exit 1
@@ -169,10 +174,10 @@ if [ "${SAVE_TEITOK:-true}" = "true" ]; then
     echo "Validating TEITOK XML output contract..."
     if ! python3 api_util/validate_teitok_xml.py "${TEITOK_OUTPUT_DIR}" --allow-empty \
             --exclude "${TEITOK_FLEXICONV_DIR:-${TEITOK_OUTPUT_DIR}/flexiconv}"; then
-        python3 atrium_paradata.py skip \
+        python3 atrium_paradata.py fail \
             --state "$PARA_STATE" \
-            --file  "${TEITOK_OUTPUT_DIR}" \
-            --reason "TEITOK output contract failed"
+            --error "TEITOK output contract failed"
+        python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"
 
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] [CRITICAL ERROR] TEITOK output contract failed (see the [FAIL] lines above). Halting pipeline before packaging." \
             | tee -a "${LOG_FILE:-/dev/null}" >&2

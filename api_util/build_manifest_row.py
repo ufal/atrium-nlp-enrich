@@ -95,7 +95,7 @@ def main():
     parser.add_argument(
         "--skip-untrustworthy-lines",
         action="store_true",
-        help="leave out a table's rows whose categ is untrustworthy (Trash, Garbage, Inverted)",
+        help="leave out a table's rows whose categ is untrustworthy (Trash; atrium_vocab)",
     )
     parser.add_argument(
         "--table-ids",

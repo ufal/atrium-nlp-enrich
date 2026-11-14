@@ -21,7 +21,7 @@ PARA_STATE=$(python3 atrium_paradata.py start \
 TOTAL=$(tail -n +2 "${OUTPUT_DIR}/manifest.tsv" | wc -l)
 mkdir -p "${OUTPUT_DIR}/UDP"
 
-while IFS=$'\t' read -r file page path; do
+while IFS=$'\t' read -r file _ path; do
     [ "$file" = "file" ] && continue
     out="${OUTPUT_DIR}/UDP/${file}.conllu"
     [ -f "$out" ] && continue
@@ -32,12 +32,25 @@ while IFS=$'\t' read -r file page path; do
     mkdir -p "$chunk_dir"
 
     if ! python3 api_util/chunk.py "$path" "$chunk_dir" "$WORD_CHUNK_LIMIT"; then
-        python3 atrium_paradata.py skip \
+        # D13 (atrium-project#84): a failed step fails the run, recorded as failed.
+        python3 atrium_paradata.py fail \
             --state "$PARA_STATE" \
-            --file  "${file}:${page}" \
-            --reason "the text could not be split into UDPipe chunks"
+            --error "the text of ${file} could not be split into UDPipe chunks"
+        python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"
         echo "[CRITICAL ERROR] Chunking failed for ${file}. Halting pipeline." >&2
         exit 1
+    fi
+    # A text over WORD_CHUNK_LIMIT words goes to UDPipe in several requests: the whole text is
+    # annotated, split (a `split` note, atrium-project#53/#84; never a cut).
+    n_chunks=$(find "$chunk_dir" -maxdepth 1 -type f | wc -l)
+    if [ "$n_chunks" -gt 1 ]; then
+        python3 atrium_paradata.py note-limit \
+            --state  "$PARA_STATE" \
+            --limit  word_chunk_limit \
+            --value  "$WORD_CHUNK_LIMIT" \
+            --effect split \
+            --count  "$n_chunks" \
+            --detail "a text over the word limit was sent to UDPipe in chunks"
     fi
 
     # The client's exit code says why it stopped (api_util/lindat_errors.py, issue #41):
@@ -71,10 +84,8 @@ while IFS=$'\t' read -r file page path; do
             8) reason="LINDAT UDPipe refused the request" ;;
             *) reason="UDPipe produced nothing for the document"; rc=1 ;;
         esac
-        python3 atrium_paradata.py skip \
-            --state "$PARA_STATE" \
-            --file  "${file}:${page}" \
-            --reason "$reason"
+        python3 atrium_paradata.py fail --state "$PARA_STATE" --error "${file}: ${reason}"
+        python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"
 
         echo "[CRITICAL ERROR] UDPipe processing failed for ${file} (exit ${rc}). Halting pipeline." >&2
         exit "$rc"

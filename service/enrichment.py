@@ -709,10 +709,10 @@ class PipelineManager:
 
         None has two distinct causes and the caller can tell them apart from
         ``result.document_json_out``: unset means the client never opted in; set with no
-        file means the stats stage never reached the document hook (no CoNLL-U, or the
-        hook itself failed and degraded per rule 3 — run_pipeline.py says so on stdout,
-        see its `[document-json] NOT WRITTEN` line). Reads through load_document() so an
-        older schema_version migrates on the way out, exactly as a CLI consumer would.
+        file means the stats stage never reached the document hook, and the run failed
+        (D13; run_pipeline.py's `[document-json] NOT WRITTEN` line). Reads through
+        load_document() so an older schema_version migrates on the way out, exactly as a
+        CLI consumer would.
         """
         out = result.document_json_out
         if out is None or not out.exists():

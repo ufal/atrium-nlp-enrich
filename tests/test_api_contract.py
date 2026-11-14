@@ -266,7 +266,7 @@ def test_a_record_that_cannot_be_opened_is_422_invalid_record_before_the_pipelin
 def test_an_inline_record_that_cannot_be_opened_is_422_invalid_record(pipeline):
     response = client.post(
         "/enrich_text",
-        json={"lines": ["Praha"], "document_json": {"schema_version": "2.0"}},
+        json={"lines": ["Praha"], "document_json": {"schema_version": "3.0"}},
     )
     body = _conforms("post", "/enrich_text", 422, response)
     assert body["reason"] == "invalid_record" and pipeline == []
@@ -295,7 +295,8 @@ _AMCR_SEED = {
 @pytest.fixture
 def pipeline_run(tmp_path, monkeypatch):
     """The stand-in above, plus what a real run leaves for the envelope: the stats stage's
-    paradata, the run's merged record, and the record that stage stamped with its run_uuid."""
+    paradata (the record read and written, by SHA-512, with the fields written; paradata 3.0),
+    the run's merged record, and the record, which carries no run data (atrium-project#84)."""
     from atrium_document import DocumentRecord
     from atrium_paradata import ParadataLogger, merge_run_paradata
 
@@ -306,22 +307,20 @@ def pipeline_run(tmp_path, monkeypatch):
         stage = ParadataLogger(
             "nlp-enrich", {"script": "api_4_stats"}, paradata_dir=str(out / "paradata")
         )
+        if "--document-json-out" in cmd:
+            baseline = cmd[cmd.index("--document-json") + 1] if "--document-json" in cmd else None
+            target = cmd[cmd.index("--document-json-out") + 1]
+            if baseline:
+                stage.add_input("atrium/document-json", path=baseline)
+            with DocumentRecord.open("doc", "nlp-enrich", baseline=baseline) as doc:
+                doc.merge_block("entities", [{"page": "1", "line": 1, "surface": "Praha"}])
+                doc.finalize(target)
+                stage.add_output("atrium/document-json", path=target, record_fields=doc.written())
         merge_run_paradata(
             [stage.finalize()],
             str(out / "paradata" / f"{stage.run_id}_nlp-enrich_pipeline-run.json"),
             pipeline="nlp-enrich",
         )
-        if "--document-json-out" in cmd:
-            with DocumentRecord.open(
-                "doc",
-                "nlp-enrich",
-                baseline=cmd[cmd.index("--document-json") + 1],
-                run_id=stage.run_id,
-                run_uuid=stage.run_uuid,
-                paradata_ref=stage.paradata_ref,
-            ) as doc:
-                doc.add_derived_from("teitok", "TEITOK/doc.teitok.xml")
-                doc.finalize(cmd[cmd.index("--document-json-out") + 1])
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(_enr, "_API_JOBS_ROOT", tmp_path)
@@ -330,7 +329,11 @@ def pipeline_run(tmp_path, monkeypatch):
 
 def test_an_amcr_seed_keeps_its_identity_and_the_run_is_returned(pipeline_run):
     """atrium-project#71 through /enrich: the seed's id and source come back unchanged, and
-    `paradata` is the run's CreateAction, whose @id is the run_uuid the stats stage stamped."""
+    `paradata` is the run's CreateAction (paradata 3.0, atrium-project#84): the upload as
+    `original` and the record version read as its object, the record written (with its fields)
+    and the TEITOK as its result, each by SHA-512. The record carries no run data."""
+    import hashlib
+
     from atrium_rocrate import action_problems
 
     files = {
@@ -345,11 +348,18 @@ def test_an_amcr_seed_keeps_its_identity_and_the_run_is_returned(pipeline_run):
     record, action = body["document_json"], body["paradata"]
     assert record["doc_id"] == _AMCR_SEED["doc_id"] and record["source"] == _AMCR_SEED["source"]
 
+    assert not {"assembled", "provenance", "derived_from"} & set(record)
+
     assert action_problems(action) == []
-    assert action["@id"] == record["assembled"]["blocks"]["derived_from"]["run_uuid"]
-    assert [e["name"] for e in action["object"]] == ["doc.csv", "C-202000543A-DT-27.document.json"]
-    assert {"#block-derived_from"} <= {e["@id"] for e in action["result"]}
-    assert "doc.teitok.xml" in {e["name"] for e in action["result"]}
+    assert action["@id"] == action["paradataRecord"]["run_uuid"]
+    assert [e["name"] for e in action["object"]] == ["original", "atrium/document-json"]
+    upload, read = action["object"]
+    assert upload["sha512"] == hashlib.sha512(b"text\nPraha\n").hexdigest()
+    assert read["sha512"] == hashlib.sha512(json.dumps(_AMCR_SEED).encode()).hexdigest()
+    written, teitok = action["result"]
+    assert (written["name"], teitok["name"]) == ("atrium/document-json", "atr/teitok-xml")
+    assert "surface" in written["recordFields"]["entities"]
+    assert teitok["sha512"] == hashlib.sha512(body["teitok_xml"].encode("utf-8")).hexdigest()
 
 
 def test_a_record_alone_is_the_calls_only_object(pipeline_run):
@@ -368,7 +378,8 @@ def test_a_record_alone_is_the_calls_only_object(pipeline_run):
     body = _conforms("post", "/enrich", 200, client.post("/enrich", files=files, data={}))
     record, action = body["document_json"], body["paradata"]
     assert action_problems(action) == []
-    assert [e["name"] for e in action["object"]] == [f"{record['doc_id']}.document.json"]
+    assert record["doc_id"] == "two_column"
+    assert [e["name"] for e in action["object"]] == ["atrium/document-json"]
 
 
 def test_without_a_record_the_action_is_the_merged_runs(pipeline_run):
@@ -383,7 +394,8 @@ def test_without_a_record_the_action_is_the_merged_runs(pipeline_run):
     action = body["paradata"]
     assert action_problems(action) == []
     assert action["@id"] == action["paradataRecord"]["run_uuid"]  # the merged run's own id
-    assert [e["name"] for e in action["object"]] == ["lines.json"]
+    assert [e["name"] for e in action["object"]] == ["original"]
+    assert [e["name"] for e in action["result"]] == ["atr/teitok-xml"]
 
 
 def test_the_jobs_api_conforms_to_the_published_schema(pipeline):

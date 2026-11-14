@@ -15,7 +15,8 @@ the environment wins, then the template ``config_api.txt``, then the default bel
 own config. The batch CLI reads its config file as before.
 
 What happens over each limit — refused (with the HTTP status), or processed in full with a
-``limits_applied`` note (with the effect) — is said beside it.
+``split`` note — is said beside it. A limit that would trim, skip or stop content fails the
+run instead (D13, atrium-project#84).
 
 Standard library only (``atrium_limits`` is the hub's canonical module at the repo root):
 the stage scripts and the CLI import this too.
@@ -61,7 +62,7 @@ MAX_RESCALE_DIM = limit(
 
 # ── the stages (config_api.txt keys) ────────────────────────────────────────────────────
 #: Words per UDPipe request; a longer text is sent in pieces cut at a line end and
-#: annotated in full (config_api.txt ``WORD_CHUNK_LIMIT``).
+#: annotated in full → ``split`` note (config_api.txt ``WORD_CHUNK_LIMIT``).
 WORD_CHUNK_LIMIT = limit("WORD_CHUNK_LIMIT", 900, unit="words", minimum=1)
 #: Per-request timeout of one UDPipe or NameTag call (config_api.txt ``TIMEOUT``); a
 #: timeout is retried. When every attempt timed out the stage fails → 504
@@ -73,8 +74,9 @@ LINDAT_MAX_RETRIES = limit("LINDAT_MAX_RETRIES", 5, unit="retries", minimum=1)
 
 # ── the entity summary ──────────────────────────────────────────────────────────────────
 #: Entities per page in the entity summary (``ne_summary``, ``summary_ne_counts.csv``);
-#: a page with more distinct entities keeps its N most frequent → ``trimmed`` note. The
-#: TEITOK and the document record carry every entity.
+#: a page with more distinct entities keeps its N most frequent. The summary is not a stored
+#: output, so this is no limit on content and leaves no note (D13); the TEITOK and the
+#: document record carry every entity.
 NE_SUMMARY_TOP_N = limit("NE_SUMMARY_TOP_N", 20, unit="entities", minimum=1)
 
 #: config_api.txt keys, by the environment variable that overrides each.

@@ -232,11 +232,12 @@ python3 run_pipeline.py --print-config json
 # Add this run's entities to an ATRIUM document record
 python3 run_pipeline.py --document-json CTX.document.json --document-json-out CTX.document.json
 
-# Enrich the record's own lines (a born-digital record from digital-convert): written as <doc_id>.csv into
-# INPUT_TABLES_DIR first, and left there; an existing file of that name is never replaced
+# Enrich the record's own lines (the record is then also the layout, and its lines get lemma, upos, feats and
+# teitok_ref): written as <doc_id>.csv into INPUT_TABLES_DIR first, and left there; an existing file of that name
+# is never replaced
 python3 run_pipeline.py --document-json C-1.document.json --document-json-out C-1.document.json --text-from-record
 
-# Leave out the rows ocr-postprocess categorised Trash (and Garbage, Inverted)
+# Leave out the rows ocr-postprocess categorised Trash
 python3 run_pipeline.py --skip-untrustworthy-lines
 ```
 
@@ -300,17 +301,17 @@ resumed run remains fully auditable. An all-skipped run is treated as a **succes
 The exit code is the runner's contract; the service maps it to an HTTP status
 ([service/README.md, How it works](../service/README.md#how-it-works)).
 
-| Code | Meaning                                                                                                                                                                     |
-|------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `0`  | All requested stages completed; nothing flagged.                                                                                                                            |
-| `1`  | A stage processed **nothing** despite having input and no resume, and `FAIL_ON_EMPTY=true` (the default). Also: `--with-flexiconv` could not convert at least one document. |
-| `2`  | A required stage script was not found; or argparse refused an option (e.g. `--lang de`).                                                                                    |
-| `3`  | A dependency preflight failed: `--with-flexiconv` without flexiconv, or the stages' `python3` cannot import `requests` or `lxml` (the message names it and the fix).        |
-| `5`  | The TEITOK output failed its output contract (`api_4_stats.sh`'s gate: the XSD, unique ids, resolvable references, the page rules). A writer defect: please report it.      |
-| `6`  | LINDAT UDPipe or NameTag did not answer after `MAX_RETRIES` retries (HTTP 5xx or 429, a refused or dropped connection); the first line on stderr names the service.         |
-| `7`  | Every attempt at a LINDAT call timed out (`TIMEOUT` seconds each).                                                                                                          |
-| `8`  | LINDAT refused the request (HTTP 4xx, e.g. an unknown model): a configuration or request defect, not the input.                                                             |
-| `≠0` | A stage script itself exited non-zero (its code is propagated).                                                                                                             |
+| Code | Meaning                                                                                                                                                                                                                                                             |
+|------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`  | All requested stages completed; nothing flagged.                                                                                                                                                                                                                    |
+| `1`  | A stage processed **nothing** despite having input and no resume, and `FAIL_ON_EMPTY=true` (the default). Also: `--with-flexiconv` could not convert at least one document; a record asked for with `--document-json-out` was not written (D13, atrium-project#84). |
+| `2`  | A required stage script was not found; or argparse refused an option (e.g. `--lang de`).                                                                                                                                                                            |
+| `3`  | A dependency preflight failed: `--with-flexiconv` without flexiconv, or the stages' `python3` cannot import `requests` or `lxml` (the message names it and the fix).                                                                                                |
+| `5`  | The TEITOK output failed its output contract (`api_4_stats.sh`'s gate: the XSD, unique ids, resolvable references, the page rules). A writer defect: please report it.                                                                                              |
+| `6`  | LINDAT UDPipe or NameTag did not answer after `MAX_RETRIES` retries (HTTP 5xx or 429, a refused or dropped connection); the first line on stderr names the service.                                                                                                 |
+| `7`  | Every attempt at a LINDAT call timed out (`TIMEOUT` seconds each).                                                                                                                                                                                                  |
+| `8`  | LINDAT refused the request (HTTP 4xx, e.g. an unknown model): a configuration or request defect, not the input.                                                                                                                                                     |
+| `≠0` | A stage script itself exited non-zero (its code is propagated).                                                                                                                                                                                                     |
 
 **Using `--force` (`-f`)** overrides exit codes `1`, `3`, and `≠0`. It bypasses preflight dependency crashes and
 forces `FAIL_ON_EMPTY=False`, so the pipeline keeps attempting the following stages even if one stage crashes or
@@ -537,7 +538,8 @@ and off. The TEITOK, the entity summary, the doc_id and the record were the same
 | Outputs                      | files under `OUTPUT_DIR`                                                                                | the JSON envelope, or `format=zip` of the same files      | the same files                                                                                                                                                                                                                                                                                                                                                   |
 | Paradata                     | a file per stage and a merged one in `PARADATA_DIR`                                                     | the envelope's `paradata`, a `CreateAction`               | the same merged record                                                                                                                                                                                                                                                                                                                                           |
 
-The record names its TEITOK file in `derived_from.teitok` by its name, on both sides.
+The record names no file and no run on either side (record schema 2.0): the paradata name the record read and
+written and the TEITOK, by distribution name and SHA-512 ([paradata](reference/paradata.md)).
 
 ## Troubleshooting
 

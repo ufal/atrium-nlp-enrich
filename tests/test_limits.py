@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import csv
-import json
 import os
 import subprocess
 import sys
@@ -284,7 +283,7 @@ def test_a_callers_source_path_cannot_leave_the_workspace(tmp_path):
 # ── notes: the entity summary ──────────────────────────────────
 
 
-def test_the_entity_summary_top_n_is_a_setting_and_is_noted(tmp_path, monkeypatch):
+def test_the_entity_summary_top_n_is_a_setting_and_no_paradata_note(tmp_path, monkeypatch):
     monkeypatch.setenv("NE_SUMMARY_TOP_N", "2")
     summary = tmp_path / "summary_ne_counts.csv"
     ents = {1: [("Praha", "gu"), ("Brno", "gu"), ("Ostrava", "gu")], 2: [("Praha", "gu")]}
@@ -299,28 +298,9 @@ def test_the_entity_summary_top_n_is_a_setting_and_is_noted(tmp_path, monkeypatc
     got = enr.PipelineManager.collect_ne_summary(SimpleNamespace(output_dir=out))
     assert [len(page["entities"]) for page in got] == [2, 1]
 
-    state = subprocess.run(
-        [
-            sys.executable,
-            str(REPO_ROOT / "atrium_paradata.py"),
-            "start",
-            "--program",
-            "nlp-enrich",
-            "--paradata-dir",
-            str(tmp_path),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    summ.note_summary_trimmed(state, 1)
-    [note] = json.loads(Path(state).read_text(encoding="utf-8"))["limits_applied"]
-    assert (note["limit"], note["value"], note["effect"], note["count"]) == (
-        "ne_summary_top_n",
-        2,
-        "trimmed",
-        1,
-    )
+    # The summary is a development output, not a stored distribution: its cap is no limit on
+    # content and no note in the paradata (D13, atrium-project#84; until then `trimmed`).
+    assert not hasattr(summ, "note_summary_trimmed")
 
 
 # ── /info and the envelope ───────────────────────────────────────────────────────────
@@ -336,18 +316,19 @@ def test_info_reports_every_limit(client, monkeypatch):
 
 
 def test_the_envelope_carries_the_runs_limits_applied(monkeypatch):
+    """The merged record's `limits` (paradata 3.0): sampling and splitting only (D13)."""
     note = {
-        "limit": "ne_summary_top_n",
-        "value": 20,
-        "effect": "trimmed",
-        "count": 1,
+        "limit": "word_chunk_limit",
+        "value": 900,
+        "effect": "split",
+        "count": 2,
         "detail": "",
         "program": "nlp-enrich",
     }
     for name, value in (
         ("collect_teitok", None),
         ("collect_ne_summary", []),
-        ("collect_merged_paradata", {"limits_applied": [note]}),
+        ("collect_merged_paradata", {"limits": [note]}),
     ):
         monkeypatch.setattr(enr.PipelineManager, name, staticmethod(lambda _r, v=value: v))
     result = SimpleNamespace(

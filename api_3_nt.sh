@@ -58,10 +58,9 @@ while IFS= read -r -d '' conllu; do
             8) reason="LINDAT NameTag refused the request" ;;
             *) reason="NameTag API call failed"; rc=1 ;;
         esac
-        python3 atrium_paradata.py skip \
-            --state "$PARA_STATE" \
-            --file  "$doc" \
-            --reason "$reason"
+        # D13 (atrium-project#84): the run is recorded as failed.
+        python3 atrium_paradata.py fail --state "$PARA_STATE" --error "$(basename "$doc"): ${reason}"
+        python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"
         # An empty output directory would make a resumed run skip the document as done.
         rmdir "$out_dir" 2>/dev/null || true
 

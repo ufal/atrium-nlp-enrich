@@ -3,19 +3,23 @@
 nlp-enrich analyses the text lines of archival documents: it finds each word's lemma (dictionary form), part of speech
 and grammar, and the people, places and organisations the text names. It writes one TEITOK file per document, a format
 for searching text and showing it over the scan, with tables beside it. Use it on the line tables from ocr-postprocess
-or on a born-digital record from digital-convert. The analysis runs at LINDAT, so it needs network access to its
-servers.
+or on the document's ATRIUM record, which then gives the text and the page layout. The analysis runs at LINDAT, so it
+needs network access to its servers.
+
+> **Not published yet.** Until [atrium-project#78](https://github.com/ufal/atrium-project/issues/78) settles the
+> LINDAT terms, AMČR does not publish what this tool produces through UDPipe and NameTag: the linguistic fields,
+> the entities and the TEITOK (ARÚP's output contract of 12 November 2026, D35).
 
 [Releases](https://github.com/ufal/atrium-nlp-enrich/releases) · [MIT licence](LICENSE) ·
 [ATRIUM documentation](https://ufal.github.io/atrium-project/workflows/nlp-enrich/)
 
 ## Inputs and outputs
 
-| Input                                                                                                                                            | Output                                                                                                                                                                                    |
-|--------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| a line table: CSV or XLSX with a `text` column and optional `page_num`, `line_num` (ocr-postprocess's `DOC_LINE_CATEG/`); a `.txt`; inline lines | per document: CoNLL-U with lemmas, tags, features and syntax; named entities per page (TSV); tokens, lemmas and entities as CSV and as CoNLL-U; an entity summary of the collection (CSV) |
-| optionally a layout: the ALTO the table was made from, a TEITOK file converted by flexiconv, or a born-digital ATRIUM record; page images        | TEITOK XML (`teitok-2`), checked against [its XSD](schemas/teitok/README.md) before a stage ends; with a layout, word boxes and a facsimile                                               |
-| optionally the ATRIUM document record (JSON) to add to                                                                                           | the record with its `entities` block, each entity pointing at its `<name>` in the TEITOK file; paradata (JSON) of every stage and of the run                                              |
+| Input                                                                                                                                            | Output                                                                                                                                                                                                                         |
+|--------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| a line table: CSV or XLSX with a `text` column and optional `page_num`, `line_num` (ocr-postprocess's `DOC_LINE_CATEG/`); a `.txt`; inline lines | per document: CoNLL-U with lemmas, tags, features and syntax; named entities per page (TSV); tokens, lemmas and entities as CSV and as CoNLL-U; an entity summary of the collection (CSV)                                      |
+| optionally a layout: the document's ATRIUM record, the ALTO the table was made from, or a TEITOK file converted by flexiconv; page images        | TEITOK XML (`teitok-2`), checked against [its XSD](schemas/teitok/README.md) before a stage ends; with a layout, word boxes and a facsimile                                                                                    |
+| optionally the ATRIUM document record (JSON, schema 2.0) to add to                                                                               | the record with its `entities` block, each entity pointing at its `<name>` in the TEITOK file, and, when the record was the layout, each line's lemma, UPOS, features and `<s>`; paradata (JSON) of every stage and of the run |
 
 The record follows the hub's [document contract](https://ufal.github.io/atrium-project/ecosystem/document-contract/).
 PDF, office files, PAGE XML and hOCR are converted to TEITOK by
@@ -95,10 +99,12 @@ ATRIUM](https://marketplace.sshopencloud.eu/tool-or-service/EMhu3X).
   `czech-pdt-ud-2.15-241121`. Named entities come from NameTag's general multilingual OntoNotes model, not an
   archaeological one, so its entity types are general. The kit for annotating archaeological training data is in
   [annotation/](annotation/README.md).
-- **Positions differ in precision.** With ALTO, a word gets the box of the OCR word it is matched to. A born-digital
-  record has line boxes only, so its word boxes are estimated from the line geometry and are in PDF points. A
-  flexiconv-converted PDF and a table alone give no boxes
-  ([where the positions come from](docs/how-it-works.md#where-the-positions-on-the-page-come-from)).
+- **Positions differ in precision (TEITOK's limits).** With ALTO, a word gets the box of the OCR word it is matched
+  to. A record has line boxes at best, so its word boxes are estimated from the line geometry, in the record's
+  coordinate space; a line whose box is only its block's (`bbox_precision: derived`, ATR text without line breaks)
+  gets no coordinates, and the TEITOK header says how many. A flexiconv-converted PDF and a table alone give no boxes
+  ([where the positions come from](docs/how-it-works.md#where-the-positions-on-the-page-come-from),
+  [TEITOK](docs/reference/teitok.md)).
 - **`/jobs` are not durable.** A job lives in the memory of the replica that accepted it, so a restart or redeploy
   loses it (404) and the caller submits it again. `/enrich` is the synchronous alternative
   ([Known limits](service/README.md#known-limits)).
