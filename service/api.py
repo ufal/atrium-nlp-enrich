@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hashlib
 import json
 import logging
 import os
@@ -166,13 +167,18 @@ class EnrichResponse(BaseModel):
     ne_summary: List[NamedEntitySummary] = Field(description="Named entities per page.")
     paradata: Optional[CreateAction] = Field(
         description=(
-            "The call's provenance: its Process Run Crate `CreateAction` (atrium-project#71), built from the "
-            "pipeline run's merged paradata record, whose `@id` is the `run_uuid` stamped into `document_json`; "
-            "null only when the run left no paradata."
+            "The call's provenance: its Process Run Crate `CreateAction` (paradata 3.0, atrium-project#84), "
+            "built from the pipeline run's merged paradata record. `object`: what was sent (`original`) and "
+            "the record version read; `result`: the record written (`atrium/document-json`, with the blocks "
+            "and fields written) and the TEITOK (`atr/teitok-xml`), each by SHA-512. Null only when the run "
+            "left no paradata."
         )
     )
     limits_applied: List[LimitNote] = Field(
-        description="Every limit that shaped the result without refusing it."
+        description=(
+            "The sampling and splitting the result rests on; a limit that would trim, skip or stop "
+            "content fails the call (D13)."
+        )
     )
     layout_source: str = Field(
         description=(
@@ -187,8 +193,9 @@ class EnrichResponse(BaseModel):
     document_json: Optional[AtriumDocument] = Field(
         None,
         description=(
-            "Only when a record was sent: the record with nlp-enrich's `entities` merged in (null when the "
-            "pipeline produced none)."
+            "Only when a record was sent (or `include_record`): the record with nlp-enrich's `entities`, "
+            "`pages[].teitok_surface` and, when the record was the layout, `lines[].lemma`, `upos`, `feats` "
+            "and `teitok_ref` merged in. A record that was asked for and not written fails the call."
         ),
     )
 
@@ -349,7 +356,8 @@ class EnrichTextRequest(BaseModel):
         False,
         description=(
             "Opt-in, default false: see `/enrich`. Leaves out the lines whose `categ` is untrustworthy "
-            "(`Trash`, `Garbage`, `Inverted`). Until v1.3.0-beta the field was accepted and ignored."
+            "(`Trash`; since record schema 2.0 digital-convert's `Garbage` and `Inverted` are docproc line "
+            "flags, never a `categ`). Until v1.3.0-beta the field was accepted and ignored."
         ),
     )
     include_record: bool = Field(
@@ -645,10 +653,10 @@ def _build_envelope(result, sent=()) -> Dict[str, Any]:
         "stages": result.stages,
         "teitok_xml": teitok_xml,
         "ne_summary": PipelineManager.collect_ne_summary(result),
-        "paradata": _run_action(merged, result, record, teitok_xml, sent) if merged else None,
-        # Every limit that shaped this result without refusing it (atrium-project#53): the
+        "paradata": _run_action(merged, teitok_xml, sent) if merged else None,
+        # The sampling and splitting this result rests on (atrium-project#53, #84 D13): the
         # stages record them in their paradata, the run's merged record carries them.
-        "limits_applied": list((merged or {}).get("limits_applied") or []),
+        "limits_applied": list((merged or {}).get("limits") or []),
         # issue #38, F: where the pages and boxes came from, and the contract verdict the
         # stage-4 gate reached (a run that failed it never gets here: exit 5 -> 500)
         "layout_source": result.layout_source,
@@ -665,47 +673,55 @@ def _build_envelope(result, sent=()) -> Dict[str, Any]:
     return envelope
 
 
-def _run_action(merged, result, record, teitok_xml, sent) -> Dict[str, Any]:
-    """The call's CreateAction (atrium-project#71), from the pipeline run's merged paradata.
+#: AMČR distribution names (atrium-project#84). The upload is the document's original as sent:
+#: AMČR's name for that distribution is open (atrium-project#84, Q11), so it is a constant here.
+ORIGINAL_DISTRIBUTION = "original"
+RECORD_DISTRIBUTION = "atrium/document-json"
+TEITOK_DISTRIBUTION = "atr/teitok-xml"
 
-    Its `@id` is the `run_uuid` the stats stage stamped on the blocks it wrote (the record's
-    last `nlp-enrich` contributor), so the record and the action name one run; without a
-    record it is the merged run's own. `object` is what the call was sent and the record;
-    `result` is the record's blocks this run stamped and the TEITOK it answers with.
-    """
-    ours = [
-        entry
-        for entry in ((record or {}).get("provenance") or {}).get("contributors") or []
-        if entry.get("program") == "nlp-enrich" and entry.get("run_uuid")
-    ]
-    run_uuid = ours[-1]["run_uuid"] if ours else merged.get("run_uuid")
-    inputs = list(sent)
-    if result.document_json_out is not None:
-        inputs.append(
-            atrium_rocrate.record_entity(str((record or {}).get("doc_id") or result.doc_id))
-        )
-    outputs = atrium_rocrate.block_entities(atrium_rocrate.blocks_written(record, run_uuid or ""))
+
+def _distribution(name: str, data: bytes, media_type: Optional[str]) -> Dict[str, Any]:
+    """A paradata 3.0 input or output: the distribution name and the SHA-512 of its bytes."""
+    entry: Dict[str, Any] = {"name": name, "sha512": hashlib.sha512(data).hexdigest()}
+    if media_type:
+        entry["media_type"] = media_type
+    entry["stored"] = True
+    return entry
+
+
+def _run_action(merged, teitok_xml, sent) -> Dict[str, Any]:
+    """The call's CreateAction (paradata 3.0, atrium-project#84), from the pipeline run's merged
+    paradata. `object`: what the call was sent (`original`) and the record version the stats
+    stage read; `result`: the record it wrote, with the blocks and fields written, and the TEITOK
+    the call answers with (`atr/teitok-xml`), each by SHA-512. The record carries no run data,
+    so nothing in it names the run: the action's `@id` is the merged run's `run_uuid`."""
+    stats = [s for s in merged.get("pipeline_stages") or [] if s.get("script") == "api_4_stats"]
+
+    def record(key: str) -> List[Dict[str, Any]]:
+        return [
+            entry
+            for stage in stats
+            for entry in stage.get(key) or []
+            if entry.get("name") == RECORD_DISTRIBUTION
+        ]
+
+    inputs = list(sent) + record("inputs")
+    outputs = record("outputs")
     if teitok_xml:
         outputs.append(
-            atrium_rocrate.file_entity(
-                f"{result.doc_id}.teitok.xml",
-                teitok_xml.encode("utf-8"),
-                media_type="application/xml",
-            )
+            _distribution(TEITOK_DISTRIBUTION, teitok_xml.encode("utf-8"), "application/xml")
         )
-    return atrium_rocrate.create_action(merged, inputs=inputs, outputs=outputs, action_id=run_uuid)
+    return atrium_rocrate.action_from_paradata({**merged, "inputs": inputs, "outputs": outputs})
 
 
 def _sent(name, data, media_type, alto=None, layout=None) -> List[Dict[str, Any]]:
-    """What a call was sent, for its CreateAction's `object` (atrium-project#71): the upload and
-    a separate `alto` part. A TEITOK upload is its own layout, so it is listed once."""
-    sent = [atrium_rocrate.file_entity(name, data, media_type=media_type)]
+    """What a call was sent, for its CreateAction's `object`: the upload, and a separate `alto`
+    part, each as the document's `original` by SHA-512 (never its file name). A TEITOK upload is
+    its own layout, so it is listed once."""
+    del name  # a file name is not a distribution name (atrium-project#84)
+    sent = [_distribution(ORIGINAL_DISTRIBUTION, data, media_type)]
     if alto is not None and layout is not None and layout.kind == "alto":
-        sent.append(
-            atrium_rocrate.file_entity(
-                alto.filename or "upload.alto.xml", layout.data, media_type="application/alto+xml"
-            )
-        )
+        sent.append(_distribution(ORIGINAL_DISTRIBUTION, layout.data, "application/alto+xml"))
     return sent
 
 
@@ -984,7 +1000,7 @@ _ENRICH_ERRORS = (413, 429, 502, 503, 504)
 
 _SKIP_UNTRUSTWORTHY_HELP = (
     "Opt-in, default false (atrium-project#72). When true, a table's rows whose `categ` is "
-    "untrustworthy (ocr-postprocess's `Trash`, digital-convert's `Garbage` and `Inverted`) are "
+    "untrustworthy (`Trash`, the record builder's line-quality model; atrium_vocab) are "
     "left out of the enrichment, as `run_pipeline.py --skip-untrustworthy-lines` leaves them out. "
     "A record sent as the text is filtered always; a TEITOK or text file has no `categ`."
 )

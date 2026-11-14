@@ -27,7 +27,8 @@ independent invocation, a complete four-step run creates four separate files, so
 in isolation. `run_pipeline.py` merges them into one record per run
 ([What the runner does](../usage.md#what-the-runner-does)).
 
-The paradata logs (samples in [data_samples/paradata](../../data_samples/paradata)) capture key details about each
+The paradata logs (samples in [data_samples/paradata](../../data_samples/paradata), which predate doc-schema-v2 and
+are paradata 2.0) capture key details about each
 pipeline stage, including the program name, run ID, execution duration, configuration parameters, input and output
 statistics, and performance metrics. They also document skipped files with reasons and provide a breakdown of
 output types and processing rates for benchmarking. This structured metadata makes the pipeline's execution
@@ -53,9 +54,22 @@ intermediate state in a plain-text JSON file inside `<OUTPUT_DIR>/paradata/` (na
 This file is removed when the script completes. Because it is plain JSON it can be inspected with any text editor if
 a run is interrupted unexpectedly; `run_pipeline.py --clean-state` sweeps stale ones.
 
-**Components and licences.** Each record lists the components the run used, each with its licence, as declared in
-[para_config.txt](../../para_config.txt). None of them is the licence of the output, and the older calculated
-`license` field beside the list is not one either: [licences.md](licences.md).
+**Paradata schema 3.0** ([atrium-project#84](https://github.com/ufal/atrium-project/issues/84); ARÚP's output
+contract of 12 November 2026). What a run read and wrote is named by AMČR distribution name and SHA-512, never by a
+path:
+
+- `api_4_stats.sh` records the record version read (`inputs`, `atrium/document-json`), the record written
+  (`outputs`, with `record_fields`: the blocks and fields the run wrote) and the TEITOK written (`atr/teitok-xml`);
+  the projection stage records the record it read and the TEITOK it rewrote. The record itself carries no run data.
+- `limits` holds sampling and splitting only: `api_2_udp.sh` notes `word_chunk_limit` `split` for a text sent to
+  UDPipe in chunks. A limit that would trim, skip or stop content fails the run (D13).
+- A failed document fails its stage: the stage's record says `action_status: failed` with the `error`, and the run
+  stops, so nothing reaches AMČR.
+- The CoNLL-U, the CSV tables and the entity summary are development outputs: counted, never named as outputs.
+
+**Components and licences.** Each record lists the components the run used, each with its own licence or terms, as
+declared in [para_config.txt](../../para_config.txt), as facts (`components`). No licence of the output is computed
+or recorded: [licences.md](licences.md).
 
 ### The runtime log, `OUTPUT_DIR/processing.log`
 
@@ -92,7 +106,8 @@ its services. The published images: [usage, Run it in Docker](../usage.md#run-it
 ### The service's provenance
 
 Over HTTP, every `/enrich` response carries `paradata`: the call's Process Run Crate `CreateAction`, built from the
-run's merged pipeline-run record ([service/README.md, JSON envelope](../../service/README.md#json-envelope)).
+run's merged pipeline-run record: the upload as `original` and the record version read as its `object`, the record
+written and the TEITOK as its `result` ([service/README.md, JSON envelope](../../service/README.md#json-envelope)).
 
 ## Document record schema
 
@@ -110,7 +125,11 @@ frozen as the hub tag [`doc-schema-v1`](https://github.com/ufal/atrium-project/r
   record shape the tools write validates under both the frozen and the current schema.
 
 In the record, nlp-enrich owns the `entities` block: each entity points at its `<name>` in the TEITOK file
-(`teitok_ref`), and each page with a surface at its `<surface>` (`pages[].teitok_surface`). How the service accretes
+(`teitok_ref`), and each page with a surface at its `<surface>` (`pages[].teitok_surface`, keyed by `page_index`).
+With the record as the layout it also writes `lines[].lemma`, `upos`, `feats` and `teitok_ref` (the `<s>` of the
+line's head token). Record schema **2.0** (doc-schema-v2, [atrium-project#84](https://github.com/ufal/atrium-project/issues/84))
+holds no run data: no stamps, no `derived_from`, no licence; this tool reads a 1.x record through the hub's migration.
+`doc-schema-v2` is not tagged yet, so the citation below stays `doc-schema-v1`. How the service accretes
 onto a record it is sent: [service/README.md, The document_json accretion part](../../service/README.md#the-document_json-accretion-part).
 
 What may change after the freeze, and what a new major version takes, is in the hub's

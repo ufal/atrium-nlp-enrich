@@ -204,9 +204,6 @@ def test_document_record_entities_are_on_their_pages(tmp_path):
         conllu_path=str(PAGES / "multichunk.conllu"),
         baseline_json=None,
         out_json=str(out_json),
-        run_id="260924-120000",
-        paradata_ref="",
-        license_detail={},
         rows=read_rows(PAGES / "multichunk.rows.tsv"),
     )
     entities = json.loads(out_json.read_text(encoding="utf-8"))["entities"]

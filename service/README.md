@@ -75,7 +75,7 @@ LINDAT services, so the service needs outbound HTTPS to them.
 | `format`                   | `json`                  | `json` envelope, or `zip` of the workspace `OUTPUT_DIR`; any other value → 422                                                                                                                                                                                                                                                                                                                                        |
 | `document_json`            | *optional*              | baseline ATRIUM Document JSON (or an AMČR seed) to accrete onto — see below; not a JSON object → 422 `invalid_record`. A born-digital record is also a layout — see [Layout inputs](#layout-inputs)                                                                                                                                                                                                                   |
 | `teitok_enrichment`        | `false`                 | opt-in: the returned TEITOK also carries, in its header, the record's page categories (`pb/@ana`), its controlled keywords and its statistical keywords — see [`POST /project_record`](#post-project_record-multipart-form). `/jobs` takes it too                                                                                                                                                                     |
-| `skip_untrustworthy_lines` | `false`                 | opt-in: a table's rows whose `categ` is `Trash`, `Garbage` or `Inverted` are left out, as the command line's `SKIP_UNTRUSTWORTHY_LINES`. A record sent as the text is filtered always. `/jobs` and `/enrich_text` take it too                                                                                                                                                                                         |
+| `skip_untrustworthy_lines` | `false`                 | opt-in: a table's rows whose `categ` is `Trash` are left out, as the command line's `SKIP_UNTRUSTWORTHY_LINES`. A record sent as the text is filtered always. `/jobs` and `/enrich_text` take it too                                                                                                                                                                                                                  |
 | `include_record`           | `false`                 | opt-in: `document_json` comes back even when none was sent, a new record with nlp-enrich's blocks, as `run_pipeline.py --document-json-out` alone writes. `/jobs` and `/enrich_text` take it too                                                                                                                                                                                                                      |
 
 ### Layout inputs
@@ -87,7 +87,7 @@ The TEITOK the service returns has the layout of what it was given; `layout_sour
 | `.csv`/`.xlsx`/`.txt`                                           | `rows`          | one `<pb>` per page and one `<lb>` per line of the input; no boxes, no facsimile, no page images                                                             |
 | `.csv`/`.xlsx` + `alto`                                         | `alto`          | as the CLI with `INPUT_ALTO_DIR`: word, line and block boxes, `<facsimile>`, `<figure>`s                                                                     |
 | a TEITOK `.xml` converted by flexiconv                          | `teitok`        | as the CLI with `FLEXICONV_ANNOTATE=true`: its pages, lines and word boxes, its page images' names                                                           |
-| a born-digital record as `document_json`, alone or with a table | `record`        | a `<surface>` per page sized by `pages[].canvas`, the `lines[].bbox` boxes on `<lb>`, token boxes shared out from them, page images named `<doc_id>-<N>.png` |
+| the document's record as `document_json`, alone or with a table | `record`        | a `<surface>` per page sized by `pages[].canvas`, the `lines[].bbox` boxes on `<lb>`, token boxes shared out from them, page images named `<doc_id>-<N>.png` |
 
 * A **TEITOK upload** is text and layout at once: its rows (`teitok_read`) go through the
   pipeline as the document's table, and the file itself becomes that document's layout — the
@@ -98,11 +98,13 @@ The TEITOK the service returns has the layout of what it was given; `layout_sour
 * An **`alto` part** goes with a `.csv`/`.xlsx` (e.g. ocr-postprocess's `DOC_LINE_CATEG` table and
   the ALTO it was made from); with a `.txt` or a TEITOK file it is refused (422). A PAGE XML or
   hOCR file in its place is refused with the hint to convert it with `api_flexiconv.sh`.
-* A **born-digital record** (digital-convert's `POST /reformat` of a PDF) sent as `document_json` (also to
+* The document's **record** (schema 2.0, as the record builder writes it) sent as `document_json` (also to
   `/enrich_text`) is a layout when its pages have a `canvas` and its lines a `bbox`; an `alto` or
-  TEITOK upload wins over it.
-  Sent **without `file`**, the record is the text as well: its `lines[]` (less `Garbage`,
-  `Inverted` and `Trash` lines) are the table, so text and boxes come from the same lines. A
+  TEITOK upload wins over it. A line whose box is its block's (`bbox_precision: derived`) bounds the
+  block and gets no coordinates of its own.
+  Sent **without `file`**, the record is the text as well: its `lines[]` (less `Trash` and `Empty`
+  lines) are the table, so text and boxes come from the same lines, and each line gets back its
+  `lemma`, `upos`, `feats` and `teitok_ref`. A
   table sent with the record is aligned to it character by character: it should list the
   record's lines as they are, because lines left out (running footers, say) shift the alignment,
   and on a long document the boxes then stop matching. A record with no text in `lines[]` (a
@@ -139,17 +141,21 @@ When supplied, the response's `document_json` carries the record back with only
 nlp-enrich's contribution merged in — its `entities[]` rows, whose `teitok_ref` is the
 entity's `<name id>` (`n-1`, …) in the returned TEITOK — while every other tool's block
 (`page_categories`, `lines`, `translations`, `enrichment`, …) passes through **untouched**.
-`pages[].teitok_surface`, the `<surface id>` `facs-P` of a page, is written for pages that
-have a surface: with an `alto` part, or a TEITOK upload whose pages name an image or a size.
+`pages[].teitok_surface`, the `<surface id>` `facs-P` of a page (keyed by `page_index`), is written
+for pages that have a surface: with an `alto` part, a TEITOK upload whose pages name an image or a
+size, or the record's own canvases. With the record as the layout, each of its lines also gets
+`lemma`, `upos`, `feats` and `teitok_ref` (the `<s>` of the line's head token), and an entity's
+`page` and `line` are the record's own. The record comes back without run data (schema 2.0): the
+call's `paradata` names what was read and written.
 This is the same accretion the CLI performs via `run_pipeline.py --document-json/--document-json-out`.
 The service threads the flags through to it, so there is one implementation, not two.
 
 * Omit the part and the key is **absent** from the envelope — not `null`. Existing clients
   see no change at all.
-* Supply it and get `null` back, and the pipeline produced no record (no CoNLL-U reached the
-  document hook, or the hook failed and the run went on without it). `run_pipeline.py` prints
-  `[document-json] NOT WRITTEN` on stdout in that case; the service's `stages` and the
-  pipeline log say why.
+* Supply it and the pipeline produce no record (no CoNLL-U reached the document hook, or the
+  hook failed), and the call fails (D13, atrium-project#84; until then `null` with a 200).
+  `run_pipeline.py` prints `[document-json] NOT WRITTEN` on stdout and exits 1; the pipeline
+  log says why.
 * A baseline that does not validate against `atrium_document.schema.json` is still accepted:
   the pipeline warns, names the schema error, and accretes onto it anyway rather
   than turning one bad upstream record into a stalled pipeline.
@@ -166,25 +172,30 @@ The service threads the flags through to it, so there is one implementation, not
   "teitok_xml": "<?xml ...>",
   "ne_summary": [ {"file": "...", "page": "1", "entities": [...] } ],
   "paradata": { "@id": "urn:uuid:...", "@type": "CreateAction", "...": "..." },
-  "limits_applied": [ {"limit": "ne_summary_top_n", "value": 20, "effect": "trimmed",
-                       "count": 1, "detail": "...", "program": "nlp-enrich"} ],
+  "limits_applied": [ {"limit": "word_chunk_limit", "value": 900, "effect": "split",
+                       "count": 2, "detail": "...", "program": "nlp-enrich"} ],
   "layout_source": "rows",
   "teitok_schema_valid": true, "teitok_schema_errors": [],
   "document_json": { "...only when a baseline was supplied..." }
 }
 ```
 
-`limits_applied` lists every [limit](#limits) that shaped the result without refusing it
-— pages whose entity summary kept its top N. The stages record them in their paradata;
-this is the merged record's list (`[]` when no limit applied).
+`limits_applied` lists the sampling and splitting the result rests on: a text sent to UDPipe
+in chunks (`word_chunk_limit`, `split`). The stages record them in their paradata; this is the
+merged record's `limits` (`[]` when none applied). A limit that would trim, skip or stop content
+fails the call instead (ARÚP's output contract of 12 November 2026, D13).
 
-**`paradata`** is the call's provenance: one Process Run Crate `CreateAction`,
-built by `atrium_rocrate.create_action()` from the run's merged pipeline-run record (its
-`paradataRecord`, with the components of every stage). Its `@id` is the `run_uuid` the stats
-stage stamped on the blocks it wrote into `document_json`, or, without a record, the merged run's
-own. `object` is what the call was sent (the upload or `lines.json`, a separate `alto` part, the
-record), and `result` is the blocks written and the TEITOK. `agent` is `ATRIUM_RUN_AGENT` when set. The
-field is `null` only for a run that left no paradata. An error response carries no action. Hub
+**`paradata`** is the call's provenance (paradata schema 3.0,
+[atrium-project#84](https://github.com/ufal/atrium-project/issues/84)): one Process Run Crate
+`CreateAction`, built by `atrium_rocrate.action_from_paradata()` from the run's merged
+pipeline-run record (its `paradataRecord`, with the components of every stage, each with its own
+terms; no licence of the output is computed). Its `@id` is the merged run's `run_uuid`: the
+record carries no run data. `object` names what the call read, by AMČR distribution name and
+SHA-512: the upload (or `lines.json`, a separate `alto` part) as `original`, and the record version
+read (`atrium/document-json`). `result` is the record written, with the blocks and fields the run
+wrote (`recordFields`), and the TEITOK (`atr/teitok-xml`). The CoNLL-U, CSV and summary are not
+stored outputs and are not named. `agent` is `ATRIUM_RUN_AGENT` when set. The field is `null` only
+for a run that left no paradata. An error response carries no action. Hub
 [`docs/rocrate_export.md`](https://github.com/ufal/atrium-project/blob/main/docs/rocrate_export.md) §5
 describes it.
 
@@ -333,8 +344,8 @@ Every limit is an environment setting, declared in
 `tool_limits.py` and reported with its current value by `GET /info` (`limits`; `limits_meta`
 says which variable sets it and whether the value came from the environment, `config_api.txt`
 or the default). A malformed value stops the service at startup, naming the variable. An input
-over a limit is refused with the [harmonised error](#errors); a limit that shapes a result
-without refusing it is named in `limits_applied`. The three stage limits are also keys of
+over a limit is refused with the [harmonised error](#errors); a limit that splits the input
+is named in `limits_applied`. The three stage limits are also keys of
 `config_api.txt` (named in the table): for an API job the variable wins over the template,
 which wins over the default, and the service writes the effective value into the job's
 config. `tests/test_limits_contract.py` checks this table against `tool_limits.py` and
@@ -349,22 +360,24 @@ config. `tests/test_limits_contract.py` checks this table against `tool_limits.p
 | `api_job_timeout`     | `API_JOB_TIMEOUT`     | 600     | s        | the run and every process it started are stopped, the workspace removed: 504 `limit_exceeded`; a `/jobs` job ends `failed`, reason `limit_exceeded` |
 | `job_ttl_s`           | `JOB_TTL_S`           | 3600    | s        | a finished job is forgotten: `/jobs/{id}` answers 404                                                                                               |
 | `max_rescale_dim`     | `MAX_RESCALE_DIM`     | 100000  | px       | 422 `limit_exceeded` — `width`/`height` over it, or a page that `scale` takes past it                                                               |
-| `word_chunk_limit`    | `WORD_CHUNK_LIMIT`    | 900     | words    | UDPipe gets the text in pieces cut at a line end, annotated in full (`config_api.txt` `WORD_CHUNK_LIMIT`)                                           |
+| `word_chunk_limit`    | `WORD_CHUNK_LIMIT`    | 900     | words    | UDPipe gets the text in pieces cut at a line end, annotated in full — `split` note (`config_api.txt` `WORD_CHUNK_LIMIT`)                            |
 | `lindat_timeout_s`    | `LINDAT_TIMEOUT_S`    | 60      | s        | the UDPipe or NameTag call is retried; when every attempt timed out the stage fails → 504 `limit_exceeded` (`config_api.txt` `TIMEOUT`)             |
 | `lindat_max_retries`  | `LINDAT_MAX_RETRIES`  | 5       | retries  | the stage fails → 502 `upstream_unavailable` (`config_api.txt` `MAX_RETRIES`)                                                                       |
-| `ne_summary_top_n`    | `NE_SUMMARY_TOP_N`    | 20      | entities | a page keeps its N most frequent entities in `ne_summary` — `trimmed` note (the TEITOK and `document_json` carry every entity)                      |
+| `ne_summary_top_n`    | `NE_SUMMARY_TOP_N`    | 20      | entities | a page keeps its N most frequent entities in `ne_summary`, a summary only (the TEITOK and `document_json` carry every entity); no note              |
 
 Not settings: Starlette's multipart parser keeps its own defaults.
 
-## Partial results
+## What a 200 carries
 
-A 200 can carry less than was asked for. Read these before using the result:
+Since ARÚP's output contract of 12 November 2026 (D13) a call that cannot deliver what was asked
+for fails. Read these before using the result:
 
-- `limits_applied` lists each [limit](#limits) that shaped the result without refusing it, for
-  example pages whose entity summary kept its top N.
-- `document_json` is `null` although a `document_json` was sent: the record could not be updated.
-  The other outputs are complete; the record you sent is unchanged, and the service log names the
-  cause on its `[document-json] NOT WRITTEN` line.
+- `limits_applied` lists the splitting the result rests on.
+- A record asked for (`document_json`, `include_record`) and not written fails the call; the
+  service log names the cause on its `[document-json] NOT WRITTEN` line. Until #84 it came back
+  `null` with a 200.
+- `ne_summary` keeps each page's `NE_SUMMARY_TOP_N` most frequent entities; it is a summary, not a
+  stored output.
 - `layout_source` `rows` means the TEITOK has pages and lines but no boxes: no layout input had
   geometry ([Layout inputs](#layout-inputs)).
 
@@ -375,8 +388,12 @@ A 200 can carry less than was asked for. Read these before using the result:
   of the output: the rights in an output depend on the source document and are stated by whoever holds them
   ([Licences and paradata](https://ufal.github.io/atrium-project/ecosystem/licences/)).
 - Every request needs LINDAT: there is no local fallback for UDPipe or NameTag.
-- A born-digital record has line boxes only. Word boxes are shared out from them by character
-  offset, are approximate, and the TEITOK header says so.
+- A record has line boxes at best (block boxes for ATR text without line breaks). Word boxes are
+  shared out from the line boxes by character offset, are approximate, and the TEITOK header says
+  so ([TEITOK's limits](../docs/reference/teitok.md#teitoks-limits)).
+- Not published yet: AMČR does not publish what this service produces through UDPipe and NameTag
+  until [atrium-project#78](https://github.com/ufal/atrium-project/issues/78) settles the LINDAT
+  terms (D35).
 - A record's boxes are in PDF points; `/rescale` with `scale` = DPI/72 turns them into the pixels
   of a page image rendered at that DPI.
 - Named entities come from NameTag's general model (OntoNotes types), not an archaeological one.

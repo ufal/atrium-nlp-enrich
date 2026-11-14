@@ -1,10 +1,10 @@
-"""tests/test_record_layout.py -- TEITOK from a born-digital record (issue #42).
+"""tests/test_record_layout.py -- TEITOK from the document's record (issue #42; atrium-project#84).
 
-A born-digital PDF has no ALTO; its ATRIUM record (digital-convert ``/reformat``) has
-``pages[].canvas`` and ``lines[].bbox``. ``api_util/record_layout.py`` reads the record into
-the structures ``teitok_alto._parse_alto()`` returns, so the writer gives it a ``<surface>``
-per page and boxed ``<lb>``s and ``<tok>``s. The fixtures are synthetic records made by
-digital-convert (``tests/record_layout_data.py``).
+The ATRIUM record (schema 2.0, written by the record builder) has ``pages[].canvas`` and
+``lines[].bbox`` with ``bbox_precision`` and ``block``. ``api_util/record_layout.py`` reads the
+record into the structures ``teitok_alto._parse_alto()`` returns, so the writer gives it a
+``<surface>`` per page and boxed ``<lb>``s and ``<tok>``s. The fixtures are synthetic records
+first made by digital-convert, rewritten as 2.0 records (``tests/record_layout_data.py``).
 """
 
 import collections
@@ -55,7 +55,8 @@ def test_pages_come_from_the_canvases_and_keep_their_labels():
     assert meta["page_labels"] == {1: "i", 2: "ii"} and meta["page_count"] == 2
     assert meta["layout_source"] == "record" and meta["measurement_unit"] == "pt"
     assert (meta["orgfile"], meta["record_file"]) == ("two_column.pdf", "two_column.document.json")
-    assert meta["converter"] == "digital-convert"
+    # record schema 2.0 holds no contributors: the lines are the record builder's (its grant)
+    assert meta["converter"] == "ocr-postprocess" and meta["text_sources"] == ["text-layer"]
     assert graphics == []
     assert {s["page_idx"] for s in strings} == {1, 2}
 
@@ -87,20 +88,35 @@ def test_a_vertical_line_box_is_shared_out_downwards():
     assert word_boxes("a b", None) == [("a", None), ("b", None)]
 
 
-def test_blocks_are_the_line_groups_with_their_region():
+def test_blocks_are_the_records_docproc_blocks():
+    """`lines[].block` (record schema 2.0) groups the lines; layout cues such as a running
+    head are docproc's since 2.0 (D26), so no block has a subtype."""
     _, _, _, blocks, _ = parse_record_layout(record_path("two_column"))
     by_page = collections.defaultdict(list)
-    for block in blocks.values():
-        by_page[block["page_idx"]].append(block)
-    assert [b["subtype"] for b in by_page[1]] == [
-        "page_header",
-        None,
-        None,
-        None,
-        None,
-        "page_footer",
+    for block_id, block in blocks.items():
+        by_page[block["page_idx"]].append((block_id, block))
+    assert [block_id for block_id, _ in by_page[1]] == [
+        f"__record_block1:p1-b{n}" for n in range(1, 7)
     ]
-    assert by_page[1][2]["bbox"] == "72 102.484 203.388 142.484"  # three lines of a column
+    assert {block["subtype"] for _, block in by_page[1]} == {None}
+    assert by_page[1][2][1]["bbox"] == "72 102.484 203.388 142.484"  # three lines of a column
+
+
+def test_a_derived_box_bounds_its_block_and_the_line_gets_no_coordinates(tmp_path):
+    """`bbox_precision: derived` is the block's box (D16): it bounds the block, the line and
+    its words carry none, and the header counts such lines. `absent` gives no box at all."""
+    data = record("two_column")
+    data["lines"][2]["bbox_precision"] = "derived"
+    data["lines"][3]["bbox_precision"] = "absent"
+    path = _write_record(tmp_path, data)
+    strings, _, _, blocks, meta = parse_record_layout(path)
+    derived = [s for s in strings if s["content"] in ("Sonda", "val")]
+    absent = [s for s in strings if s["content"] in ("Vrstva", "tenka")]
+    assert derived and all(s["left"] is None and s["line_bbox"] == "" for s in derived)
+    assert absent and all(s["left"] is None for s in absent)
+    # the derived box still bounds the block; the absent line's former box no longer does
+    assert blocks[derived[0]["block_id"]]["bbox"] == "72 102.484 185.112 142.484"
+    assert meta["derived_boxes"] == 1
 
 
 def test_lines_without_a_box_are_placed_without_coordinates(tmp_path):
@@ -110,6 +126,7 @@ def test_lines_without_a_box_are_placed_without_coordinates(tmp_path):
     for line in data["lines"]:
         if line["page"] == "ii":
             del line["bbox"]
+            line["bbox_precision"] = "absent"
     strings, pages, *_ = parse_record_layout(_write_record(tmp_path, data))
     on_ii = [s for s in strings if s["page_idx"] == 2]
     assert on_ii and all(s["left"] is None and s["line_bbox"] == "" for s in on_ii)
@@ -119,9 +136,11 @@ def test_lines_without_a_box_are_placed_without_coordinates(tmp_path):
 
 def test_untrustworthy_lines_are_left_out_of_text_and_layout(tmp_path):
     data = record("two_column")
-    data["lines"][2]["categ"] = "Garbage"
+    data["lines"][2]["categ"] = "Trash"
+    data["lines"][3]["categ"] = "Empty"
     path = _write_record(tmp_path, data)
     assert "Sonda II odkryla val." not in [line.text for line in text_lines(path)]
+    assert "Vrstva ornice byla tenka." not in [line.text for line in text_lines(path)]
     assert "Sonda" not in [s["content"] for s in parse_record_layout(path)[0]]
     assert "Sonda II odkryla val." not in [r["text"] for r in record_rows(path)]
 
@@ -203,8 +222,8 @@ def test_a_record_gives_a_surface_per_page_and_boxed_lines(two_column, capsys):
     assert lbs[0].get("bbox") == "72 20 189 29"
     assert all(t.get("bbox") for t in root.iter("tok") if t.get("type") == "w")
     _toks_inside_their_lb(root)
-    subtypes = [d.get("subtype") for d in root.iter("div")]
-    assert subtypes.count("page_header") == 2 and subtypes.count("page_footer") == 2
+    # no layout cues in a 2.0 record (D26): running heads are docproc's
+    assert not any(d.get("subtype") for d in root.iter("div"))
     assert "page canvases are in pt" in capsys.readouterr().err
 
 
@@ -223,9 +242,11 @@ def test_the_header_names_the_record_and_the_approximate_token_boxes(two_column)
     assert "two_column.document.json" in root.find(".//sourceDesc/p").text
     writer = root.find(".//application[@ident='atrium-nlp-enrich']/desc").text
     assert "apportioned from line boxes" in writer
-    assert root.find(".//application[@ident='digital-convert']") is not None
+    assert "line text from: text-layer" in root.find(".//sourceDesc/p").text
+    # the record builder, by its grant of lines[] (record schema 2.0 holds no contributors)
+    assert root.find(".//application[@ident='ocr-postprocess']") is not None
     changes = {(c.get("who"), c.get("type")) for c in root.iter("change")}
-    assert ("digital-convert", "converted") in changes
+    assert ("ocr-postprocess", "converted") in changes
     assert ("altoconvert", "converted") not in changes
 
 
@@ -300,9 +321,6 @@ def test_the_hook_keys_pages_by_label_and_boxes_entities_in_points(tmp_path):
         conllu_path=str(conllu),
         baseline_json=str(rec),
         out_json=str(rec),
-        run_id="261015-120000",
-        paradata_ref="261015-120000_nlp-enrich.json",
-        license_detail={},
         alto_path=str(rec),
     )
     out = json.loads(rec.read_text(encoding="utf-8"))

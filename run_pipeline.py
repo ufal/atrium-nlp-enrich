@@ -539,13 +539,12 @@ def _collect_document_json_output(
     seed file left behind by a doc_id mismatch (see _prepare_document_json_bridge). Falls back
     to globbing *.document.json only when doc_id couldn't be determined (batch runs); zero
     files found means the stage never reached the document-json hook (e.g. no CoNLL-U was
-    produced upstream, or the hook itself raised and summarize_nt_udp.py warned and carried
-    on) -- reported, not silently swallowed either way.
+    produced upstream) -- reported, and the run fails (D13).
 
     A record byte-identical to ``baseline`` (the caller's --document-json, which seeded the
-    scratch directory) is the seed the hook never rewrote: the hook raised and summarize_nt_udp.py
-    warned and carried on. It is not copied out either, so the caller is not handed its own
-    record back as if nlp-enrich had enriched it (atrium-nlp-enrich#42).
+    scratch directory) is the seed the hook never rewrote. It is not copied out either, so the
+    caller is not handed its own record back as if nlp-enrich had enriched it
+    (atrium-nlp-enrich#42).
     """
     if doc_id:
         record = scratch_dir / f"{doc_id}.document.json"
@@ -664,7 +663,7 @@ def main(argv=None):
         "--skip-untrustworthy-lines",
         action="store_true",
         help="Opt-in (default off; also SKIP_UNTRUSTWORTHY_LINES=true in the config): leave out "
-        "a table's rows whose categ is Trash, Garbage or Inverted (atrium-project#72).",
+        "a table's rows whose categ is untrustworthy, Trash (atrium-project#72; atrium_vocab).",
     )
     parser.add_argument(
         "--document-json-out",
@@ -804,19 +803,18 @@ def main(argv=None):
     _finalize_merge(results, paradata_dir, args, before, skipped_names)
 
     # (atrium-project#10, J4) The promise the run made and did not keep, restated on stdout
-    # where an automated caller sees it. Still exit 0: a document hook that failed degrades
-    # gracefully by design (rule 3 -- nlp-enrich's own outputs are all present and valid, and
-    # a missing upstream baseline must not fail a standalone run), so turning this into a
-    # non-zero exit would break every caller that does not use the flag's output. Detectable,
-    # not fatal.
+    # where an automated caller sees it. Since atrium-project#84 (D13) it fails the run: a
+    # record that was asked for and not written must not let the job write anything to AMČR.
+    # A missing upstream baseline is no such failure (rule 3: the record then holds
+    # nlp-enrich's part only).
     if doc_json_written is False:
         print(
             f"{DOC_JSON_NOT_WRITTEN_MARKER} — --document-json-out "
             f"{args.document_json_out} was requested but the 'stats' stage produced no "
-            f"document record; see the [document] lines on stderr for the reason. "
-            f"nlp-enrich's other outputs are unaffected.",
+            f"document record; see the [document] lines on stderr for the reason.",
             flush=True,
         )
+        return 1
 
     if empty_failures and fail_on_empty:
         print(

@@ -379,28 +379,22 @@ def test_a_projection_of_an_earlier_release_is_replaced_too():
     assert "app-llm-enrich" not in again and 'id="app-kw"' not in again
 
 
-def test_the_application_names_the_program_the_stamp_names():
-    """An `enrichment` block written before 1 October 2026 is llm-enrich's, and says so."""
+def test_the_application_names_the_program_granted_the_block():
+    """Record schema 2.0 has no stamps (atrium-project#84): the application is the program the
+    block is granted to (atrium_document.BLOCK_OWNERS), and no run is named; which run wrote a
+    block is its paradata. A stale `assembled` in a record changes nothing."""
     record = copy.deepcopy(RECORD_KW)
-    record["assembled"] = {
-        "blocks": {
-            "enrichment": {"program": "llm-enrich", "run_id": "260925-101112"},
-            "keywords": {"program": "keyword-extract", "run_id": "261009-120000"},
-        }
-    }
+    record["assembled"] = {"blocks": {"enrichment": {"program": "llm-enrich", "run_id": "x"}}}
     root = _tree(_project(_sample(), record)[0])
     apps = {
         a.get("id"): (a.get("ident"), a.findtext("desc"))
         for a in root.iter("application")
         if a.get("id")
     }
-    assert apps["app-kw-controlled"] == (
-        "atrium-llm-enrich",
-        "enrichment block of the record, run 260925-101112",
-    )
+    assert apps["app-kw-controlled"] == ("atrium-keyword-extract", "enrichment block of the record")
     assert apps["app-kw-statistical"] == (
         "atrium-keyword-extract",
-        "keywords block of the record, method=yake, run 261009-120000",
+        "keywords block of the record, method=yake",
     )
 
 

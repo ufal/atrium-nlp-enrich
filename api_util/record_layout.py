@@ -1,9 +1,10 @@
 """record_layout.py -- an ATRIUM document record as the layout source of the TEITOK writer (#42).
 
-A born-digital PDF has no ALTO. Its record, written by digital-convert (``POST /reformat``), has
-the page geometry instead: ``pages[].canvas`` (``width``, ``height``, ``unit``) and
-``lines[].bbox``, ``[x_min, y_min, x_max, y_max]`` with the origin top-left and y down, in the
-page's canvas unit (``atrium_document.schema.json`` ``$defs/bbox``) -- TEITOK's own convention.
+A record (schema 2.0, atrium-project#84) has the page geometry: ``pages[].canvas`` (``width``,
+``height``, ``unit``, ``user_unit``) and ``lines[].bbox``, ``[x_min, y_min, x_max, y_max]`` with the
+origin top-left and y down, in the page's canvas unit (``atrium_document.schema.json``
+``$defs/bbox``) -- TEITOK's own convention. ``lines[].bbox_precision`` says how a box was obtained:
+``measured`` for the line, ``derived`` from its docproc block, or ``absent``.
 
 ``parse_record_layout()`` therefore returns what ``teitok_alto._parse_alto()`` returns for ALTO --
 ``(strings, pages, graphics, blocks, meta)`` -- so the alignment, the writer and
@@ -11,27 +12,34 @@ page's canvas unit (``atrium_document.schema.json`` ``$defs/bbox``) -- TEITOK's 
 (``teitok_layout.py``):
 
 * **lines** -- ``text_lines()``: the record's ``lines[]`` that have text, in record order, without
-  the categories ``atrium_vocab.UNTRUSTWORTHY_LINE_CATEGORIES`` names (the lines ``json_to_md``
-  drops). ``record_rows()`` turns the same lines into the service's table, so a record sent
-  alone is text and layout from one selection, and no line left out of one shifts the
-  character alignment of the other.
-* **pages** -- one per ``pages[]`` row with a canvas: its size and unit (the schema's ``px`` is
-  ALTO's ``pixel``). A page without a canvas (a DOCX) gets no ``<surface>``. Pages are numbered
-  by ``page_index``; ``meta["page_labels"]`` keeps a label that is not the number (``i``,
-  ``ii``) for ``<pb n>``, and ``meta["page_count"]`` the number of pages, so a page without
-  text (a scanned plate) still gets its ``<pb>``.
-* **strings** -- the whitespace words of each line. A line with a ``bbox`` on a page with a
-  canvas gives each word the share of the line box its characters take, along the box's
-  longer side (vertical text runs down). The record has no word boxes, so these are
-  approximate, and the TEITOK header says so. A line without a box (a DOCX, or a page re-read
-  by OCR, W3 of atrium-digital-convert#4) gives words without coordinates: they still put
-  their tokens on the right page and line.
-* **blocks** -- ``lines[].group_id`` (a PDF text block per column, a DOCX paragraph or table
-  cell) per page, with the union of its line boxes. ``subtype`` is the lines' ``style.region``
-  (``page_header``, ``page_footer``, ``footnote``), so running heads stay recognisable.
+  the categories ``atrium_vocab.UNTRUSTWORTHY_LINE_CATEGORIES`` names and ``Empty`` (the lines
+  ``json_to_md`` drops). Each keeps its page label and its record ``line``, so the document hook
+  can write per-line fields back to that line. ``record_rows()`` turns the same lines into the
+  service's table, so a record sent alone is text and layout from one selection, and no line left
+  out of one shifts the character alignment of the other.
+* **pages** -- one per ``pages[]`` row with a canvas: its size and unit (``pt``, 1/72 inch times
+  ``user_unit``, the 2.0 default; ``px`` for a PCSS page whose original was not matched). Boxes
+  stay in the record's one coordinate space (D28), so an entity's box is the record's; the writer
+  scales a ``pt`` page as plain points, which is exact while ``user_unit`` is 1 (the coordinate
+  work on UserUnit is digital-convert's, deferred). A page without a canvas (a DOCX)
+  gets no ``<surface>``. Pages are numbered by ``page_index``; ``meta["page_labels"]`` keeps a
+  label that is not the number (``i``, ``ii``) for ``<pb n>``, and ``meta["page_count"]`` the
+  number of pages, so a page without text (a scanned plate) still gets its ``<pb>``.
+* **strings** -- the whitespace words of each line. A line with a ``measured`` box on a page with
+  a canvas gives each word the share of the line box its characters take, along the box's longer
+  side (vertical text runs down). The record has no word boxes, so these are approximate, and the
+  TEITOK header says so. A ``derived`` box is the line's block's, not the line's: it bounds the
+  block, and the line and its words get no coordinates (the header counts such lines). A line
+  without a box (``absent``, a DOCX) gives words without coordinates: they still put their tokens
+  on the right page and line.
+* **blocks** -- ``lines[].block``, the docproc block id (``p3-b7``), per page, with the union of
+  its line boxes. Layout cues (a running head, a footnote) are docproc's since 2.0 (D26), so a
+  block has no ``subtype``.
 * **meta** -- ``layout_source="record"``, the canvas unit, the original file name
-  (``source.filename``), the record's file name and the converter: the first contributor that
-  wrote ``lines``, with the date it did.
+  (``source.filename``), the record's file name, the record builder (the program granted
+  ``lines``, ``atrium_document.BLOCK_OWNERS``) and where the lines' text came from
+  (``text_sources``, ``lines[].text_source``). A 2.0 record carries no run data, so no
+  converter version or date is read from it.
 
 The writer scales the coordinates as it scales ALTO's (``teitok_alto._build_page_scale_map``):
 to a page image, else by ``IMAGE_DPI`` (a ``pt`` is 1/72 inch, ``bbox_scale.unit_per_inch``),
@@ -49,6 +57,7 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+from atrium_document import BLOCK_OWNERS  # noqa: E402
 from atrium_vocab import UNTRUSTWORTHY_LINE_CATEGORIES  # noqa: E402
 
 RECORD_SUFFIX = ".document.json"
@@ -57,6 +66,8 @@ _WORD = re.compile(r"\S+")
 _UNITS = {"px": "pixel", "pixel": "pixel", "pt": "pt"}
 #: A line box this much taller than wide is vertical text: its words are stacked downwards.
 _VERTICAL_RATIO = 1.5
+#: Lines with nothing to read (``json_to_md`` drops the same ones).
+_SKIPPED_CATEGORIES = frozenset(UNTRUSTWORTHY_LINE_CATEGORIES) | {"Empty"}
 
 Box = Tuple[float, float, float, float]
 
@@ -67,9 +78,14 @@ class TextLine(NamedTuple):
     page_idx: int
     text: str
     bbox: Optional[Box]
-    group_id: Optional[str]
-    region: Optional[str]
+    block: Optional[str]
     lang: Optional[str]
+    #: The record's own key of the line: its page label and 1-based line number.
+    page: str = ""
+    line: int = 0
+    #: ``measured``, ``derived`` or ``absent`` (``lines[].bbox_precision``).
+    bbox_precision: str = "absent"
+    text_source: Optional[str] = None
 
 
 def load(src) -> Dict[str, Any]:
@@ -97,6 +113,16 @@ def _bbox(value) -> Optional[Box]:
     return x1, y1, x2, y2
 
 
+def _label(page) -> Optional[str]:
+    """A ``pages[]`` row's label: ``page``, else its ``page_index`` (``page`` is optional in 2.0)."""
+    if not isinstance(page, dict):
+        return None
+    if page.get("page") is not None:
+        return str(page["page"])
+    idx = page.get("page_index")
+    return str(idx) if isinstance(idx, int) and not isinstance(idx, bool) else None
+
+
 def _canvas(page) -> Optional[Tuple[float, float, str]]:
     """``(width, height, unit)`` of a ``pages[]`` row with a usable canvas, else None."""
     canvas = page.get("canvas") if isinstance(page, dict) else None
@@ -108,7 +134,7 @@ def _canvas(page) -> Optional[Tuple[float, float, str]]:
         return None
     if width <= 0 or height <= 0:
         return None
-    unit = str(canvas.get("unit") or "px").strip()  # the schema's default
+    unit = str(canvas.get("unit") or "pt").strip()  # the schema's default since 2.0
     return width, height, _UNITS.get(unit.lower(), unit)
 
 
@@ -116,10 +142,11 @@ def _page_index(record) -> Dict[str, int]:
     """``{page label: page_index}``; a row without ``page_index`` counts by its position."""
     index: Dict[str, int] = {}
     for pos, page in enumerate(record.get("pages") or [], start=1):
-        if not isinstance(page, dict) or page.get("page") is None:
+        label = _label(page)
+        if label is None:
             continue
         idx = page.get("page_index")
-        index.setdefault(str(page["page"]), idx if isinstance(idx, int) and idx > 0 else pos)
+        index.setdefault(label, idx if isinstance(idx, int) and idx > 0 else pos)
     return index
 
 
@@ -127,10 +154,20 @@ def _num(value: float) -> str:
     return f"{value:.3f}".rstrip("0").rstrip(".")
 
 
+def _precision(row, box: Optional[Box]) -> str:
+    """The line's ``bbox_precision``; a box with none stated counts as the line's own."""
+    stated = row.get("bbox_precision")
+    if box is None:
+        return "absent"
+    if stated in ("measured", "derived"):
+        return stated
+    return "absent" if stated == "absent" else "measured"
+
+
 def text_lines(src) -> List[TextLine]:
     """The lines the TEITOK is made of: ``lines[]`` with text, in record order, without
-    untrustworthy categories (see the module docstring). A line names its page by label; a label
-    ``pages[]`` does not list is numbered after the last known page."""
+    untrustworthy or empty lines (see the module docstring). A line names its page by label; a
+    label ``pages[]`` does not list is numbered after the last known page."""
     record = load(src)
     index = _page_index(record)
     out = []
@@ -140,21 +177,26 @@ def text_lines(src) -> List[TextLine]:
         text = row.get("text")
         if not isinstance(text, str) or not text.strip():
             continue
-        if row.get("categ") in UNTRUSTWORTHY_LINE_CATEGORIES:
+        if row.get("categ") in _SKIPPED_CATEGORIES:
             continue
         label = str(row.get("page", "1"))
         if label not in index:
             index[label] = max(index.values(), default=0) + 1
-        style = row.get("style") if isinstance(row.get("style"), dict) else {}
-        group = row.get("group_id")
+        box = _bbox(row.get("bbox"))
+        precision = _precision(row, box)
+        block = row.get("block")
+        line = row.get("line")
         out.append(
             TextLine(
                 page_idx=index[label],
                 text=text,
-                bbox=_bbox(row.get("bbox")),
-                group_id=str(group) if group is not None else None,
-                region=style.get("region"),
+                bbox=box if precision != "absent" else None,
+                block=str(block) if block is not None else None,
                 lang=row.get("lang"),
+                page=label,
+                line=line if isinstance(line, int) and not isinstance(line, bool) else 0,
+                bbox_precision=precision,
+                text_source=row.get("text_source"),
             )
         )
     return out
@@ -183,13 +225,12 @@ def record_has_geometry(src) -> bool:
         record = load(src)
     except (OSError, ValueError):
         return False
-    canvases = {
-        str(p.get("page"))
-        for p in record.get("pages") or []
-        if _canvas(p) and p.get("page") is not None
-    }
+    canvases = {_label(p) for p in record.get("pages") or [] if _canvas(p) and _label(p)}
     return any(
-        isinstance(row, dict) and str(row.get("page")) in canvases and _bbox(row.get("bbox"))
+        isinstance(row, dict)
+        and str(row.get("page")) in canvases
+        and _bbox(row.get("bbox"))
+        and row.get("bbox_precision") != "absent"
         for row in record.get("lines") or []
     )
 
@@ -215,18 +256,12 @@ def word_boxes(text: str, box: Optional[Box]) -> List[Tuple[str, Optional[Box]]]
     return out
 
 
-def _converter(record) -> Tuple[str, str, str]:
-    """``(program, version, date)`` of the first contributor that wrote ``lines``."""
-    for entry in (record.get("provenance") or {}).get("contributors") or []:
-        if not isinstance(entry, dict):
-            continue
-        blocks = entry.get("blocks") or []
-        if isinstance(blocks, str):
-            blocks = blocks.split(",")
-        if "lines" in {str(b).strip() for b in blocks}:
-            date = str(entry.get("at") or "")[:10]
-            return str(entry.get("program") or ""), str(entry.get("version") or ""), date
-    return "", "", ""
+def line_keys(src) -> Dict[str, Tuple[str, int]]:
+    """``{line_id: (page label, record line)}`` of the strings ``parse_record_layout()`` makes:
+    how the document hook writes a token's fields back to the record line it came from."""
+    return {
+        f"__record_line{k}": (line.page, line.line) for k, line in enumerate(text_lines(src), 1)
+    }
 
 
 def _empty_meta():
@@ -244,6 +279,8 @@ def _empty_meta():
         "record_file": "",
         "page_labels": {},
         "page_count": 0,
+        "text_sources": [],
+        "derived_boxes": 0,
     }
 
 
@@ -262,7 +299,7 @@ def parse_record_layout(path):
 
     meta["record_file"] = Path(path).name
     meta["orgfile"] = str((record.get("source") or {}).get("filename") or "")
-    meta["converter"], meta["converter_version"], meta["converted_on"] = _converter(record)
+    meta["converter"] = str(BLOCK_OWNERS.get("lines") or "")
 
     canvases = {}
     index = _page_index(record)
@@ -271,9 +308,10 @@ def parse_record_layout(path):
             meta["page_labels"][idx] = label
     for page in record.get("pages") or []:
         canvas = _canvas(page)
-        if canvas is None or page.get("page") is None:
+        label = _label(page)
+        if canvas is None or label is None:
             continue
-        idx = index[str(page["page"])]
+        idx = index[label]
         canvases[idx] = canvas
         pages.append(
             {
@@ -293,11 +331,16 @@ def parse_record_layout(path):
 
     lines = text_lines(record)
     meta["page_count"] = max([*index.values(), *(line.page_idx for line in lines), 0])
+    meta["text_sources"] = sorted({line.text_source for line in lines if line.text_source})
     for k, line in enumerate(lines, start=1):
         box = line.bbox if line.page_idx in canvases else None
+        # A derived box is the block's (bbox_precision): it bounds the block, never the line.
+        line_box = box if line.bbox_precision == "measured" else None
+        if box is not None and line.bbox_precision == "derived":
+            meta["derived_boxes"] += 1
         block_id = None
-        if line.group_id is not None:
-            block_id = f"__record_block{line.page_idx}:{line.group_id}"
+        if line.block is not None:
+            block_id = f"__record_block{line.page_idx}:{line.block}"
             block = blocks.setdefault(
                 block_id, {"box": None, "subtype": None, "page_idx": line.page_idx}
             )
@@ -306,10 +349,9 @@ def parse_record_layout(path):
                 block["box"] = box if old is None else (
                     min(old[0], box[0]), min(old[1], box[1]), max(old[2], box[2]), max(old[3], box[3])
                 )  # fmt: skip
-            block["subtype"] = block["subtype"] or line.region
-        line_bbox = " ".join(_num(v) for v in box) if box is not None else ""
+        line_bbox = " ".join(_num(v) for v in line_box) if line_box is not None else ""
         lang = _norm_lang(line.lang)
-        for word, wbox in word_boxes(line.text, box):
+        for word, wbox in word_boxes(line.text, line_box):
             strings.append(
                 {
                     "content": word,

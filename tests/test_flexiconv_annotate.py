@@ -180,9 +180,6 @@ def test_document_record_gets_boxes_and_ids_from_the_same_parse(tmp_path):
         conllu_path=str(ANNOTATED / "page.conllu"),
         baseline_json=None,
         out_json=str(out_json),
-        run_id="260924-120000",
-        paradata_ref="paradata/260924-120000_nlp-enrich.json",
-        license_detail={},
         alto_path=str(FLEX / "page.teitok.xml"),
     )
     record = json.loads(out_json.read_text(encoding="utf-8"))
@@ -191,7 +188,8 @@ def test_document_record_gets_boxes_and_ids_from_the_same_parse(tmp_path):
     assert (praze["surface"], praze["type_teitok"], praze["type_onto"]) == ("Praze", "LOC", "GPE")
     assert praze["bbox"] == [620.0, 100.0, 820.0, 150.0]
     assert all(e["teitok_ref"] in ids for e in record["entities"])
-    assert record["pages"] == [{"page": "1", "teitok_surface": "facs-1"}]
+    # keyed by page_index (record schema 2.0); the label is the record builder's to write
+    assert record["pages"] == [{"page_index": 1, "teitok_surface": "facs-1"}]
     jsonschema = pytest.importorskip("jsonschema")
     from atrium_document import load_schema
 

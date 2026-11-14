@@ -13,11 +13,11 @@ On this page: [the flow](#the-flow) · [the four stages](#the-four-stages) ·
 ## The flow
 
 ```
- line table (CSV, XLSX, .txt)                     layout, optional: ALTO | flexiconv TEITOK | born-digital record
+ line table (CSV, XLSX, .txt), or the record      layout, optional: the record | ALTO | flexiconv TEITOK
         |                                                          |      page images, optional
         v                                                          v
  1 manifest --> 2 UDPipe 2 (LINDAT) --> 3 NameTag 3 (LINDAT) --> 4 merge and write --> CSV, CoNLL-U, TEITOK XML,
-   text, rows     CoNLL-U                 entities per page                              the record's entities, paradata
+   text, rows     CoNLL-U                 entities per page                              the record's entities and lines, paradata
 ```
 
 The command line runs the four stage scripts in order, `api_1_manifest.sh` … `api_4_stats.sh`, by hand or through
@@ -158,15 +158,21 @@ them:
 
 A word's box in the TEITOK file is only as precise as the layout it came from. The writer takes the layout of a
 document from the first of these it finds: its ALTO file, a TEITOK file that flexiconv converted, or the document's
-born-digital record. If none exists, there is no layout (see
-[How a TEITOK document is composed](reference/teitok.md#how-a-teitok-document-is-composed)).
+ATRIUM record. In the AMČR pipeline only the record is used: no ALTO is produced or stored (ARÚP's output contract of
+12 November 2026, D24; ALTO and flexiconv input stay for batch and research use). If none exists, there is no layout
+(see [How a TEITOK document is composed](reference/teitok.md#how-a-teitok-document-is-composed)).
 
 | Layout                                                                    | Boxes in the TEITOK file                                                                                | How precise                                                                                      |
 |---------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
 | ALTO (`INPUT_ALTO_DIR`; the service's `alto` part)                        | every token aligned to an OCR string gets that string's box; lines, text blocks and figures keep theirs | measured: the OCR engine's word coordinates                                                      |
 | a flexiconv conversion of PAGE XML, hOCR or ALTO (`FLEXICONV_ANNOTATE`)   | word and line boxes from the source; punctuation that flexiconv did not box has none                    | measured, as in the source                                                                       |
-| a born-digital record (digital-convert's `POST /reformat` of a PDF)       | line boxes from `lines[].bbox`; each word gets the share of its line box that its characters take       | estimated from line geometry, not measured; the TEITOK header says so; in PDF points (1/72 inch) |
+| the ATRIUM record (schema 2.0, the record builder's `lines[]`)            | line boxes from `lines[].bbox`; each word gets the share of its line box that its characters take       | estimated from line geometry, not measured; the TEITOK header says so; in the record's space     |
+| … a line with `bbox_precision: derived` (its block's box, ATR text)       | none for the line and its words; the box bounds the block                                               | the header counts such lines                                                                     |
 | a flexiconv conversion of PDF, DOCX or text; a table alone; a DOCX record | none: the pages and lines only, without a facsimile                                                     | —                                                                                                |
+
+With the record as the layout, the record's own keys go back into it: `entities[].page` and `line` are the
+record's, and each line gets the lemma, UPOS and features of its head token (the first word whose syntactic head lies
+outside the line) and the id of that token's `<s>` as `teitok_ref`.
 
 The record's boxes are scaled as ALTO's are: to the page images, or by `IMAGE_DPI`. The service does neither and
 answers in points; `POST /rescale` with `scale` = the images' DPI / 72 converts them

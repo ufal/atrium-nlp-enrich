@@ -1,5 +1,6 @@
 import argparse
 import csv
+import json
 import os
 import re
 import sys
@@ -16,7 +17,6 @@ from api_util import doc_identity as _doc_identity  # noqa: E402
 from api_util import page_rows as _page_rows  # noqa: E402
 from api_util.teitok_alto import write_teitok_merged  # noqa: E402
 from atrium_document import canonical_doc_id  # noqa: E402
-from atrium_paradata import ParadataLogger  # noqa: E402
 
 # Increase CSV field size limit just in case
 csv.field_size_limit(sys.maxsize)
@@ -446,10 +446,12 @@ def process_merged_file(merged_filepath, output_csv_path, rows=None, doc_id=""):
 def _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv_path):
     """Append one summary row per page: its NE_SUMMARY_TOP_N most frequent entities.
 
-    Returns how many pages had more distinct entities than that, which the caller
-    records as a ``trimmed`` note (atrium-project#53; the TEITOK and the document record
-    carry every entity). The top N was the literal 20 before it became a setting; a CSV
-    written under another N keeps its own header, so write one file per setting.
+    Returns how many pages had more distinct entities than that. The summary is a
+    development output, not a stored distribution, so its cap is no limit on content (the
+    TEITOK and the document record carry every entity) and is not recorded in the paradata
+    (D13, atrium-project#84; until then a ``trimmed`` note). The top N was the literal 20
+    before it became a setting; a CSV written under another N keeps its own header, so write
+    one file per setting.
     """
     from collections import Counter
 
@@ -487,35 +489,47 @@ def append_summary_row(doc_name, merged_conllu_path, summary_csv_path, rows=None
     return _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv_path)
 
 
-def note_summary_trimmed(para_state, pages):
-    """Record in the stage's paradata (the ``atrium_paradata.py start`` state file) that
-    ``pages`` pages kept only their NE_SUMMARY_TOP_N most frequent entities."""
-    if not para_state or not pages:
+#: AMČR distribution names (atrium-project#84): what the run's paradata name its record and
+#: TEITOK by, with their SHA-512.
+RECORD_DISTRIBUTION = "atrium/document-json"
+TEITOK_DISTRIBUTION = "atr/teitok-xml"
+
+
+def record_io(para_state, verb, name, path, media_type, record_fields=None):
+    """Record an input or output of the stage's run in its paradata state file (the
+    ``atrium_paradata.py start`` state), by distribution name and the SHA-512 of ``path``
+    (the path is hashed, never recorded). ``record_fields``: the blocks and fields written."""
+    if not para_state:
         return
     import subprocess
+    import tempfile
 
-    top_n = tool_limits.NE_SUMMARY_TOP_N.get()
-    subprocess.run(
-        [
-            sys.executable,
-            str(_project_root / "atrium_paradata.py"),
-            "note-limit",
-            "--state",
-            str(para_state),
-            "--limit",
-            "ne_summary_top_n",
-            "--value",
-            str(top_n),
-            "--effect",
-            "trimmed",
-            "--count",
-            str(pages),
-            "--detail",
-            f"page(s) with more than {top_n} distinct entities kept their {top_n} most frequent "
-            "in the entity summary (the TEITOK and the document record carry every entity)",
-        ],
-        check=False,
-    )
+    cmd = [
+        sys.executable,
+        str(_project_root / "atrium_paradata.py"),
+        verb,
+        "--state",
+        str(para_state),
+        "--name",
+        name,
+        "--file",
+        str(path),
+        "--media-type",
+        media_type,
+    ]
+    fields_file = None
+    try:
+        if record_fields is not None:
+            with tempfile.NamedTemporaryFile(
+                "w", suffix=".json", delete=False, encoding="utf-8"
+            ) as fh:
+                json.dump(record_fields, fh)
+                fields_file = fh.name
+            cmd += ["--record-fields", fields_file]
+        subprocess.run(cmd, check=True)
+    finally:
+        if fields_file:
+            os.unlink(fields_file)
 
 
 # ── layout source: ALTO, a flexiconv TEITOK file (FLEXICONV_ANNOTATE), or the record ──
@@ -549,11 +563,7 @@ def process_single_document(
     dpi=None,
     alto_dpi=None,
     document_json_dir=None,
-    document_run_id=None,
-    document_paradata_ref="",
-    document_run_uuid=None,
-    document_license_detail=None,
-    include_lines=False,
+    include_lines=None,
     bbox_origin="page",
     flexiconv_dir=None,
     text_dir=None,
@@ -612,11 +622,12 @@ def process_single_document(
         if need_csv:
             write_document_csv(csv_rows, doc_out_csv)
         if need_summary:
-            trimmed = _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv)
-            note_summary_trimmed(para_state, trimmed)
+            _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv)
 
     layout = layout_source(doc_name, alto_dir, flexiconv_dir, document_json_dir)
+    teitok_written = False
     if save_teitok and teitok_out_path and not teitok_out_path.exists():
+        teitok_written = True
         write_teitok_merged(
             doc_out_conllu,
             teitok_out_path,
@@ -632,6 +643,9 @@ def process_single_document(
             source_file=_page_rows.rows_source(rows_path) if rows_path else None,
         )
 
+    if teitok_written and teitok_out_path.exists():
+        record_io(para_state, "output", TEITOK_DISTRIBUTION, teitok_out_path, "application/xml")
+
     if document_json_dir:
         from api_util.document_hook import run_document_hook
 
@@ -639,24 +653,34 @@ def process_single_document(
         out_json = baseline_json  # In-place accretion
         if not os.path.exists(baseline_json):
             baseline_json = None  # Graceful fallback to rule 3 (own part only)
+        else:
+            # The record version read, before the hook rewrites the file in place.
+            record_io(para_state, "input", RECORD_DISTRIBUTION, baseline_json, "application/json")
 
         try:
-            run_document_hook(
+            written = run_document_hook(
                 doc_id=doc_name,
                 teitok_path=str(teitok_out_path) if teitok_out_path else "",
                 conllu_path=str(doc_out_conllu),
                 baseline_json=baseline_json,
                 out_json=out_json,
-                run_id=document_run_id,
-                run_uuid=document_run_uuid,
-                paradata_ref=document_paradata_ref,
-                license_detail=document_license_detail,
                 include_lines=include_lines,
                 alto_path=str(layout) if layout else None,
                 rows=rows,
             )
         except Exception as exc:
-            print(f"  [Warn] document-json hook failed for {doc_name}: {exc}", file=sys.stderr)
+            # D13 (atrium-project#84): a record that was asked for and not written fails the
+            # document, and api_4_stats.sh halts the run. Until #84 a warning, and the run went on.
+            print(f"  [Error] document-json hook failed for {doc_name}: {exc}", file=sys.stderr)
+            return False
+        record_io(
+            para_state,
+            "output",
+            RECORD_DISTRIBUTION,
+            out_json,
+            "application/json",
+            record_fields=written,
+        )
 
     if not save_conllu:
         csv_done = not save_csv or doc_out_csv.exists()
@@ -689,7 +713,7 @@ def process_pipeline(
     dpi=None,
     alto_dpi=None,
     document_json_dir=None,
-    include_lines=False,
+    include_lines=None,
     bbox_origin="page",
     flexiconv_dir=None,
     text_dir=None,
@@ -805,9 +829,9 @@ def build_parser():
     parser.add_argument(
         "--para-state",
         default=None,
-        help="The stage's paradata state file (atrium_paradata.py start): its run stamps the "
-        "document record (atrium-project#71), and limits that shaped the summary are recorded "
-        "in it (atrium-project#53).",
+        help="The stage's paradata state file (atrium_paradata.py start): the record read and "
+        "written and the TEITOK are recorded in it, by distribution name and SHA-512 "
+        "(atrium-project#84).",
     )
     parser.add_argument(
         "--document-json-dir",
@@ -816,7 +840,11 @@ def build_parser():
         help="Directory containing baseline document JSONs for accretion",
     )
     parser.add_argument(
-        "--include-lines", action="store_true", help="DANGER: Opt-in to merge lines[] block."
+        "--include-lines",
+        action="store_true",
+        default=None,
+        help="Require lines[].lemma, upos, feats and teitok_ref on the record's lines (written "
+        "by default whenever the record is the layout source; another layout then refuses).",
     )
 
     # --- Directory-mode args (used when running standalone) ---
@@ -878,23 +906,9 @@ def main(argv=None):
     save_csv = bool_from_str(args.save_csv, default=True)
     save_teitok = bool_from_str(args.save_teitok, default=False)
 
-    # The record is stamped with the stage's own run: its `atrium_paradata.py start` state,
-    # --para-state (atrium-project#71). This used to take the FIRST .state_*.json of a
-    # --state-dir (now gone), which in a shared paradata directory may be another stage's,
-    # and read keys no state file has (`_run_id`, `paradata_path`, `license_detail`): every
-    # record said run "unknown-nlp-enrich-run", with no paradata reference and no licence.
-    document_run_id = "unknown-nlp-enrich-run"
-    document_run_uuid = None
-    document_paradata_ref = ""
-    document_license_detail = {}
-
-    if args.document_json_dir and args.para_state and os.path.exists(args.para_state):
-        stage_run = ParadataLogger.from_state_file(args.para_state)
-        document_run_id = stage_run.run_id
-        document_run_uuid = stage_run.run_uuid
-        document_paradata_ref = stage_run.paradata_ref
-        document_license_detail = stage_run.get_license_block()
-
+    # The record carries no run data (record schema 2.0, atrium-project#84): the record read
+    # and written, and the TEITOK, go into the stage's own paradata, --para-state (its
+    # `atrium_paradata.py start` state file), by distribution name and SHA-512.
     # ── per-document mode (invoked by api_4_stats.sh with --conllu) ──
     if args.conllu:
         if not args.ne_dir or not args.output_dir:
@@ -921,10 +935,6 @@ def main(argv=None):
             dpi=args.dpi,
             alto_dpi=args.alto_dpi,
             document_json_dir=args.document_json_dir,
-            document_run_id=document_run_id,
-            document_paradata_ref=document_paradata_ref,
-            document_run_uuid=document_run_uuid,
-            document_license_detail=document_license_detail,
             include_lines=args.include_lines,
             bbox_origin=args.bbox_origin,
             flexiconv_dir=args.flexiconv_dir or None,

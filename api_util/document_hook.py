@@ -225,41 +225,81 @@ def _surface_text(span_tokens: List[dict]) -> str:
     return text
 
 
+def _line_fields(tokens: List[dict]) -> Dict[str, str]:
+    """The record line's linguistic fields from its tokens: the ``lemma``, ``upos`` and ``feats``
+    of the line's head token, and ``teitok_ref``, the ``<s>`` id of that token's sentence.
+
+    The head token is the first word (punctuation aside, when the line has other words) whose
+    syntactic head lies outside the line: the root of the line's span, or of its first sentence
+    fragment when the line crosses a sentence boundary. CoNLL-U's ``_`` (no value) is left out."""
+    words = [t for t in tokens if t.get("upos") != "PUNCT"] or tokens
+    on_line = {(t.get("_s_id"), str(t.get("id"))) for t in tokens}
+    head = next(
+        (t for t in words if (t.get("_s_id"), str(t.get("head"))) not in on_line),
+        words[0],
+    )
+    fields = {key: head.get(key) for key in ("lemma", "upos", "feats")}
+    fields["teitok_ref"] = head.get("_s_id")
+    return {k: str(v) for k, v in fields.items() if v not in (None, "", "_")}
+
+
 def run_document_hook(
     doc_id: str,
     teitok_path: str,
     conllu_path: str,
     baseline_json: Optional[str],
     out_json: str,
-    run_id: str,
-    paradata_ref: str,
-    license_detail: Dict[str, Any],
     alto_path: Optional[str] = None,
-    include_lines: bool = False,
+    include_lines: Optional[bool] = None,
     rows: Optional[list] = None,
-    run_uuid: Optional[str] = None,
-):
+) -> Dict[str, List[str]]:
     """
-    Integrates nlp-enrich outputs (entities, TEITOK refs) into the AtriumDocument pair.
-
-    ``run_id``, ``run_uuid`` and ``paradata_ref`` name the stage's run (its paradata state):
-    ``run_uuid`` (atrium-project#71) is stamped with every block and the contributor entry,
-    and it is the ``@id`` of the run's CreateAction.
+    Integrates nlp-enrich outputs (entities, TEITOK refs) into the ATRIUM document record and
+    returns the blocks and fields it wrote (``DocumentRecord.written()``): what the run's
+    paradata name as the record output (atrium-project#84). The record carries no run data:
+    no stamps, no ``derived_from``, no licence (record schema 2.0, D1/D2).
 
     ``alto_path`` (ALTO, a converted TEITOK layout or the record itself, issue #42) gives each
     token its page, line and bbox; ``rows`` (stage 1's rows file, ``api_util/page_rows.py``)
     gives page and line where there is no layout -- the same pages the TEITOK writer uses
     (issue #38, A). With neither, every token is on page "1", on one synthetic line per page.
+
+    When the layout is the record, a token keeps the record's own line: ``entities[].line`` is
+    the record's ``line``, and ``lines[].lemma``, ``upos``, ``feats`` and ``teitok_ref`` are
+    written onto those lines (``_line_fields()``). ``include_lines`` None (the default) writes
+    them exactly then; False never. With any other layout the line numbers are the layout's, so
+    ``include_lines=True`` refuses (a ``ValueError``): written onto the record's keys they would
+    land on the wrong lines.
     """
     # 1. Parse tokens & bboxes (reusing the unified teitok_alto refactor). This
     # returns {"sentences": [...], ...} — NOT a flat token list — so it must be
     # flattened the same way parse_and_align_conllu itself does internally before
-    # bbox alignment.
+    # bbox alignment. Each token keeps its sentence's <s> id for `lines[].teitok_ref`.
     parsed = parse_and_align_conllu(conllu_path, alto_path=alto_path, doc_id=doc_id, rows=rows)
-    tokens: List[dict] = (
-        [tok for sent in parsed["sentences"] for tok in sent["tokens"]] if parsed else []
-    )
+    tokens: List[dict] = []
+    for sent in (parsed or {}).get("sentences", []):
+        for tok in sent["tokens"]:
+            tok["_s_id"] = sent.get("_xml_id")
+            tokens.append(tok)
     _augment_tokens_with_position(tokens)
+
+    from_record = (parsed or {}).get("alto_meta", {}).get("layout_source") == "record"
+    if include_lines is None:
+        include_lines = from_record
+    if include_lines and not from_record:
+        raise ValueError(
+            "include_lines needs the record as the layout source: with another layout the "
+            "line numbers are not the record's, and the fields would land on the wrong lines"
+        )
+    if from_record:
+        # The record's own key of each token's line (record_layout.line_keys()).
+        from .record_layout import line_keys
+
+        keys = line_keys(alto_path)
+        for tok in tokens:
+            key = keys.get((tok.get("_bbox") or {}).get("line_id"))
+            if key is not None:
+                tok["_record_page"], tok["_line"] = key
 
     entities = []
     name_counter = 1
@@ -286,7 +326,7 @@ def run_document_hook(
             bbox = [min(x_mins), min(y_mins), max(x_maxs), max(y_maxs)]
 
         first, last = span_tokens[0], span_tokens[-1]
-        page = first.get("_page", "1")
+        page = first.get("_record_page") or first.get("_page", "1")
         line = first.get("_line", 0)
         char_span = [first.get("_char_start", 0), last.get("_char_end", 0)]
 
@@ -311,28 +351,23 @@ def run_document_hook(
             # The <name id> the writer gives this span (assigned once, in
             # parse_and_align_conllu); a TEITOK-local id, like teitok_surface below.
             "teitok_ref": first.get("_name_id") or f"n-{name_counter}",
+            # popped below: whether `page` is a page index still to be turned into its label
+            "_page_is_index": first.get("_record_page") is None,
         }
         # Only the tagset that actually applies is written — never the other one as an
         # explicit null (atrium-project#10, caught by D4's gate the moment it was wired).
         # `entities[].type_onto` and `.type_cnec` are typed `{"type": "string"}` in
         # atrium_document.schema.json with no null member, so a record carrying
-        # `"type_cnec": null` FAILS validation. Every real NameTag run produces exactly
-        # one tagset, so before this the hook emitted a schema-invalid record for every
-        # document that had a single entity — invisible only because nothing validated.
-        # Absent is also the truthful encoding: the field does not apply, rather than
-        # applying with an empty value.
+        # `"type_cnec": null` FAILS validation. Absent is also the truthful encoding: the
+        # field does not apply, rather than applying with an empty value.
         if type_onto is not None:
             entity_record["type_onto"] = type_onto
         if type_cnec is not None:
             entity_record["type_cnec"] = type_cnec
         if bbox:
             entity_record["bbox"] = bbox
-        # `pid` is deliberately NOT set here (atrium-project#10, D10): it is
-        # llm-enrich's field in BLOCK_FIELD_OWNERS["entities"], and merge_block()
-        # filtered the placeholder out on every single call — so it never persisted a
-        # wrong value, but it did invite a future edit to assume ownership. With the
-        # assert_fields_survived() call below in place it would now raise, which is the
-        # mechanism working exactly as intended.
+        # `pid` is deliberately NOT set here (atrium-project#10, D10): it is keyword-extract's
+        # field in BLOCK_FIELD_OWNERS["entities"]; assert_fields_survived() below would raise.
 
         entities.append(entity_record)
         name_counter += 1
@@ -351,52 +386,36 @@ def run_document_hook(
     #     so nothing is emitted.
     baseline_was_invalid = _baseline_is_invalid(baseline_json)
 
-    with DocumentRecord.open(
-        doc_id,
-        "nlp-enrich",
-        baseline=baseline_json,
-        run_id=run_id,
-        run_uuid=run_uuid,
-        paradata_ref=paradata_ref,
-    ) as doc:
-        if license_detail:
-            doc.add_license_detail(license_detail)
-
-        if teitok_path:
-            # The file's name, as the other tools record what they derived: the path was the
-            # machine's own, and from the service its private workspace (atrium-project#72).
-            doc.add_derived_from("teitok", os.path.basename(str(teitok_path)))
-
+    with DocumentRecord.open(doc_id, "nlp-enrich", baseline=baseline_json) as doc:
         # The tokens know their page by index, the record keys its rows by page label
         # (`pages[].page`): a born-digital PDF's /PageLabels make them "i", "ii" (issue #42).
+        # A token placed by the record already carries its label.
         page_key = _page_keys(doc.get_block("pages"))
         for entity in entities:
-            entity["page"] = page_key.get(entity["page"], entity["page"])
+            if entity.pop("_page_is_index"):
+                entity["page"] = page_key.get(entity["page"], entity["page"])
 
-        # entities[] is field-split (llm-enrich writes pid; the translator's
+        # entities[] is field-split (keyword-extract writes pid; the translator's
         # translation_en is granted but reserved and unwritten, atrium-project#70) —
         # merge_block(), never set_block(), or a re-run of nlp-enrich alone erases
         # every downstream contribution on the same rows.
         doc.merge_block("entities", entities)
-        # (#10 D8) merge_block()'s field filtering is silent by design, and that
-        # silence is how a wrong grant produced rows stripped down to their key that
-        # still validated (entities[] requires nothing at all). Deliberately the
-        # raising form rather than the blunt global warn_dropped_fields=True: it fires
-        # only when THIS repo hands over a field its own declared grant in
-        # BLOCK_FIELD_OWNERS does not cover, which is a code bug here, not data
-        # variance — so a red test is the correct outcome, at dev time.
+        # (#10 D8) merge_block()'s field filtering is silent by design: the raising form
+        # fires only when THIS repo hands over a field its own grant in
+        # BLOCK_FIELD_OWNERS does not cover, which is a code bug here, not data variance.
         doc.assert_fields_survived("entities", entities)
 
         pages_present = sorted({t.get("_page", "1") for t in tokens})
         # The <surface id> the writer gives each page (TEITOK-local, "facs-P", P the index).
         # The writer only has surfaces for layout pages (ALTO, a converted TEITOK, a record's
         # canvases) -- a text-only document (no layout, e.g. /enrich with a table) has no
-        # <facsimile>, and a teitok_surface there would point at nothing.
+        # <facsimile>, and a teitok_surface there would point at nothing. Page rows are keyed
+        # by `page_index` (record schema 2.0): the token's page IS that index.
         surfaces = {str(pg["idx"]) for pg in (parsed or {}).get("alto_pages", [])}
         page_updates = [
-            {"page": page_key.get(p, p), "teitok_surface": f"facs-{p}"}
+            {"page_index": int(p), "teitok_surface": f"facs-{p}"}
             for p in pages_present
-            if p in surfaces
+            if p in surfaces and p.isdigit()
         ]
         doc.merge_block("pages", page_updates)
         # nlp-enrich owns exactly one field in pages[] — teitok_surface — so this is
@@ -405,19 +424,20 @@ def run_document_hook(
         doc.assert_fields_survived("pages", page_updates)
 
         if include_lines:
-            logger.warning(
-                "DANGER: `lines` block merged from nlp-enrich. This may cause silent duplicate rows due to layout reordering mismatches with alto-postprocess."
-            )
-            # Line extraction logic omitted by default to protect the integrity of the OCR pipeline layout
-            # NOTE: whoever enables this must add the matching
-            # doc.assert_fields_survived("lines", line_updates) after the merge, as the
-            # two blocks above do — nlp-enrich's lines[] grant is
-            # ["lemma", "upos", "feats", "teitok_ref", "bbox"] and `text` is
-            # alto-postprocess's, which merge_block() would drop in silence (#10 D8).
-            # And it must never write `bbox` on a digital-born record (source.origin): there
-            # `lines[].bbox` is digital-convert's, the very boxes the TEITOK layout was read
-            # from (issue #42; atrium_document.schema.json lines[].bbox).
-            pass
+            # Per record line: lemma, UPOS and feats of its head token and the <s> it is in
+            # (`lines[]` grant: lemma, upos, feats, teitok_ref). Never `bbox` or `text`:
+            # those are the record builder's.
+            by_line: Dict[tuple, List[dict]] = {}
+            for tok in tokens:
+                if tok.get("_record_page") is not None:
+                    by_line.setdefault((tok["_record_page"], tok["_line"]), []).append(tok)
+            line_updates = []
+            for (page, line), line_tokens in by_line.items():
+                fields = _line_fields(line_tokens)
+                if fields:
+                    line_updates.append({"page": page, "line": line, **fields})
+            doc.merge_block("lines", line_updates)
+            doc.assert_fields_survived("lines", line_updates)
 
         # Layer D on the way out (#10 D4). Before finalize(), inside the `with` body:
         # DocumentRecord.__exit__ only finalises when the body left without an
@@ -430,3 +450,4 @@ def run_document_hook(
         # __exit__'s implicit out_dir="." default, which silently drops the record
         # in the process CWD instead of the shared document_json_dir.
         doc.finalize(out_json)
+        return doc.written()

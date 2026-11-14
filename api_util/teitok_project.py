@@ -39,7 +39,8 @@ each page's lists (ufal/flexiconv#1)  after the document's lists, one ``keywords
                                       TEITOK project indexes their terms as page attributes
 provenance                            ``appInfo/application[@id="app-…"]`` appended after the writer's
                                       own (``teitok_layout``'s converter pick is unaffected), its
-                                      ``@ident`` the program the record's stamp names, and one
+                                      ``@ident`` the program granted the block (``BLOCK_OWNERS``;
+                                      record schema 2.0 has no stamps), and one
                                       ``revisionDesc/change[@type="enriched"]``
 ====================================  ==================================================================
 
@@ -102,13 +103,15 @@ from api_util.validate_teitok_xml import (  # noqa: E402
     validate_xml_text,
     writer_format,
 )
-from atrium_document import canonical_doc_id  # noqa: E402
+from atrium_document import BLOCK_OWNERS, canonical_doc_id  # noqa: E402
 
+#: AMČR distribution names the stage's paradata name its input and output by (atrium-project#84).
+RECORD_DISTRIBUTION = "atrium/document-json"
+TEITOK_DISTRIBUTION = "atr/teitok-xml"
 #: Who the ``<change>`` names.
 PROJECTOR = "atrium-nlp-enrich"
 #: The applications this module may add, ``key -> (id, ident, label)``. Their ids are owned here.
-#: The ident is the default; the program the record's stamp names wins (an ``enrichment`` block
-#: written before 1 October 2026 is ``atrium-llm-enrich``'s).
+#: The ident is the default; the program granted the block (``BLOCK_OWNERS``) wins.
 APPLICATIONS: Dict[str, Tuple[str, str, str]] = {
     "pc": ("app-pc", "atrium-page-classification", "ATRIUM page classification"),
     "controlled": (
@@ -310,16 +313,12 @@ def _category_uris(ids: Any) -> List[str]:
     return uris
 
 
-def _block_run(record: Dict[str, Any], block: str) -> str:
-    stamp = ((record.get("assembled") or {}).get("blocks") or {}).get(block) or {}
-    return str(stamp.get("run_id") or "")
-
-
-def _block_ident(record: Dict[str, Any], block: str, default: str) -> str:
-    """``atrium-<program>`` of the program the record's stamp names for ``block``, else ``default``."""
-    stamp = ((record.get("assembled") or {}).get("blocks") or {}).get(block) or {}
-    program = str(stamp.get("program") or "").strip()
-    return f"atrium-{program}" if program else default
+def _block_ident(block: str, default: str) -> str:
+    """``atrium-<program>`` of the program granted ``block`` (``atrium_document.BLOCK_OWNERS``),
+    else ``default``. Record schema 2.0 holds no stamps: who wrote a block in which run is the
+    run's paradata (atrium-project#84), and the grant is the only writer a block can have."""
+    owner = BLOCK_OWNERS.get(block)
+    return f"atrium-{owner}" if isinstance(owner, str) and owner else default
 
 
 def _keyword_list(items: Any) -> List[Tuple[str, float]]:
@@ -563,21 +562,18 @@ def project_record(
         _place(app_info, app, 4)
 
     if categories:
-        run = _block_run(record, "page_categories") or _block_run(record, "pages")
-        application("pc", desc=f"page categories of the record{f', run {run}' if run else ''}")
+        application("pc", desc="page categories of the record")
     if teater:
-        run = _block_run(record, "enrichment")
         application(
             "controlled",
-            desc=f"enrichment block of the record{f', run {run}' if run else ''}",
-            ident=_block_ident(record, "enrichment", APPLICATIONS["controlled"][1]),
+            desc="enrichment block of the record",
+            ident=_block_ident("enrichment", APPLICATIONS["controlled"][1]),
         )
     if has_stat:
-        run = _block_run(record, "keywords")
         application(
             "statistical",
-            desc=f"keywords block of the record, method={method}{f', run {run}' if run else ''}",
-            ident=_block_ident(record, "keywords", APPLICATIONS["statistical"][1]),
+            desc=f"keywords block of the record, method={method}",
+            ident=_block_ident("keywords", APPLICATIONS["statistical"][1]),
         )
 
     formatted = []  # (element, depth) whose inside is indented once built
@@ -867,6 +863,11 @@ def _run_directory(args: argparse.Namespace) -> int:
                     logger.log_skip(str(path), f"not {WRITER_FORMAT}")
                 continue
             record = Path(args.record_dir) / f"{doc_id}.document.json" if args.record_dir else None
+            if logger and record is not None and record.is_file():
+                # The record version read, by SHA-512 (paradata 3.0, atrium-project#84).
+                logger.add_input(
+                    RECORD_DISTRIBUTION, path=str(record), media_type="application/json"
+                )
             try:
                 report = project_file(path, record, path, force=args.force, paired_as=doc_id)
             except ProjectionError as exc:
@@ -878,6 +879,7 @@ def _run_directory(args: argparse.Namespace) -> int:
             print(f"[OK] {path.name}: {json.dumps(_summary(report), ensure_ascii=False)}")
             if logger:
                 logger.log_success("teitok_xml", count=1)
+                logger.add_output(TEITOK_DISTRIBUTION, path=str(path), media_type="application/xml")
     finally:
         if logger:
             logger.finalize(input_total=len(files))

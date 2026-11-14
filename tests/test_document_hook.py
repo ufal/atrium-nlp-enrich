@@ -31,24 +31,16 @@ def _record(doc_id="CTX000000001", **blocks):
     """A record carrying the schema's top-level envelope, plus whatever blocks are asked for.
 
     Every hand-built record in this file goes through here so the envelope lives in one
-    place. It has already drifted once: atrium-project#54 froze the contract at 1.0 and
-    `required` grew from ``[schema_version, doc_id]`` to include ``record_type``,
-    ``provenance`` and ``assembled``, which silently invalidated every literal here.
-
-    ``source`` is not decoration. On top of ``required`` the schema has an anyOf: a record
-    must carry EITHER ``source`` — the originator's handshake, which ``set_source()`` writes
-    without stamping a block — OR an ``assembled.blocks`` naming at least one block it
-    actually holds. An empty ``assembled`` satisfies neither, so a fixture that stamps
-    nothing is legal only via ``source``. That is also what a real record looks like: every
-    one descends from an originator that set it.
+    place. Record schema 2.0 (atrium-project#84) requires ``schema_version``,
+    ``record_type`` and ``doc_id``, and holds no run data (no ``provenance``, no
+    ``assembled``). ``source`` is not decoration: the schema's anyOf wants at least one
+    block, and every real record descends from the seed or builder that set it.
     """
     return {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "record_type": "atrium-document",
         "doc_id": doc_id,
-        "provenance": {},
-        "assembled": {},
-        "source": {"origin": "ABBYY-ALTO"},
+        "source": {"origin": "legacy"},
         **blocks,
     }
 
@@ -58,7 +50,6 @@ def _record(doc_id="CTX000000001", **blocks):
 #: (atrium-project#10, D4), so a bare MagicMock — which is not a JSON object at all —
 #: would fail that gate for a reason that has nothing to do with the test.
 _VALID_STUB_RECORD = _record(doc_id="CTX0")
-_RUN_UUID = "urn:uuid:9a3c1e57-2b6d-4f08-8e41-7c5d0b2a6f19"
 
 
 @pytest.fixture
@@ -101,22 +92,11 @@ def test_document_hook_onto_extraction(mock_parse, mock_group, mock_document_rec
         conllu_path="/fake/path/CTX000000001.conllu",
         baseline_json=None,
         out_json="out.json",
-        run_id="test-run-123",
-        paradata_ref="paradata.json",
-        license_detail={"effective_license": "CC-BY"},
         alto_path="/fake/path/CTX000000001.alto.xml",
-        run_uuid=_RUN_UUID,
     )
 
-    # Verify accretion initialization: the stage's run_uuid goes with its run_id (#71)
-    mock_record_class.open.assert_called_once_with(
-        "CTX000000001",
-        "nlp-enrich",
-        baseline=None,
-        run_id="test-run-123",
-        run_uuid=_RUN_UUID,
-        paradata_ref="paradata.json",
-    )
+    # Record schema 2.0 holds no run data: the record is opened with no run ids (#84)
+    mock_record_class.open.assert_called_once_with("CTX000000001", "nlp-enrich", baseline=None)
 
     entities = _merged_entities(mock_doc_instance)
     assert len(entities) == 1
@@ -156,9 +136,6 @@ def test_document_hook_cnec_extraction(mock_parse, mock_group, mock_document_rec
         conllu_path="/fake/path.conllu",
         baseline_json="base.json",
         out_json="out.json",
-        run_id="test-run-456",
-        paradata_ref="para2.json",
-        license_detail=None,
         alto_path="/fake/path.alto.xml",
     )
 
@@ -190,9 +167,6 @@ def test_document_hook_skips_plain_spans(mock_parse, mock_group, mock_document_r
         conllu_path="",
         baseline_json=None,
         out_json="",
-        run_id="run",
-        paradata_ref="ref",
-        license_detail={},
     )
 
     assert _merged_entities(mock_doc_instance) == []
@@ -209,9 +183,6 @@ def test_document_hook_omits_lines_by_default(mock_parse, mock_document_record):
         conllu_path="",
         baseline_json=None,
         out_json="",
-        run_id="run",
-        paradata_ref="ref",
-        license_detail={},
         include_lines=False,
     )
 
@@ -245,9 +216,6 @@ def test_every_merged_block_is_followed_by_a_survival_assertion(
         conllu_path="",
         baseline_json=None,
         out_json="out.json",
-        run_id="run",
-        paradata_ref="ref",
-        license_detail={},
     )
 
     sequence = [
@@ -310,7 +278,7 @@ _VALID_BASELINE = _record(
 #: one so that quality_score is the ONLY thing wrong with it: an inherited-defect test
 #: proves nothing if the baseline is also rejected for a missing top-level key, since the
 #: warn-not-refuse path would fire either way. TestFixtureContract below pins that.
-_INVALID_BASELINE = _record(pages=[{"page": "1", "quality_score": 5.0}])
+_INVALID_BASELINE = _record(pages=[{"page": "1", "page_index": 1, "quality_score": 5.0}])
 
 
 def _span_token(char_start=0, char_end=5):
@@ -333,7 +301,7 @@ def _span_token(char_start=0, char_end=5):
     }
 
 
-def _run_real_hook(tmp_path, span_token, baseline=None, doc_id="CTX000000001", run_uuid=None):
+def _run_real_hook(tmp_path, span_token, baseline=None, doc_id="CTX000000001"):
     """Run the hook against the real DocumentRecord; return the out path (written or not)."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     baseline_path = None
@@ -360,10 +328,6 @@ def _run_real_hook(tmp_path, span_token, baseline=None, doc_id="CTX000000001", r
             conllu_path=f"UDP/{doc_id}.conllu",
             baseline_json=str(baseline_path) if baseline_path else None,
             out_json=str(out_json),
-            run_id="260805-120000",
-            paradata_ref="paradata/260805-120000_nlp-enrich.json",
-            license_detail={"effective_license": "CC BY-NC-SA 4.0"},
-            run_uuid=run_uuid,
         )
     return out_json
 
@@ -371,19 +335,18 @@ def _run_real_hook(tmp_path, span_token, baseline=None, doc_id="CTX000000001", r
 def test_an_amcr_seed_is_a_valid_baseline_and_keeps_its_identity(tmp_path, capsys):
     """atrium-project#71: a seed (a foreign doc_id and the archive's view of the original) is
     checked against the seed profile, so it is no "invalid baseline" and the own-output gate
-    is not demoted. Its identity survives, and the stage's run_uuid is stamped."""
+    is not demoted. Its identity survives; the record carries no run data (#84)."""
     pytest.importorskip("jsonschema")
     seed = {
         "doc_id": "AMCR-F-0001",
         "source": {"sha512": "c" * 128, "filename": "zprava.pdf", "media_type": "application/pdf"},
     }
-    out_json = _run_real_hook(tmp_path, _span_token(), baseline=seed, run_uuid=_RUN_UUID)
+    out_json = _run_real_hook(tmp_path, _span_token(), baseline=seed)
 
     assert "does not validate" not in capsys.readouterr().err
     record = json.loads(out_json.read_text(encoding="utf-8"))
     assert record["doc_id"] == seed["doc_id"] and record["source"] == seed["source"]
-    assert {s["run_uuid"] for s in record["assembled"]["blocks"].values()} == {_RUN_UUID}
-    assert record["provenance"]["contributors"][-1]["run_uuid"] == _RUN_UUID
+    assert not {"assembled", "provenance", "derived_from"} & set(record)
 
 
 def test_valid_contribution_is_written_and_validates(tmp_path):
@@ -640,9 +603,6 @@ def test_record_and_teitok_share_entity_and_page_ids(tmp_path, mock_document_rec
         conllu_path=str(conllu),
         baseline_json=None,
         out_json=str(tmp_path / "CTX.document.json"),
-        run_id="run",
-        paradata_ref="ref",
-        license_detail={},
     )
     entities = _merged_entities(mock_doc_instance)
     assert [(e["teitok_ref"], e["type_teitok"]) for e in entities] == names
@@ -668,14 +628,12 @@ def test_teitok_surface_is_written_for_alto_pages(mock_document_record):
             conllu_path="CTX.conllu",
             baseline_json=None,
             out_json="out.json",
-            run_id="run",
-            paradata_ref="ref",
-            license_detail={},
         )
     pages = next(
         call[0][1] for call in mock_doc_instance.merge_block.call_args_list if call[0][0] == "pages"
     )
-    assert pages == [{"page": "2", "teitok_surface": "facs-2"}]
+    # keyed by page_index (record schema 2.0): the page's label is the record builder's
+    assert pages == [{"page_index": 2, "teitok_surface": "facs-2"}]
 
 
 # ── (atrium-project#68) a seed keyed unlike the input ────────────────────────
@@ -717,9 +675,6 @@ def test_in_place_accretion_onto_a_seed_keyed_unlike_the_input(tmp_path):
                 conllu_path="UDP/upload.conllu",
                 baseline_json=str(in_place),
                 out_json=str(in_place),
-                run_id="260927-120000",
-                paradata_ref="paradata/260927-120000_nlp-enrich.json",
-                license_detail={"effective_license": "CC BY-NC-SA 4.0"},
             )
         assert _collect_document_json_output(scratch, str(out_path), "upload")
         left_in_scratch = sorted(p.name for p in scratch.iterdir())
@@ -731,3 +686,127 @@ def test_in_place_accretion_onto_a_seed_keyed_unlike_the_input(tmp_path):
     assert record["entities"][0]["surface"] == "Praha"
     assert record["page_categories"] == _VALID_BASELINE["page_categories"]
     assert left_in_scratch == ["upload.document.json"]
+
+
+# ── record schema 2.0 (atrium-project#84): the record's own line keys and lines[] fields ──
+
+_LAYOUT_RECORD = _record(
+    doc_id="CTX",
+    pages=[
+        {
+            "page": "iv",
+            "page_index": 1,
+            "content_status": "text",
+            "canvas": {"width": 600, "height": 800, "unit": "pt"},
+        }
+    ],
+    lines=[
+        {
+            "page": "iv",
+            "line": 3,
+            "text": "Viděl jsem Prahu.",
+            "bbox": [50, 100, 300, 120],
+            "block": "p1-b2",
+            "text_source": "text-layer",
+            "bbox_precision": "measured",
+            "categ": "Clear",
+        },
+        {"page": "iv", "line": 4, "text": "~~ ## ~~", "block": "p1-b2", "categ": "Trash"},
+        {
+            "page": "iv",
+            "line": 5,
+            "text": "Šel domů.",
+            "bbox": [50, 130, 300, 150],
+            "block": "p1-b2",
+            "text_source": "text-layer",
+            "bbox_precision": "derived",
+            "categ": "Clear",
+        },
+    ],
+)
+
+_LAYOUT_CONLLU = (
+    "# sent_id = 1\n"
+    "# text = Viděl jsem Prahu.\n"
+    "1\tViděl\tvidět\tVERB\t_\tGender=Masc|Tense=Past\t0\troot\t_\tNER=O\n"
+    "2\tjsem\tbýt\tAUX\t_\t_\t1\taux\t_\tNER=O\n"
+    "3\tPrahu\tPraha\tPROPN\t_\tCase=Acc\t1\tobj\t_\tSpaceAfter=No|NER=B-gu\n"
+    "4\t.\t.\tPUNCT\t_\t_\t1\tpunct\t_\tSpacesAfter=\\n|NER=O\n"
+    "\n"
+    "# sent_id = 2\n"
+    "# text = Šel domů.\n"
+    "1\tŠel\tjít\tVERB\t_\t_\t0\troot\t_\tNER=O\n"
+    "2\tdomů\tdomů\tADV\t_\t_\t1\tadvmod\t_\tSpaceAfter=No|NER=O\n"
+    "3\t.\t.\tPUNCT\t_\t_\t1\tpunct\t_\tSpacesAfter=\\n|NER=O\n"
+    "\n"
+)
+
+
+def _run_on_record_layout(tmp_path, **kwargs):
+    record = tmp_path / "CTX.document.json"
+    record.write_text(json.dumps(_LAYOUT_RECORD, ensure_ascii=False), encoding="utf-8")
+    conllu = tmp_path / "CTX.conllu"
+    conllu.write_text(_LAYOUT_CONLLU, encoding="utf-8")
+    written = run_document_hook(
+        doc_id="CTX",
+        teitok_path="",
+        conllu_path=str(conllu),
+        baseline_json=str(record),
+        out_json=str(record),
+        alto_path=str(record),
+        **kwargs,
+    )
+    return written, json.loads(record.read_text(encoding="utf-8"))
+
+
+def test_with_the_record_as_layout_entities_name_the_records_line(tmp_path):
+    """`entities[].page`/`line` are the record's own keys (#84 task 3), not a per-page count
+    of the layout's lines: the entity on record line 3 of page "iv" says so."""
+    _, record = _run_on_record_layout(tmp_path)
+    (entity,) = record["entities"]
+    assert (entity["surface"], entity["page"], entity["line"]) == ("Prahu", "iv", 3)
+
+
+def test_the_records_lines_get_lemma_upos_feats_and_their_sentence(tmp_path):
+    """#84 task 4: per record line, the head token's lemma, UPOS and feats, and the `<s>` id of
+    its sentence as `teitok_ref`. CoNLL-U's `_` is left out; the Trash line gets nothing; the
+    record builder's fields (text, bbox) are untouched."""
+    written, record = _run_on_record_layout(tmp_path)
+    by_line = {line["line"]: line for line in record["lines"]}
+    assert {k: by_line[3][k] for k in ("lemma", "upos", "feats", "teitok_ref")} == {
+        "lemma": "vidět",
+        "upos": "VERB",
+        "feats": "Gender=Masc|Tense=Past",
+        "teitok_ref": "s-1",
+    }
+    assert {k: by_line[5].get(k) for k in ("lemma", "upos", "feats", "teitok_ref")} == {
+        "lemma": "jít",
+        "upos": "VERB",
+        "feats": None,
+        "teitok_ref": "s-2",
+    }
+    assert "lemma" not in by_line[4]
+    assert by_line[3]["bbox"] == [50, 100, 300, 120] and by_line[5]["text"] == "Šel domů."
+    # What the run's paradata name as written (DocumentRecord.written(), #84 §4)
+    assert set(written["lines"]) >= {"lemma", "upos", "feats", "teitok_ref"}
+    assert "surface" in written["entities"] and "teitok_surface" in written["pages"]
+
+
+def test_line_fields_can_be_switched_off(tmp_path):
+    written, record = _run_on_record_layout(tmp_path, include_lines=False)
+    assert "lines" not in written
+    assert not any("lemma" in line for line in record["lines"])
+
+
+def test_line_fields_without_the_record_as_layout_are_refused(tmp_path, mock_document_record):
+    """Another layout numbers lines its own way: written onto the record's keys the fields
+    would land on the wrong lines, so asking for them is an error, not a silent skip."""
+    tok = _tok("Praha", "Praha", "B-LOC", 1, "line_1", 10, 10, 50, 20)
+    with (
+        patch(
+            "api_util.document_hook.parse_and_align_conllu",
+            return_value={"sentences": [{"tokens": [tok]}], "alto_meta": {"layout_source": "alto"}},
+        ),
+        pytest.raises(ValueError, match="include_lines"),
+    ):
+        run_document_hook("CTX", "", "CTX.conllu", None, "out.json", include_lines=True)

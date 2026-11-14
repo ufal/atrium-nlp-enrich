@@ -27,8 +27,10 @@ output depend first on the source document, which no tool knows. How the models'
 bear on the annotations is an open question ([atrium-project#78](https://github.com/ufal/atrium-project/issues/78),
 [#6](https://github.com/ufal/atrium-project/issues/6)).
 
-The paradata and the document record also carry an older calculated field, `license`; it is not a licence and should
-not be used. The record marks it `provenance.license_basis: "calculated"`
+No licence of an output is computed or recorded: since paradata schema 3.0 and record schema 2.0
+([atrium-project#84](https://github.com/ufal/atrium-project/issues/84), D2) neither carries a `license` field, and the
+paradata list the components, each with its own terms, as facts. Until #78 is settled, AMČR does not publish what this
+tool produces through UDPipe and NameTag (D35)
 ([Licences and paradata](https://ufal.github.io/atrium-project/ecosystem/licences/) on the hub).
 
 Keyword extraction (KER, YAKE, KeyBERT) and the AMČR/TEATER vocabularies (CC0) are declared in
