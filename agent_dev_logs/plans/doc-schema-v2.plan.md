@@ -1,5 +1,6 @@
 # Strategy — [atrium-project#84](https://github.com/ufal/atrium-project/issues/84) (doc-schema-v2): nlp-enrich's part
 
+> _**Refreshed 2026-11-14**: "Status — PR (11-14)": the PR's checks and round 5's fixes._
 > _**Refreshed 2026-11-13**: "Status — round 2" (the code, not pushed yet) and round 4's notes. The file keeps
 > the name `doc-schema-v2.plan.md` (it was `84.plan.md` on 11-12 and 11-13)._
 > _**Written 2026-11-12** on ARÚP's output contract of 12 November and atrium-project#84 (motyc, 11-12), at this
@@ -10,7 +11,11 @@
 > This file is the repository's slice only. It replaces the 11-11 slice of the same
 > name; its points that still hold are carried here._
 
-**Status (2026-11-13)**: 🟡 **Implemented, not pushed yet; see "Status — round 2". Deferred items are listed there.**
+**Status (2026-11-14)**: 🟡 **[atrium-nlp-enrich#45](https://github.com/ufal/atrium-nlp-enrich/pull/45) is open
+(`doc-schema-v2` into `test`); see "Status — PR". Drift clears once the hub's PR merges and the pins move; the
+record-major check clears at this tool's next release, which raises its major version.**
+
+**Status (2026-11-13)**: 🟡 **Implemented, not pushed yet; see "Status — round 2". Deferred items are listed there.** _(superseded 11-14: the PR is open)_
 
 **Status (2026-11-12)**: 📋 **Planned, plans only. No ALTO is produced or stored (D24): nlp-enrich takes its layout
 from the record (or docproc), not ALTO, and TEITOK stays the standard linguistic output with its limits stated
@@ -86,6 +91,26 @@ Local branch from `test`, on the re-vendored shared modules (record 2.0, paradat
 - **[atrium-project#78](https://github.com/ufal/atrium-project/issues/78#issuecomment-6827422711)** (11-12): LINDAT's
   Terms of Use set aside for the pilot; whether D35 holds in the pilot is the hub's Q14. The docs keep D35 until it is
   answered.
+
+## Status — PR (11-14)
+
+[atrium-nlp-enrich#45](https://github.com/ufal/atrium-nlp-enrich/pull/45), head `d0df625`. Failing checks: check-drift
+(canonical), because the callers read the hub at `v1` (`4435ffb`) while the copies are v2; api-contract, because the
+record schema went from 1.0 to 2.0 without a major version. The causes across all seven PRs:
+[hub plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md),
+"Status — PRs".
+
+Round 5 (not pushed):
+
+- `atrium_rocrate.py` and `tests/test_atrium_rocrate.py` re-vendored: a crate root that asserts no licence names
+  `#no-licence-asserted` again (RO-Crate 1.2 requires a root licence; atrium-project#6, motyc 11-12). The hub's PR
+  failed its RO-Crate check without it.
+- `api_2_udp.sh` gets its exec bit back (the push stored it as 100644).
+
+The suite passes: 1087. After the hub's PR merges, `v1` moves to its merge commit and
+`scripts/pin_hub_reusables.py --sha` pins this repository's callers to it: drift clears. The record-major check stays
+red until the release, which raises the major version in `para_config.txt` (`v1.3.4-beta` now), `CITATION.cff` and
+`service/openapi.json`'s `info.version`.
 
 ## Depends on
 
