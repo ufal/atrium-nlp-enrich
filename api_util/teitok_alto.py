@@ -190,9 +190,12 @@ def _build_page_scale_map(
         elif img_dims:
             scale_map[idx] = (1.0, 1.0, img_dims[0], img_dims[1], dx, dy, img_ext)
 
-        # Tier 2: User-set DPI -> math delegated to bbox_scale
+        # Tier 2: User-set DPI -> math delegated to bbox_scale. A record's `pt` page with a
+        # UserUnit (`user_unit`, D28) counts 1/72 inch x user_unit per unit.
         elif dpi and ref_w > 0 and ref_h > 0:
             sx, sy = dpi_scale(unit, dpi, alto_dpi)
+            factor = float(pg.get("user_unit") or 1.0) if unit == "pt" else 1.0
+            sx, sy = sx * factor, sy * factor
             scale_map[idx] = (sx, sy, round(ref_w * sx), round(ref_h * sy), dx, dy, img_ext)
 
         # Tier 3: Fallback

@@ -80,8 +80,10 @@ it finishes. The detail: [docs/how-it-works.md](docs/how-it-works.md).
 
 ## Where it fits in ATRIUM
 
-nlp-enrich is the fourth stage of the scanned-document chain: it reads ocr-postprocess's line tables and the
-original ALTO. For a born-digital PDF it follows digital-convert, whose record gives the TEITOK file its layout.
+nlp-enrich follows ocr-postprocess, the record builder, on every route (atrium-project#84): the record's lines are
+its text and, with their boxes and docproc blocks, the TEITOK file's layout, whether they came from a born-digital
+text layer, the ATR or both (a mixed document). No ALTO is produced or stored in the pipeline (D24); reading ALTO
+stays for batch and research use.
 [keyword-extract](https://github.com/ufal/atrium-keyword-extract) follows it and reads the record it leaves. The
 opt-in `/project_record` can then carry the page categories and keywords back into the TEITOK header. Its image
 `ghcr.io/ufal/atrium-nlp-enrich-api` is the production service of the stage. The whole chain: the

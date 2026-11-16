@@ -19,9 +19,10 @@ origin top-left and y down, in the page's canvas unit (``atrium_document.schema.
   out of one shifts the character alignment of the other.
 * **pages** -- one per ``pages[]`` row with a canvas: its size and unit (``pt``, 1/72 inch times
   ``user_unit``, the 2.0 default; ``px`` for a PCSS page whose original was not matched). Boxes
-  stay in the record's one coordinate space (D28), so an entity's box is the record's; the writer
-  scales a ``pt`` page as plain points, which is exact while ``user_unit`` is 1 (the coordinate
-  work on UserUnit is digital-convert's, deferred). A page without a canvas (a DOCX)
+  stay in the record's one coordinate space (D28), so an entity's box is the record's; a page whose
+  ``user_unit`` is not 1 carries it, so the writer's ``IMAGE_DPI`` scale counts ``1/72 inch x
+  user_unit`` per unit (with a page image, the image's size gives the scale). A page without a
+  canvas (a DOCX)
   gets no ``<surface>``. Pages are numbered by ``page_index``; ``meta["page_labels"]`` keeps a
   label that is not the number (``i``, ``ii``) for ``<pb n>``, and ``meta["page_count"]`` the
   number of pages, so a page without text (a scanned plate) still gets its ``<pb>``.
@@ -121,6 +122,16 @@ def _label(page) -> Optional[str]:
         return str(page["page"])
     idx = page.get("page_index")
     return str(idx) if isinstance(idx, int) and not isinstance(idx, bool) else None
+
+
+def _user_unit(page) -> Optional[float]:
+    """A ``pt`` canvas's ``user_unit`` when it is a positive number other than 1 (D28), else None."""
+    canvas = page.get("canvas") if isinstance(page, dict) else None
+    try:
+        value = float((canvas or {}).get("user_unit") or 1.0)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 and value != 1.0 else None
 
 
 def _canvas(page) -> Optional[Tuple[float, float, str]]:
@@ -313,19 +324,20 @@ def parse_record_layout(path):
             continue
         idx = index[label]
         canvases[idx] = canvas
-        pages.append(
-            {
-                "id": f"page-{idx}",
-                "width": canvas[0],
-                "height": canvas[1],
-                "idx": idx,
-                "ps_hpos": 0,
-                "ps_vpos": 0,
-                "ps_width": 0,
-                "ps_height": 0,
-                "unit": canvas[2],
-            }
-        )
+        entry = {
+            "id": f"page-{idx}",
+            "width": canvas[0],
+            "height": canvas[1],
+            "idx": idx,
+            "ps_hpos": 0,
+            "ps_vpos": 0,
+            "ps_width": 0,
+            "ps_height": 0,
+            "unit": canvas[2],
+        }
+        if canvas[2] == "pt" and _user_unit(page):
+            entry["user_unit"] = _user_unit(page)  # the writer's IMAGE_DPI scale takes it (D28)
+        pages.append(entry)
     if pages:
         meta["measurement_unit"] = pages[0]["unit"]
 
