@@ -97,8 +97,9 @@ CTX000000001,2,1,Nalezená keramika pochází z raného středověku.,,,ces,1.0,
 where `split_ws` and `split_we` are the start and end character offsets of the words split in the original ALTO
 XML. The `lang` and `lang_score` columns give the detected language and its confidence score, while `perplex`,
 `categ` and the other quality columns add metadata about the text classification. Only `text` is required; a
-`page_label` column, when present, becomes `<pb n>` in TEITOK. `page` and `line` are read as `page_num` and
-`line_num`, and a byte-order mark at the start of a CSV is fine.
+`page_label` column, when present, becomes `<pb n>` in TEITOK. The record's names are read too: `page_index` as
+`page_num`, `line` as `line_num`, and, beside `page_index`, `page` as the label; without `page_index`, a numeric
+`page` is the page number, as before. A byte-order mark at the start of a CSV is fine.
 
 Every row with text is enriched, whatever its `categ`. With `SKIP_UNTRUSTWORTHY_LINES=true` in
 [config_api.txt](../config_api.txt), or `run_pipeline.py --skip-untrustworthy-lines`, the rows whose `categ` is

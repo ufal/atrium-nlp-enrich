@@ -139,6 +139,16 @@ then this PR. Hub:
 A page's `canvas.user_unit` counts in the TEITOK writer's `IMAGE_DPI` scale (D28); with a page image the image's size
 gives the scale, as before. The README's "Where it fits" follows the 2.0 route. Hub: "Status — round 7".
 
+## Status — the meeting's follow-ups (11-16 night)
+
+atrium-project#84 round 8 (comment 3's update): `forms` gone, decode verdicts apart, one line key, the services' JSON in the record's names. Paradata per distribution waits for the next meeting (Q23). Not pushed.
+
+- **One line key.** `record_rows()` carries each line's `page_index`, `page` and own `line`, and the rows layout keeps a row's own line number (`teitok_alto._row_box` `line_no`, `document_hook._augment_tokens_with_position`), so the entities of a record without geometry name the record's lines, a dropped line shifting none (`test_a_docx_records_entities_name_its_own_lines`).
+- **The record's names.** Request rows take `page_index`, `page` (the label) and `line`; `page_num`, `line_num`, `page_label` and a numeric `page` without `page_index` still read, deprecated; `/enrich_text` writes the new names.
+- Re-vendored shared modules; `service/openapi.json`; service README, usage, CONTRIBUTING.
+- **Checked:** 1091 passed.
+- **Next:** the hub's PR first; then this repository's, with the pins moved to it.
+
 ## Depends on
 
 - Kate's answer on #84 (16 November): D24 and the two-level contract.
