@@ -257,6 +257,31 @@ def test_image_dpi_turns_points_into_pixels(two_column, capsys):
     assert "page canvases are in pt" not in capsys.readouterr().err
 
 
+def test_a_user_unit_counts_in_the_image_dpi_scale(tmp_path, capsys):
+    """D28: a `pt` page's boxes are in 1/72 inch x `user_unit`. With UserUnit 2 the same numbers
+    are twice the size on paper, so at IMAGE_DPI 144 the surface and every box double again."""
+    data = record("two_column")
+    for page in data["pages"]:
+        page["canvas"]["user_unit"] = 2.0
+    path = _write_record(tmp_path, data, "two_column")
+    _, pages, _, _, _ = parse_record_layout(path)
+    assert {p.get("user_unit") for p in pages} == {2.0}
+    conllu = tmp_path / "two_column.conllu"
+    conllu.write_text(conllu_for(record_lines("two_column"), ENTITIES), encoding="utf-8")
+    out = tmp_path / "two_column.teitok.xml"
+    assert write_teitok_merged(str(conllu), str(out), str(path), doc_id="two_column", dpi=144)
+    root = ET.parse(out).getroot()
+    assert {(s.get("lrx"), s.get("lry")) for s in root.iter("surface")} == {("2448", "3168")}
+    plain = [144, 40, 378, 58]  # the same line at IMAGE_DPI 144 without a UserUnit (rounded)
+    doubled = [int(v) for v in next(root.iter("lb")).get("bbox").split()]
+    assert all(abs(d - 2 * v) <= 1 for d, v in zip(doubled, plain, strict=True)), doubled
+
+
+def test_a_page_without_a_user_unit_carries_none():
+    _, pages, _, _, _ = parse_record_layout(record_path("two_column"))
+    assert not any("user_unit" in p for p in pages)
+
+
 def _png(path, width, height):
     path.write_bytes(
         b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"

@@ -1114,3 +1114,13 @@ Documentation only; no code, test or configuration change.
 * **Checked:** the full suite, 1088 passed; the spec export; `compare` against the latest release: compatible at v2.0.0-beta.
 * **Next:** the hub's second PR for #84, then the pins; then this PR. Hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md), "Status — round 6".
 * **Not posted; not pushed.**
+
+## 2026-11-16 — atrium-project#84 round 7: UserUnit in the TEITOK scale
+
+* **Asked (K4TEL):** close the doc-schema-v2 gaps left at the `test` heads.
+* **Done (local, not pushed):** `record_layout.py` passes a `pt` page's `canvas.user_unit` to the writer, and
+  `teitok_alto._build_page_scale_map()` counts it in the `IMAGE_DPI` scale (D28; digital-convert now writes it); the
+  README says the layout comes from the record on every route, ALTO only outside the pipeline (D24).
+* **Checked:** the full suite (1090 passed).
+* **Detail:** `plans/doc-schema-v2.plan.md`, "Status — round 7"; hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md).
+* **Not posted; not pushed.**

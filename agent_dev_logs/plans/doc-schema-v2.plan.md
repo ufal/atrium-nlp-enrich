@@ -134,6 +134,11 @@ then this PR. Hub:
 [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md),
 "Status — round 6".
 
+## Status — round 7 (11-16)
+
+A page's `canvas.user_unit` counts in the TEITOK writer's `IMAGE_DPI` scale (D28); with a page image the image's size
+gives the scale, as before. The README's "Where it fits" follows the 2.0 route. Hub: "Status — round 7".
+
 ## Depends on
 
 - Kate's answer on #84 (16 November): D24 and the two-level contract.
