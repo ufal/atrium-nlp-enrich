@@ -328,9 +328,11 @@ class EnrichTextRequest(BaseModel):
     lines: List[Union[str, Dict[str, Any]]] = Field(
         min_length=1,
         description=(
-            "The text lines: strings (one per line, all on page 1), or objects with `text` and optional "
-            "`page_num` or `page`, `line_num` or `line`, `page_label` and `categ` (what "
-            "`skip_untrustworthy_lines` filters on). An object without a non-empty `text` is skipped."
+            "The text lines: strings (one per line, all on page 1), or objects with `text` and, in the "
+            "record's names, optional `page_index` (the page number), `page` (its label), `line` and `categ` "
+            "(what `skip_untrustworthy_lines` filters on). Deprecated, still read: `page_num`, `line_num`, "
+            "`page_label`, and a numeric `page` without `page_index` as the page number. An object without a "
+            "non-empty `text` is skipped."
         ),
     )
     doc_id: str = Field("document", description="The document's id.")
@@ -984,8 +986,9 @@ _ALTO_HELP = (
 
 #: What `file` may be, for /enrich and /jobs.
 _FILE_HELP = (
-    "The text: a .csv/.xlsx table (`text`; optional `page_num` or `page`, `line_num` or `line`, "
-    "`page_label`, `categ`), a .txt (one line per row; a form feed starts a new page), or a "
+    "The text: a .csv/.xlsx table (`text`; optional `page_index`, `page` (the label), `line`, `categ`, "
+    "the record's names; `page_num`, `line_num`, `page_label` still read), a .txt (one line per row; "
+    "a form feed starts a new page), or a "
     "TEITOK .xml -- e.g. flexiconv's "
     "conversion of a PDF, DOCX or PAGE XML (api_flexiconv.sh) -- whose text is annotated "
     "and whose pages, lines and boxes become the output's layout. Optional when "
@@ -1085,7 +1088,7 @@ async def enrich_text(payload: EnrichTextRequest, request: Request):
     rows: List[Dict[str, Any]] = []
     for i, item in enumerate(payload.lines, start=1):
         if isinstance(item, str):
-            rows.append({"text": item, "page_num": 1, "line_num": i})
+            rows.append({"text": item, "page_index": 1, "line": i})
         elif isinstance(item, dict) and item.get("text"):
             rows.append(item)
     # Inline JSON in, inline JSON out — an embedded object rather than an upload part,

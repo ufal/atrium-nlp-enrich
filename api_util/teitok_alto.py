@@ -634,7 +634,8 @@ def _monotone_keep(values):
 
 def _row_box(place):
     """A coordinate-free box for a unit placed by the rows file (a table-only document):
-    its page and line, no coordinates -- the *rows layout*."""
+    its page and line, no coordinates -- the *rows layout*. ``line_no`` is the row's own line
+    number (its table's, or the record's line key; 0 when it has none)."""
     return {
         "left": None,
         "top": None,
@@ -644,6 +645,7 @@ def _row_box(place):
         "block_id": None,
         "line_id": f"__row{place.row}",
         "line_bbox": "",
+        "line_no": place.line,
     }
 
 

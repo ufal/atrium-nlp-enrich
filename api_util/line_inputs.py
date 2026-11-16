@@ -144,6 +144,32 @@ def _cell(record: Dict[str, Any], *names: str) -> Any:
     return None
 
 
+# A row names its place as the record does (atrium-project#84): `page_index` (the physical page),
+# `page` (its label) and `line`. The table's own columns -- `page_num`, `line_num`, `page_label` --
+# are still read, and a row without `page_index` keeps reading a numeric `page` as the page number,
+# as before; both are deprecated in the service's JSON.
+
+
+def page_number(record: Dict[str, Any]) -> int:
+    """A row's page number: `page_index`, else `page_num`, else a numeric `page` (0: none)."""
+    if "page_index" in record:
+        return _int(record["page_index"])
+    return _int(_cell(record, "page_num", "page"))
+
+
+def page_label(record: Dict[str, Any]) -> str:
+    """A row's page label: `page_label`, else, in a row that names its page by `page_index`, `page`."""
+    label = record.get("page_label")
+    if label in (None, "") and "page_index" in record:
+        label = record.get("page")
+    return str(label or "").strip()
+
+
+def line_number(record: Dict[str, Any]) -> int:
+    """A row's line number: `line`, else `line_num` (0: none)."""
+    return _int(_cell(record, "line", "line_num"))
+
+
 def _table_rows(records: Iterable[Dict[str, Any]], skip: frozenset) -> List[Entry]:
     """The rows of a table, in (page, line) order (a stable sort: equal keys keep file order)."""
     rows = []
@@ -156,9 +182,9 @@ def _table_rows(records: Iterable[Dict[str, Any]], skip: frozenset) -> List[Entr
             continue
         rows.append(
             Entry(
-                page=_int(_cell(record, "page_num", "page")),
-                line=_int(_cell(record, "line_num", "line")),
-                label=str(record.get("page_label") or "").strip(),
+                page=page_number(record),
+                line=line_number(record),
+                label=page_label(record),
                 text=text,
                 categ=categ,
             )
@@ -289,15 +315,15 @@ def read_rows(
 def highest_page(rows: Iterable[Dict[str, Any]]) -> int:
     """The highest page number among ``rows`` with text, as ``write_table`` reports it."""
     return max(
-        (_int(_cell(r, "page_num", "page")) for r in rows if (r.get("text") or "").strip()),
+        (page_number(r) for r in rows if (r.get("text") or "").strip()),
         default=0,
     )
 
 
 def write_table(rows: Iterable[Dict[str, Any]], path: Path) -> int:
-    """Write ``rows`` (``text``, ``page_num``/``page``, ``line_num``/``line``, ``page_label``,
-    ``categ``) as the canonical table stage 1 reads; rows without text are left out. Returns
-    the highest page number written."""
+    """Write ``rows`` (``text``, ``page_index``, ``page``, ``line``, ``categ``: the record's names;
+    ``page_num``, ``line_num``, ``page_label`` are read too) as the canonical table stage 1 reads;
+    rows without text are left out. Returns the highest page number written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     max_page = 0
     with open(path, "w", encoding="utf-8", newline="") as fh:
@@ -307,10 +333,10 @@ def write_table(rows: Iterable[Dict[str, Any]], path: Path) -> int:
             text = (r.get("text") or "").strip()
             if not text:
                 continue
-            page = _int(_cell(r, "page_num", "page"))
-            line = _int(_cell(r, "line_num", "line"))
+            page = page_number(r)
+            line = line_number(r)
             max_page = max(max_page, page)
-            writer.writerow([text, page, line, r.get("page_label") or "", r.get("categ") or ""])
+            writer.writerow([text, page, line, page_label(r), r.get("categ") or ""])
     return max_page
 
 

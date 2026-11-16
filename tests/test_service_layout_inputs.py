@@ -301,8 +301,8 @@ def test_enrich_text_takes_the_records_layout_too(client):
 
 def test_a_table_with_its_record_takes_the_records_layout(client):
     rows = record_rows(record_path("two_column"))
-    csv = "text,page_num,line_num\n" + "".join(
-        f'"{r["text"]}",{r["page_num"]},{r["line_num"]}\n' for r in rows
+    csv = "text,page_index,page,line\n" + "".join(
+        f'"{r["text"]}",{r["page_index"]},{r["page"]},{r["line"]}\n' for r in rows
     )
     response = client.post(
         "/enrich",
@@ -328,6 +328,30 @@ def test_a_docx_record_keeps_the_rows_layout(client):
     root = ET.fromstring(body["teitok_xml"])
     assert root.find("facsimile") is None
     assert [pb.get("id") for pb in root.iter("pb")] == ["pb-1", "pb-2"]
+
+
+def test_a_docx_records_entities_name_its_own_lines(client, monkeypatch):
+    """The one line key (atrium-project#84): a record without geometry is enriched through its rows,
+    and its entities name the record's own lines, though a line before them was left out (counted
+    from the rows, the name below would land on line 5)."""
+    from atrium_document import line_key_problems
+
+    data = record("minimal_docx")
+    data["lines"][0]["categ"] = "Trash"  # not a row: the lines after it keep their own `line`
+    kept = [row["text"] for row in data["lines"] if row.get("categ") != "Trash"]
+    names = [(("Ornice",), "gu")]  # record line ("1", 6)
+    monkeypatch.setitem(
+        _STAND_INS, "minimal", (conllu_for(kept, names, ner=False), ne_tsv_for(kept, names))
+    )
+    response = client.post(
+        "/enrich",
+        files={"document_json": _record_part("minimal_docx", data)},
+        data={"kw_method": "none"},
+    )
+    assert response.status_code == 200, response.text
+    doc = response.json()["document_json"]
+    assert [(e["surface"], e["page"], e["line"]) for e in doc["entities"]] == [("Ornice", "1", 6)]
+    assert line_key_problems(doc) == []
 
 
 def test_an_alto_part_wins_over_the_record(client):

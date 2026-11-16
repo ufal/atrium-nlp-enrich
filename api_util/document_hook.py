@@ -139,6 +139,11 @@ def _augment_tokens_with_position(tokens: List[dict]) -> None:
     rather than dropped, so entities from an unaligned document still get a valid (page,
     line) pair instead of crashing later.
 
+    A row of the rows layout that carries its own line number (``line_no``: its table's, or the
+    record's line key when the record is sent without geometry, ``record_layout.record_rows``)
+    keeps it, so the entity names that line (atrium-project#84, the one line key); a number
+    another line of the page already took falls back to the next free one.
+
     Offsets count the *surface* text, the text the page shows: the syntactic words of a
     multi-word token (``tok["_surface"]``, e.g. "abych" = aby + bych) all get the span of
     that one surface token, and the cursor advances once for it.
@@ -168,8 +173,16 @@ def _augment_tokens_with_position(tokens: List[dict]) -> None:
         page_line_seq.setdefault(page, {})
         page_next_line.setdefault(page, 1)
         if line_marker not in page_line_seq[page]:
-            page_line_seq[page][line_marker] = page_next_line[page]
-            page_next_line[page] += 1
+            own = bbox.get("line_no")
+            taken = set(page_line_seq[page].values())
+            if isinstance(own, int) and not isinstance(own, bool) and own >= 1 and own not in taken:
+                page_line_seq[page][line_marker] = own
+                page_next_line[page] = max(page_next_line[page], own + 1)
+            else:
+                while page_next_line[page] in taken:
+                    page_next_line[page] += 1
+                page_line_seq[page][line_marker] = page_next_line[page]
+                page_next_line[page] += 1
         line_num = page_line_seq[page][line_marker]
 
         key = (page, line_marker)

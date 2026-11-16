@@ -151,15 +151,39 @@ def test_the_table_and_the_layout_are_one_selection(name):
     on the same pages, so nothing shifts the character alignment."""
     strings, *_ = parse_record_layout(record_path(name))
     rows = record_rows(record_path(name))
-    assert [(r["page_num"], w) for r in rows for w in r["text"].split()] == [
+    assert [(r["page_index"], w) for r in rows for w in r["text"].split()] == [
         (s["page_idx"], s["content"]) for s in strings
     ]
 
 
-def test_rows_number_pages_by_index_and_lines_per_page():
+def test_rows_carry_the_records_own_line_key():
+    """The record's names (atrium-project#84): `page_index`, the label as `page`, and the record's
+    own `line`, so an entity found on a row names the record's line."""
     rows = record_rows(record_path("two_column"))
-    assert rows[0] == {"text": "Zprava o vyzkumu Horni Mez", "page_num": 1, "line_num": 1}
-    assert [(r["page_num"], r["line_num"]) for r in rows][10:12] == [(1, 11), (2, 1)]
+    assert rows[0] == {
+        "text": "Zprava o vyzkumu Horni Mez",
+        "page_index": 1,
+        "page": "i",
+        "line": 1,
+    }
+    assert [(r["page_index"], r["page"], r["line"]) for r in rows][10:12] == [
+        (1, "i", 11),
+        (2, "ii", 1),
+    ]
+
+
+def test_a_line_left_out_shifts_no_other_lines_key():
+    """An untrustworthy or empty line is not a row, and the rows after it keep their own `line`."""
+    record = {
+        "pages": [{"page": "1", "page_index": 1}],
+        "lines": [
+            {"page": "1", "line": 1, "text": "Výzkum proběhl v Praze."},
+            {"page": "1", "line": 2, "text": "~~ |||| 3", "categ": "Trash"},
+            {"page": "1", "line": 3, "text": ""},
+            {"page": "1", "line": 4, "text": "Nalezeno 12 střepů."},
+        ],
+    }
+    assert [(r["page"], r["line"]) for r in record_rows(record)] == [("1", 1), ("1", 4)]
 
 
 def test_geometry_is_a_canvas_with_a_boxed_line_on_it():

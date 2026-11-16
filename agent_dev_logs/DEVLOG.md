@@ -1124,3 +1124,11 @@ Documentation only; no code, test or configuration change.
 * **Checked:** the full suite (1090 passed).
 * **Detail:** `plans/doc-schema-v2.plan.md`, "Status — round 7"; hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md).
 * **Not posted; not pushed.**
+
+## 2026-11-16 (night) — atrium-project#84 round 8: the meeting's follow-ups
+
+* **Asked (K4TEL):** the follow-ups of #84 that the meeting decided and need no outside answer; per-repository archives.
+* **Written here (not pushed):** entities of a record without geometry keep the record's line key; request rows in the record's names (old names still read). 1091 passed.
+* **Detail:** `plans/doc-schema-v2.plan.md`, "Status — the meeting's follow-ups"; hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md), "Status — round 8 (implemented)".
+* **Not posted; not pushed.**
+

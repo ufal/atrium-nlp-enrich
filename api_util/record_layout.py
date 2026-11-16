@@ -214,16 +214,20 @@ def text_lines(src) -> List[TextLine]:
 
 
 def record_rows(src) -> List[Dict[str, Any]]:
-    """The service's table of a record sent without one: ``text``, ``page_num`` (the page
-    index) and ``line_num`` (1-based per page), from the same lines as the layout."""
+    """The service's table of a record sent without one, from the same lines as the layout, in the
+    record's names: ``text``, ``page_index``, ``page`` (the label) and ``line``, the record's own
+    line key (atrium-project#84), so an entity found on a row names the record's line, a line left
+    out (empty or untrustworthy) shifting no other. A line without a usable number of its own is
+    numbered by its place on the page."""
     rows, per_page = [], collections.Counter()
     for line in text_lines(src):
         per_page[line.page_idx] += 1
         rows.append(
             {
                 "text": line.text.strip(),
-                "page_num": line.page_idx,
-                "line_num": per_page[line.page_idx],
+                "page_index": line.page_idx,
+                "page": line.page,
+                "line": line.line if line.line >= 1 else per_page[line.page_idx],
             }
         )
     return rows
