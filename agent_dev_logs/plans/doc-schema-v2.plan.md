@@ -9,7 +9,7 @@
 > checkout's head `40c68c9` (= `test`). The hub carries the whole change:
 > [plan](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md) ·
 > [digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/84.digest.md) ·
-> [contract digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/project_state_1211.md).
+> contract digest.
 > This file is the repository's slice only. It replaces the 11-11 slice of the same
 > name; its points that still hold are carried here._
 
