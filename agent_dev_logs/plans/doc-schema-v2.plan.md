@@ -1,20 +1,26 @@
 # Strategy — [atrium-project#84](https://github.com/ufal/atrium-project/issues/84) (doc-schema-v2): nlp-enrich's part
 
+> _**Refreshed 2026-11-19**: "Status — 11-19": #46 and #47 merged; Ronald's answers; aiscr-docs-pipeline#4; D35._
 > _**Refreshed 2026-11-14 (afternoon)**: "Status — round 6 (11-14)": the hub merged, the pins moved, round 6._
 > _**Refreshed 2026-11-14**: "Status — PR (11-14)": the PR's checks and round 5's fixes._
 > _**Refreshed 2026-11-13**: "Status — round 2" (the code, not pushed yet) and round 4's notes. The file keeps
 > the name `doc-schema-v2.plan.md` (it was `84.plan.md` on 11-12 and 11-13)._
 > _**Written 2026-11-12** on ARÚP's output contract of 12 November and atrium-project#84 (motyc, 11-12), at this
 > checkout's head `40c68c9` (= `test`). The hub carries the whole change:
-> [plan](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md) ·
-> [digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/doc-schema-v2.digest.md) ·
+> [plan](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md) ·
+> [digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/84.digest.md) ·
 > [contract digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/project_state_1211.md).
 > This file is the repository's slice only. It replaces the 11-11 slice of the same
 > name; its points that still hold are carried here._
 
+**Status (2026-11-19)**: 🟢 **This repository's part is on `test` (#45–#47), pinned to `02cbd01`: the layout comes
+from the record (and its docproc links), not ALTO, as motyc wrote on aiscr-docs-pipeline#4 (11-12). Ronald's answers
+(11-17) change nothing here. Left: the release (`v2.0.0-beta`) with the batch (atrium-project#77); D35 for
+publication (atrium-project#78).**
+
 **Status (2026-11-14, afternoon)**: 🟡 **The hub's PR is merged and this repository is pinned to it: drift is green.
 Round 6 completes this repository's part where no answer is pending; see "Status — round 6". The release (v2.0.0-beta)
-is cut at K4TEL's cadence.**
+is cut at K4TEL's cadence.** _(superseded 11-19: rounds 7–8 merged, the answers in)_
 
 **Status (2026-11-14)**: 🟡 **[atrium-nlp-enrich#45](https://github.com/ufal/atrium-nlp-enrich/pull/45) is open
 (`doc-schema-v2` into `test`); see "Status — PR". Drift clears once the hub's PR merges and the pins move; the
@@ -102,7 +108,7 @@ Local branch from `test`, on the re-vendored shared modules (record 2.0, paradat
 [atrium-nlp-enrich#45](https://github.com/ufal/atrium-nlp-enrich/pull/45), head `d0df625`. Failing checks: check-drift
 (canonical), because the callers read the hub at `v1` (`4435ffb`) while the copies are v2; api-contract, because the
 record schema went from 1.0 to 2.0 without a major version. The causes across all seven PRs:
-[hub plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md),
+[hub plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md),
 "Status — PRs".
 
 Round 5 (not pushed):
@@ -131,7 +137,7 @@ The hub's PR (atrium-project#86) merged; `v1` moved to it and K4TEL pinned this 
 
 The suite passes: 1088. Next: the hub's second PR for #84 (the E2E lanes, rule 5's mark), then `v1` and the pins again;
 then this PR. Hub:
-[plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md),
+[plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md),
 "Status — round 6".
 
 ## Status — round 7 (11-16)
@@ -149,7 +155,21 @@ atrium-project#84 round 8 (comment 3's update): `forms` gone, decode verdicts ap
 - **Checked:** 1091 passed.
 - **Next:** the hub's PR first; then this repository's, with the pins moved to it.
 
+## Status — 11-19: on `test`; what the answers leave
+
+- **On `test`:** #45 (record 2.0), #46 (round 7: `UserUnit` in the TEITOK scale), #47 (round 8: one line key, the
+  record's names); `master` = `test`.
+- **aiscr-docs-pipeline#4** (this step; motyc, 11-12): the layout from the record and docproc, no ALTO — what #45 and
+  #46 built.
+- **Ronald (11-17,** [hub digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/84.digest.md#-2026-11-19--ronalds-answers-the-open-atrs-draft-the-storage-contract)**):** D24 and D20 confirmed (no ALTO anywhere on the route); line positions
+  from the ATR are `derived`, which the TEITOK writer takes as given; no handwriting type. Nothing to change.
+- **D35:** UDPipe and NameTag outputs are produced and checked in the pilot, not published until #78 is settled;
+  AMČR's storage contract (11-19) needs LINDAT's terms before production.
+- **The tag:** after the pilot run on the cluster (the storage contract).
+
 ## Depends on
+
+_(11-19: Kate's answer given (11-12); ocr-postprocess's slice and the hub tasks are on `test`.)_
 
 - Kate's answer on #84 (16 November): D24 and the two-level contract.
 - ocr-postprocess's slice: the record builder writes `bbox`, `bbox_precision`, `block` and `canvas` in the one
@@ -167,5 +187,6 @@ atrium-project#84 round 8 (comment 3's update): `forms` gone, decode verdicts ap
 ## Not in scope
 
 - #7 (the domain NameTag model) and #18 (annotation tool): deferred past the pilot phase.
-- The LINDAT terms (atrium-project#78); the daily probe's schedule (atrium-project#81).
+- The LINDAT terms (atrium-project#78); the daily probe's schedule (atrium-project#81; since its close on 11-16,
+  atrium-project#40).
 - Producing ALTO; an ALTO export (D24: only if a consumer needs it, from docproc).
