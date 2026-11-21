@@ -5,11 +5,6 @@ on:
     paths:
       - "**/*.sh"
       - ".github/workflows/shellcheck.yml"
-  push:
-    branches: [test, master]
-    paths:
-      - "**/*.sh"
-      - ".github/workflows/shellcheck.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
