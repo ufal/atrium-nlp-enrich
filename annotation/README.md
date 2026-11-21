@@ -87,7 +87,7 @@ python annotation/conllu_to_ls.py \
 
 The two TSVs are page chunks of one document; the `cat` is what makes `data_samples_converted/import_tsv.json`.
 
-* **Explanation:** Ingests two-column or three-column IOB2 TSV files (written by `api_util/call_nametag.py` or LLM pre-annotation scripts) and formats them into Label Studio task JSONs.
+* **Explanation:** Ingests two-column or three-column IOB2 TSV files (written by `api_util/call_nametag.py`, or by pre-annotation scripts outside this repository) and formats them into Label Studio task JSONs.
 
 * **Justification:** Provides seamless interoperability with legacy model outputs and LLM pre-labeling pipelines, translating token-level `B-` / `I-` tags into character offset spans (`start`, `end`) expected by Label Studio.
 

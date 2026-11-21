@@ -18,15 +18,19 @@ service: it is [atrium-keyword-extract](https://github.com/ufal/atrium-keyword-e
 The published image first: it is what a deployment runs, and it needs no checkout.
 
 ```bash
-docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # e.g. 1.3.4-beta
-curl -s http://localhost:8000/ready                                           # 200 once ready
-# from a checkout:
-docker compose --profile api up -d
-# or in a virtual environment (development):
-./setup_api_service.sh                 # venv + deps + serve
-pip install -r requirements.txt -r service/requirements.txt
-python -m service.api                  # honours PORT/HOST; default 0.0.0.0:8000
+docker run -d --name atrium-nlp-enrich -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # 2.0.0-beta or later
+until curl -fsS http://localhost:8000/ready >/dev/null; do sleep 2; done
 ```
+
+From a checkout, with compose (`docker compose --profile api up -d`) or in a virtual environment, for development:
+
+```bash
+pip install -r requirements.txt -r service/requirements.txt
+python -m service.api                  # honours PORT/HOST; default 0.0.0.0:8000; leave it running
+```
+
+`./setup_api_service.sh` does both in one step: it creates the virtual environment, installs the dependencies and
+serves, so it does not return. Stop the container with `docker rm -f atrium-nlp-enrich`.
 
 Run from a virtual environment, the service needs no activation: the pipeline puts the
 environment's `bin` first for its stage scripts, and refuses with exit 3 (HTTP 500) when their
@@ -113,7 +117,8 @@ The TEITOK the service returns has the layout of what it was given; `layout_sour
   (`<surface lrx="612" lry="792">` for a Letter page). For pixels, `POST /rescale` with `scale` =
   the page images' DPI / 72; the CLI scales them itself with `IMAGE_DPI` or `INPUT_PAGES_DIR`. The
   record has line boxes only, so a token's box is its share of the line box by character offset
-  — approximate, and the header says so. A DOCX record has no geometry: `layout_source` is `rows`.
+  — approximate, and the header says so. A record without boxes, a spreadsheet's or a text file's, has no
+  geometry: `layout_source` is `rows`.
 * The `doc_id` is the file name without `.teitok.xml`, `.alto.xml` or the table extension, as the
   command line derives it from the same file: `zpráva 1.csv` is `zpráva 1`. Only control characters and path
   separators are replaced. For a record sent
@@ -128,7 +133,7 @@ The TEITOK the service returns has the layout of what it was given; `layout_sour
   "teitok_enrichment": false, "skip_untrustworthy_lines": false, "include_record": false }
 ```
 
-A line may also be an object, in the record's names (atrium-project#84): `text`, and optional `page_index`
+A line may also be an object, in the record's names: `text`, and optional `page_index`
 (the page number), `page` (its label), `line` and `categ`. `page_num`, `line_num`, `page_label`, and a numeric
 `page` without `page_index`, are still read as before, and deprecated.
 
@@ -154,7 +159,7 @@ The service threads the flags through to it, so there is one implementation, not
 * Omit the part and the key is **absent** from the envelope — not `null`. Existing clients
   see no change at all.
 * Supply it and the pipeline produce no record (no CoNLL-U reached the document hook, or the
-  hook failed), and the call fails (D13, atrium-project#84; until then `null` with a 200).
+  hook failed), and the call fails.
   `run_pipeline.py` prints `[document-json] NOT WRITTEN` on stdout and exits 1; the pipeline
   log says why.
 * A baseline that does not validate against `atrium_document.schema.json` is still accepted:
@@ -184,10 +189,9 @@ The service threads the flags through to it, so there is one implementation, not
 `limits_applied` lists the sampling and splitting the result rests on: a text sent to UDPipe
 in chunks (`word_chunk_limit`, `split`). The stages record them in their paradata; this is the
 merged record's `limits` (`[]` when none applied). A limit that would trim, skip or stop content
-fails the call instead (ARÚP's output contract of 12 November 2026, D13).
+fails the call instead.
 
-**`paradata`** is the call's provenance (paradata schema 3.0,
-[atrium-project#84](https://github.com/ufal/atrium-project/issues/84)): one Process Run Crate
+**`paradata`** is the call's provenance (paradata schema 3.0): one Process Run Crate
 `CreateAction`, built by `atrium_rocrate.action_from_paradata()` from the run's merged
 pipeline-run record (its `paradataRecord`, with the components of every stage, each with its own
 terms; no licence of the output is computed). Its `@id` is the merged run's `run_uuid`: the
@@ -196,8 +200,8 @@ SHA-512: the upload (or `lines.json`, a separate `alto` part) as `original`, and
 read (`atrium/document-json`). `result` is the record written, with the blocks and fields the run
 wrote (`recordFields`), and the TEITOK (`atr/teitok-xml`). The CoNLL-U, CSV and summary are not
 stored outputs and are not named. `agent` is `ATRIUM_RUN_AGENT` when set. The field is `null` only
-for a run that left no paradata. An error response carries no action. Hub
-[`docs/rocrate_export.md`](https://github.com/ufal/atrium-project/blob/main/docs/rocrate_export.md) §5
+for a run that left no paradata. An error response carries no action. The hub's
+[RO-Crate guide](https://github.com/ufal/atrium-project/blob/main/docs/rocrate_export.md#5-one-run-the-createaction)
 describes it.
 
 `layout_source` is `rows`, `alto`, `teitok` or `record` ([Layout inputs](#layout-inputs)).
@@ -317,27 +321,27 @@ curl -F file=@TEITOK/CTX000000001.teitok.xml -F document_json=@CTX000000001.docu
 
 ## Errors
 
-Every error has one JSON body (hub `docs/agent_skill_strategy.md` §4.4): `{"status": <int>, "reason": <code or null>,
+Every error has one JSON body, the same in every ATRIUM service (`ErrorBody` in [`openapi.json`](openapi.json)): `{"status": <int>, "reason": <code or null>,
 "detail": "<text>"}`. `detail` is always
 a string. A limit refusal adds `limit` (`{key, env, value, observed, unit}`); a request
 validation error adds FastAPI's list of problems as `errors`.
 
-| Status | `reason`                 | Meaning                                                                                                                                                                | What to do                                                                           |
-|--------|--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| 404    | `null`                   | `/jobs/{id}` or its `/result` names a job this replica does not hold: deleted, forgotten `JOB_TTL_S` after it ended, lost in a restart, or accepted by another replica | submit it again with `POST /jobs`; route a client's job calls to one replica         |
-| 409    | `null`                   | `/jobs/{id}/result` of a job that is not `done`                                                                                                                        | poll `GET /jobs/{id}` until `done`                                                   |
-| 413    | `limit_exceeded`         | over `MAX_UPLOAD_MB` or `MAX_WORDS`                                                                                                                                    | split the input, or raise the setting `limit.env` names                              |
-| 415    | `unsupported_media_type` | the upload is not `.csv`, `.xlsx`, `.txt` or a TEITOK `.xml`; `accepted` lists them                                                                                    | send one of the types in `accepted`                                                  |
-| 422    | `invalid_record`         | the `document_json` sent cannot be opened (not UTF-8 JSON, not an object, a newer `schema_version` major), or its `entities` or `pages` is not a list of objects       | send the record the previous stage wrote; update this service if the record is newer |
-| 422    | `limit_exceeded`         | `/rescale` over `MAX_RESCALE_DIM`                                                                                                                                      | lower `scale`, or raise `MAX_RESCALE_DIM`                                            |
-| 422    | `null`                   | an unusable upload, a bad parameter (a value outside the spec's enums or bounds), or request validation (`errors`)                                                     | fix the field `errors` or `detail` names                                             |
-| 429    | `busy`                   | every processing slot taken (synchronous endpoints), or the `/jobs` queue full; retry after `Retry-After` seconds                                                      | retry after `Retry-After`; add replicas if it persists                               |
-| 500    | `null`                   | the TEITOK failed its output contract (exit 5) — a writer defect, please report it; LINDAT refused the request (exit 8, a 4xx)                                         | report it with `detail`; for a LINDAT 4xx, check the model names in `config_api.txt` |
-| 500    | `null`                   | a dependency the stages need is missing (exit 3, a deployment defect); `detail` says what and how to install it                                                        | install what `detail` names into the service's Python, or run the image              |
-| 502    | `upstream_unavailable`   | UDPipe or NameTag did not answer after their retries (exit 6); `detail` starts `LINDAT UDPipe …` or `LINDAT NameTag …`                                                 | retry later; check that `UDPIPE_URL` and `NAMETAG_URL` are reachable                 |
-| 502    | `null`                   | a stage failed: an empty run, a missing stage                                                                                                                          | fix the input `detail` names; do not retry it unchanged                              |
-| 503    | `null`                   | the replica is shutting down                                                                                                                                           | retry on another replica                                                             |
-| 504    | `limit_exceeded`         | the run took longer than `API_JOB_TIMEOUT` and was stopped; or every LINDAT attempt timed out (exit 7, `limit.key` `lindat_timeout_s`)                                 | send a smaller input, or raise the setting `limit.env` names                         |
+| Status | `reason`                 | Meaning                                                                                                                                                                             | What to do                                                                           |
+|--------|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| 404    | `null`                   | `/jobs/{id}` or its `/result` names a job this replica does not hold: deleted, forgotten `JOB_TTL_S` after it ended, lost in a restart, or accepted by another replica              | submit it again with `POST /jobs`; route a client's job calls to one replica         |
+| 409    | `null`                   | `/jobs/{id}/result` of a job that is not `done`                                                                                                                                     | poll `GET /jobs/{id}` until `done`                                                   |
+| 413    | `limit_exceeded`         | over `MAX_UPLOAD_MB` or `MAX_WORDS`                                                                                                                                                 | split the input, or raise the setting `limit.env` names                              |
+| 415    | `unsupported_media_type` | the upload is not `.csv`, `.xlsx`, `.txt` or a TEITOK `.xml`; `accepted` lists them                                                                                                 | send one of the types in `accepted`                                                  |
+| 422    | `invalid_record`         | the `document_json` sent cannot be opened (not UTF-8 JSON, not an object, a newer `schema_version` major), or its `entities` or `pages` is not a list of objects                    | send the record the previous stage wrote; update this service if the record is newer |
+| 422    | `limit_exceeded`         | `/rescale` over `MAX_RESCALE_DIM`                                                                                                                                                   | lower `scale`, or raise `MAX_RESCALE_DIM`                                            |
+| 422    | `null`                   | an unusable upload, a bad parameter (a value outside the spec's enums or bounds), or request validation (`errors`)                                                                  | fix the field `errors` or `detail` names                                             |
+| 429    | `busy`                   | every processing slot taken (synchronous endpoints), or the `/jobs` queue full; retry after `Retry-After` seconds                                                                   | retry after `Retry-After`; add replicas if it persists                               |
+| 500    | `null`                   | the TEITOK failed its output contract (exit 5) — a writer defect, please report it; LINDAT refused the request (exit 8, a 4xx)                                                      | report it with `detail`; for a LINDAT 4xx, check the model names in `config_api.txt` |
+| 500    | `null`                   | a dependency the stages need is missing (exit 3, a deployment defect); `detail` says what and how to install it                                                                     | install what `detail` names into the service's Python, or run the image              |
+| 502    | `upstream_unavailable`   | UDPipe or NameTag did not answer after their retries (exit 6); `detail` starts `LINDAT UDPipe …` or `LINDAT NameTag …`                                                              | retry later; check that `UDPIPE_URL` and `NAMETAG_URL` are reachable                 |
+| 502    | `null`                   | a stage failed: an empty run, a missing stage, or a record asked for and not written (`detail` says exit 1 for both; the log's `[document-json] NOT WRITTEN` line tells them apart) | fix the input `detail` or the log names; do not retry it unchanged                   |
+| 503    | `null`                   | the replica is shutting down                                                                                                                                                        | retry on another replica                                                             |
+| 504    | `limit_exceeded`         | the run took longer than `API_JOB_TIMEOUT` and was stopped; or every LINDAT attempt timed out (exit 7, `limit.key` `lindat_timeout_s`)                                              | send a smaller input, or raise the setting `limit.env` names                         |
 
 ## Limits
 
@@ -368,15 +372,14 @@ config. `tests/test_limits_contract.py` checks this table against `tool_limits.p
 
 Not settings: Starlette's multipart parser keeps its own defaults.
 
-## What a 200 carries
+## Partial results
 
-Since ARÚP's output contract of 12 November 2026 (D13) a call that cannot deliver what was asked
-for fails. Read these before using the result:
+A call that cannot deliver what was asked for fails: nothing partial is returned. Read these before using the
+result:
 
 - `limits_applied` lists the splitting the result rests on.
 - A record asked for (`document_json`, `include_record`) and not written fails the call; the
-  service log names the cause on its `[document-json] NOT WRITTEN` line. Until #84 it came back
-  `null` with a 200.
+  service log names the cause on its `[document-json] NOT WRITTEN` line.
 - `ne_summary` keeps each page's `NE_SUMMARY_TOP_N` most frequent entities; it is a summary, not a
   stored output.
 - `layout_source` `rows` means the TEITOK has pages and lines but no boxes: no layout input had
@@ -392,15 +395,15 @@ for fails. Read these before using the result:
 - A record has line boxes at best (block boxes for ATR text without line breaks). Word boxes are
   shared out from the line boxes by character offset, are approximate, and the TEITOK header says
   so ([TEITOK's limits](../docs/reference/teitok.md#teitoks-limits)).
-- Not published yet: AMČR does not publish what this service produces through UDPipe and NameTag
-  until [atrium-project#78](https://github.com/ufal/atrium-project/issues/78) settles the LINDAT
-  terms (D35).
+- Until the terms of LINDAT's services are settled
+  ([atrium-project#78](https://github.com/ufal/atrium-project/issues/78)), AMČR does not publish outputs made
+  through them: the linguistic layer, the entities, the TEITOK file and the English metadata.
 - A record's boxes are in PDF points; `/rescale` with `scale` = DPI/72 turns them into the pixels
   of a page image rendered at that DPI.
 - Named entities come from NameTag's general model (OntoNotes types), not an archaeological one.
 - `/jobs` are not persistent. A job lives in the memory of the replica that accepted it: a restart, a redeploy
   or a call that reaches another replica answers 404, and the client submits the job again. Accepted for the
-  [S2 pilot](https://ufal.github.io/atrium-project/pilot/); `/enrich` is the synchronous alternative.
+  [AMČR pilot](https://ufal.github.io/atrium-project/pilot/); `/enrich` is the synchronous alternative.
 
 ## Configuration (environment)
 
@@ -447,7 +450,7 @@ The runner's exit code decides the HTTP answer:
 | Exit code | Meaning                                                                                               | Answer                                                   |
 |-----------|-------------------------------------------------------------------------------------------------------|----------------------------------------------------------|
 | `0`       | the run completed                                                                                     | 200                                                      |
-| `1`       | an empty run                                                                                          | 502                                                      |
+| `1`       | an empty run, or a record asked for and not written                                                   | 502                                                      |
 | `2`       | a stage script is missing                                                                             | 502                                                      |
 | `3`       | a dependency of the stages is missing, e.g. their `python3` cannot import `lxml`: a deployment defect | 500; `detail` says what is missing and how to install it |
 | `5`       | the TEITOK failed its output contract: a writer defect, "please report it"                            | 500                                                      |

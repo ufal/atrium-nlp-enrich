@@ -20,13 +20,13 @@ The file as shipped, grouped, with its comments shortened:
 # Paths
 OUTPUT_DIR="./data_samples"                       # destination for results (the samples, by default)
 INPUT_TABLES_DIR="$OUTPUT_DIR/DOC_LINE_CATEG"     # input tables (.csv, .xlsx) and .txt: ocr-postprocess's DOC_LINE_CATEG/
-SKIP_UNTRUSTWORTHY_LINES="${SKIP_UNTRUSTWORTHY_LINES:-false}"  # true: leave out rows whose categ is Trash (#72)
+SKIP_UNTRUSTWORTHY_LINES="${SKIP_UNTRUSTWORTHY_LINES:-false}"  # true: leave out rows whose categ is Trash
 
 WORK_DIR="./TEMP"                                 # working directory for intermediate files
 
 LOG_FILE="$OUTPUT_DIR/processing.log"
 CONLLU_INPUT_DIR="$OUTPUT_DIR/UDP"
-TEMP_TXT_DIR="./TEMP/TXT_EXTRACT"                 # stage 1: <doc>.txt and <doc>.rows.tsv (#38)
+TEMP_TXT_DIR="./TEMP/TXT_EXTRACT"                 # stage 1: <doc>.txt and <doc>.rows.tsv
 CHUNK_DIR="./TEMP/CHUNKS"
 
 TSV_INPUT_DIR="$OUTPUT_DIR/NE"
@@ -37,7 +37,7 @@ INPUT_ALTO_DIR="$OUTPUT_DIR/ALTO"                 # source ALTO XML files, for T
 
 PARADATA_DIR="$OUTPUT_DIR/paradata"
 
-# Backing services (atrium-project#63). Environment wins, this file is the default:
+# Backing services. Environment wins, this file is the default:
 # see "Backing service endpoints" below for why the ${VAR:-...} form is required.
 UDPIPE_URL="${UDPIPE_URL:-https://lindat.mff.cuni.cz/services/udpipe/api/process}"
 NAMETAG_URL="${NAMETAG_URL:-https://lindat.mff.cuni.cz/services/nametag/api/recognize}"
@@ -70,7 +70,7 @@ FLEXICONV_FORMATS="pdf docx odt rtf html htm md txt epub tei conllu vert folia s
 
 # run_pipeline.py
 FAIL_ON_EMPTY=true                                # a stage that processed nothing fails the run
-TEITOK_ENRICHMENT="${TEITOK_ENRICHMENT:-false}"   # opt-in record projection (atrium-project#70)
+TEITOK_ENRICHMENT="${TEITOK_ENRICHMENT:-false}"   # opt-in record projection
 ```
 
 The keys written as `${VAR:-default}` can be set for one run from the environment without editing the file
@@ -83,7 +83,7 @@ of its `--skip-<stage>` flags
 ([Resume an interrupted run](usage.md#resume-an-interrupted-run)). `TEITOK_ENRICHMENT=true` adds a `project`
 stage after `stats` ([record projection](reference/teitok.md#record-projection-onto-teitok-opt-in)).
 
-`TIMEOUT`, `MAX_RETRIES` and `WORD_CHUNK_LIMIT` are limits (atrium-project#53). For an API job each is also an
+`TIMEOUT`, `MAX_RETRIES` and `WORD_CHUNK_LIMIT` are limits. For an API job each is also an
 environment setting (`LINDAT_TIMEOUT_S`, `LINDAT_MAX_RETRIES` and `WORD_CHUNK_LIMIT`), which wins over this file, and
 `GET /info` reports the value in force; see [service/README.md, Limits](../service/README.md#limits) for every limit
 of the service.

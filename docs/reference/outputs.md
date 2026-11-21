@@ -71,9 +71,9 @@ was given beside what the stages wrote:
 ```
 
 The combined output `summary_ne_counts.csv` contains aggregated named-entity statistics across all processed pages.
-It is written by stage 4 (`api_4_stats.sh`). This repository's `data_samples/` only ships the three synthetic demo
-documents (`CTX00000000{1,2,3}`), so no `summary_ne_counts.csv` is committed: the file is the output of a real run,
-not a sample bundled here.
+It is written by stage 4 (`api_4_stats.sh`). This repository's `data_samples/` holds the outputs of the three
+synthetic demo documents (`CTX00000000{1,2,3}`), so no `summary_ne_counts.csv` is committed: the file is the output
+of a real run, not a sample bundled here.
 
 Example output directories:
 
@@ -83,7 +83,9 @@ Example output directories:
   files with NE annotations, per document.
 * [TEITOK](../../data_samples/TEITOK): per-document TEITOK XML files combining UD linguistic annotations and NER
   spans with bounding boxes aligned from the source ALTO XML.
-* [manifest.tsv](../../data_samples/manifest.tsv), with **file**, **page** (count) and **path** columns.
+* [manifest.tsv](../../data_samples/manifest.tsv), with **file**, **page** (count) and **path** columns, one row per
+  document. The sample comes from a larger run, without the header line a run writes, so most of its documents are
+  not in this repository.
 
 The committed `NE/` files carry OntoNotes labels, while `UDP_NE/` and `TEITOK/` were produced with the Czech CNEC
 model before the default changed; a sample refresh on LINDAT aligns them.

@@ -47,33 +47,35 @@ stops with exit code 6 or 7 ([Exit codes](#exit-codes)).
 limits, the errors and the OpenAPI contract. In short:
 
 ```bash
-python -m service.api                  # PORT / HOST; default 0.0.0.0:8000
+python -m service.api                  # PORT / HOST; default 0.0.0.0:8000; leave it running
+# from a second terminal:
+curl -s -X POST localhost:8000/enrich -F "document_json=@tests/fixtures/record_layout/two_column.document.json"
 curl -s -X POST localhost:8000/enrich -F "file=@data_samples/DOC_LINE_CATEG/CTX000000001.csv" \
-     -F "alto=@data_samples/ALTO/CTX000000001.alto.xml"           # the JSON envelope, TEITOK with boxes
+     -F "alto=@data_samples/ALTO/CTX000000001.alto.xml"           # a table with its ALTO, for research use
 curl -s -X POST localhost:8000/rescale -F "file=@data_samples/TEITOK/CTX000000001.teitok.xml" \
      -F width=827 -F height=1170                                  # no LINDAT needed
 ```
 
-`/enrich` takes a table, a `.txt` or a converted TEITOK file, optionally with the ALTO of a table's pages or an
-ATRIUM record. `/jobs` runs the same as a background job. `/rescale` and `/project_record` transform a finished
+`/enrich` takes the document's ATRIUM record, which gives the text and the layout, as the AMČR pipeline sends it. For
+research and batch use it also takes a table, a `.txt` or a converted TEITOK file, optionally with the ALTO of a
+table's pages. `/jobs` runs the same as a background job. `/rescale` and `/project_record` transform a finished
 TEITOK file without running the pipeline.
 
 ## Run the stages by hand
 
-The process is divided into sequential steps, each responsible for one part of the enrichment. Step 1 happens in
-[atrium-ocr-postprocess](https://github.com/ufal/atrium-ocr-postprocess); step 2 is this repository's four stage
-scripts. [run_pipeline.py](#run-the-whole-pipeline-run_pipelinepy) runs them all with one command.
+A batch run over line tables, for research collections, is divided into sequential steps, each responsible for one
+part of the enrichment. Step 1 happens in [atrium-ocr-postprocess](https://github.com/ufal/atrium-ocr-postprocess)'s
+batch pipeline; step 2 is this repository's four stage scripts. [run_pipeline.py](#run-the-whole-pipeline-run_pipelinepy)
+runs them all with one command.
 
-### Step 1: prepare tables with the text of page-specific ALTOs
+### Step 1: prepare tables of text lines
 
-If you already have a directory of CSV (XLSX) tables with a `text` column holding the text extracted from ALTO XML
-files, skip step 1 and go to step 2.
+If you already have a directory of CSV (XLSX) tables with a `text` column, skip step 1 and go to step 2.
 
-The input tables come from [atrium-ocr-postprocess](https://github.com/ufal/atrium-ocr-postprocess), which orders
-the text and boxes of the ALTO XML files by LayoutReader and records them in a `text` column. They are in its
-`DOC_LINE_CATEG/` directory, which `INPUT_TABLES_DIR` points at by default. Each CSV (XLSX) file corresponds to a
-document and has a row for each line, with page and line number columns for the proper ordering (`page_num` and
-`line_num`):
+The input tables come from atrium-ocr-postprocess's batch pipeline, which reads OCR output and other text-bearing
+files into per-document line tables in its `DOC_LINE_CATEG/` directory, which `INPUT_TABLES_DIR` points at by default.
+Each CSV (XLSX) file corresponds to a document and has a row for each line, with page and line number columns for the
+proper ordering (`page_num` and `line_num`):
 
 ```
 DOC_LINE_CATEG/
@@ -94,8 +96,8 @@ CTX000000001,2,1,Nalezená keramika pochází z raného středověku.,,,ces,1.0,
 ...
 ```
 
-where `split_ws` and `split_we` are the start and end character offsets of the words split in the original ALTO
-XML. The `lang` and `lang_score` columns give the detected language and its confidence score, while `perplex`,
+where `split_ws` and `split_we` are the two parts of a word split across lines: its start at the end of the line,
+and its end at the start of the next. The `lang` and `lang_score` columns give the detected language and its confidence score, while `perplex`,
 `categ` and the other quality columns add metadata about the text classification. Only `text` is required; a
 `page_label` column, when present, becomes `<pb n>` in TEITOK. The record's names are read too: `page_index` as
 `page_num`, `line` as `line_num`, and, beside `page_index`, `page` as the label; without `page_index`, a numeric
@@ -103,8 +105,8 @@ XML. The `lang` and `lang_score` columns give the detected language and its conf
 
 Every row with text is enriched, whatever its `categ`. With `SKIP_UNTRUSTWORTHY_LINES=true` in
 [config_api.txt](../config_api.txt), or `run_pipeline.py --skip-untrustworthy-lines`, the rows whose `categ` is
-`Trash` (or digital-convert's `Garbage` and `Inverted`) are left out; the service's `skip_untrustworthy_lines` does
-the same. A record sent as the text is filtered always.
+`Trash` are left out; the service's `skip_untrustworthy_lines` does the same. A record sent as the text is filtered
+always: its `Trash` and `Empty` lines are left out.
 
 ### Step 2: extract named entities and CoNLL-U
 
@@ -126,9 +128,10 @@ processing, text chunking and API rate limiting. Run them in sequence; each sour
 * **Output:** `<OUTPUT_DIR>/manifest.tsv`, and per document `TEMP_TXT_DIR/<doc_id>.txt` (one line per table row)
   with `TEMP_TXT_DIR/<doc_id>.rows.tsv` next to it: the page, line, page label and text of every line.
 
-The example output file [manifest.tsv](../data_samples/manifest.tsv) has **file**, **page** (the page count) and
-**path** columns. It lists all text files to be processed in the next steps. To see how many documents will be
-processed (the rows of the manifest, without its header line):
+The manifest lists the documents to be processed in the next steps, one per row: **file**, **page** (the page count)
+and **path** of its text file, under a header line. The example [manifest.tsv](../data_samples/manifest.tsv) comes
+from a larger run without its header, so most of its documents are not in this repository. To see how many documents
+a run will process (the rows of the manifest, without its header line):
 
 ```bash
 tail -n +2 <OUTPUT_DIR>/manifest.tsv | wc -l
@@ -302,17 +305,17 @@ resumed run remains fully auditable. An all-skipped run is treated as a **succes
 The exit code is the runner's contract; the service maps it to an HTTP status
 ([service/README.md, How it works](../service/README.md#how-it-works)).
 
-| Code | Meaning                                                                                                                                                                                                                                                             |
-|------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `0`  | All requested stages completed; nothing flagged.                                                                                                                                                                                                                    |
-| `1`  | A stage processed **nothing** despite having input and no resume, and `FAIL_ON_EMPTY=true` (the default). Also: `--with-flexiconv` could not convert at least one document; a record asked for with `--document-json-out` was not written (D13, atrium-project#84). |
-| `2`  | A required stage script was not found; or argparse refused an option (e.g. `--lang de`).                                                                                                                                                                            |
-| `3`  | A dependency preflight failed: `--with-flexiconv` without flexiconv, or the stages' `python3` cannot import `requests` or `lxml` (the message names it and the fix).                                                                                                |
-| `5`  | The TEITOK output failed its output contract (`api_4_stats.sh`'s gate: the XSD, unique ids, resolvable references, the page rules). A writer defect: please report it.                                                                                              |
-| `6`  | LINDAT UDPipe or NameTag did not answer after `MAX_RETRIES` retries (HTTP 5xx or 429, a refused or dropped connection); the first line on stderr names the service.                                                                                                 |
-| `7`  | Every attempt at a LINDAT call timed out (`TIMEOUT` seconds each).                                                                                                                                                                                                  |
-| `8`  | LINDAT refused the request (HTTP 4xx, e.g. an unknown model): a configuration or request defect, not the input.                                                                                                                                                     |
-| `≠0` | A stage script itself exited non-zero (its code is propagated).                                                                                                                                                                                                     |
+| Code | Meaning                                                                                                                                                                                                                                    |
+|------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`  | All requested stages completed; nothing flagged.                                                                                                                                                                                           |
+| `1`  | A stage processed **nothing** despite having input and no resume, and `FAIL_ON_EMPTY=true` (the default). Also: `--with-flexiconv` could not convert at least one document; a record asked for with `--document-json-out` was not written. |
+| `2`  | A required stage script was not found; or argparse refused an option (e.g. `--lang de`).                                                                                                                                                   |
+| `3`  | A dependency preflight failed: `--with-flexiconv` without flexiconv, or the stages' `python3` cannot import `requests` or `lxml` (the message names it and the fix).                                                                       |
+| `5`  | The TEITOK output failed its output contract (`api_4_stats.sh`'s gate: the XSD, unique ids, resolvable references, the page rules). A writer defect: please report it.                                                                     |
+| `6`  | LINDAT UDPipe or NameTag did not answer after `MAX_RETRIES` retries (HTTP 5xx or 429, a refused or dropped connection); the first line on stderr names the service.                                                                        |
+| `7`  | Every attempt at a LINDAT call timed out (`TIMEOUT` seconds each).                                                                                                                                                                         |
+| `8`  | LINDAT refused the request (HTTP 4xx, e.g. an unknown model): a configuration or request defect, not the input.                                                                                                                            |
+| `≠0` | A stage script itself exited non-zero (its code is propagated).                                                                                                                                                                            |
 
 **Using `--force` (`-f`)** overrides exit codes `1`, `3`, and `≠0`. It bypasses preflight dependency crashes and
 forces `FAIL_ON_EMPTY=False`, so the pipeline keeps attempting the following stages even if one stage crashes or
@@ -327,17 +330,17 @@ empty failure. Set `FAIL_ON_EMPTY=false` to permit genuinely empty stages.
 
 The published images are `ghcr.io/ufal/atrium-nlp-enrich:<version>` (the batch runner, `run_pipeline.py`) and
 `ghcr.io/ufal/atrium-nlp-enrich-api:<version>` (the service). `<version>` is the release **without** its leading
-`v`: `1.3.4-beta` for the release `v1.3.4-beta`. The target is part of the image name, not the tag.
+`v`: `2.0.0-beta` for the release `v2.0.0-beta`. The target is part of the image name, not the tag.
 
 The batch image passes its arguments to `run_pipeline.py` (`docker run IMAGE --config /data/config.txt --stages udp
-nt`). Since `v1.3.4-beta` its entry point is the hub-canonical `container_entrypoint.py`, which names
-`run_pipeline.py` by its absolute path: a first argument that names a shell or Python runs that program instead
-(`docker run IMAGE /bin/sh job.sh`), which is how Galaxy starts a tool's container. Only those interpreters run; the
+nt`). Its entry point, the hub-canonical `container_entrypoint.py`, names `run_pipeline.py` by its absolute path: a
+first argument that names a shell or Python runs that program instead (`docker run IMAGE /bin/sh job.sh`), so a job
+script can run in the image. Only those interpreters run; the
 pipeline's stage scripts still start from `/app`, the image's `WORKDIR`, so a job script that runs it changes there
 first.
 
 ```bash
-docker run --rm -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # the service
+docker run -d --name atrium-nlp-enrich -p 8000:8000 ghcr.io/ufal/atrium-nlp-enrich-api:<version>   # the service
 docker compose --profile api up -d                                          # the service, from a checkout
 ```
 
@@ -365,7 +368,7 @@ The files follow TEITOK's conventions, but a TEITOK project has a few of its own
 
 What the TEITOK readers keep (flexiconv v0.3.12, the pinned version, is tested in
 `tests/test_teitok_conformance.py` and `tests/test_teitok_pages.py`; flexipipe `73188c5` was checked by hand on the
-committed samples, 2026-09-24):
+committed samples):
 
 | Reader                                  | Spacing (`SpaceAfter`) | Sentences, `<pb/>` inside `<s>` | Multi-word tokens (`<dtok>`)                                                | Dependency heads                                                                    |
 |-----------------------------------------|------------------------|---------------------------------|-----------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
@@ -412,8 +415,7 @@ contains:
 | PAGE XML, hOCR, ALTO (`.xml`, `.hocr`) | `<tok bbox>` words with `<lb/>` lines and `<facsimile>` zones, no `<s>` | one row per line                   |
 | txt, md, html, docx, odt, rtf, pdf, …  | `<p>`, `<head>`, `<item>` text, not tokenized                           | one row per paragraph/heading/item |
 
-So the downstream readers (keyword extraction in atrium-keyword-extract, LLM enrichment in atrium-digital-convert)
-can work on it; a lemma-based method cannot, because there are no lemmas. There is no `<s>` by design: flexiconv
+So the downstream readers (keyword extraction and the LLM keyword clients in atrium-keyword-extract) can work on it; a lemma-based method cannot, because there are no lemmas. There is no `<s>` by design: flexiconv
 converts the layout, and splitting the text into sentences belongs to the tagging step, here
 [annotating it](#annotating-converted-documents-flexiconv_annotate).
 
@@ -511,7 +513,7 @@ supported by flexiconv, please open an issue on the [flexiconv GitHub repository
 
 Stage 1 and the service read every input through [api_util/line_inputs.py](../api_util/line_inputs.py), and the
 service runs `run_pipeline.py` itself on what it was sent, in a workspace of its own. A scratch harness ran 38
-combinations through both on 2026-10-28, with one deterministic stand-in for UDPipe and NameTag on both sides. The
+combinations through both, with one deterministic stand-in for UDPipe and NameTag on both sides. The
 inputs were a table, a table named `zpráva 1.csv`, a `.txt` with form feeds, a TEITOK file, a table with its ALTO,
 and a record as the text. Each ran with and without a record, with a seed saved with a BOM, with `include_record`
 against `--document-json-out` alone, with the untrustworthy-row filter on and off, and with the record projection on
