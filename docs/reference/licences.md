@@ -23,16 +23,14 @@ used it, cite it as its [CITATION.cff](https://github.com/ufal/flexiconv/blob/v0
 
 The list says what a run used. It does not set the rights in what the run produces. A licence covers what it is
 attached to, the LINDAT services have terms of use rather than a licence for their output, and the rights in an
-output depend first on the source document, which no tool knows. How the models' licence and the services' terms
-bear on the annotations is an open question ([atrium-project#78](https://github.com/ufal/atrium-project/issues/78),
-[#6](https://github.com/ufal/atrium-project/issues/6)).
+output depend first on the source document, which no tool knows.
 
-No licence of an output is computed or recorded: since paradata schema 3.0 and record schema 2.0
-([atrium-project#84](https://github.com/ufal/atrium-project/issues/84), D2) neither carries a `license` field, and the
-paradata list the components, each with its own terms, as facts. Until #78 is settled, AMČR does not publish what this
-tool produces through UDPipe and NameTag (D35)
-([Licences and paradata](https://ufal.github.io/atrium-project/ecosystem/licences/) on the hub).
+No licence of an output is computed or recorded: neither the paradata nor the record carries a `license` field, and
+the paradata list the components, each with its own terms, as facts
+([Licences and paradata](https://ufal.github.io/atrium-project/ecosystem/licences/) on the hub). Until the terms of
+LINDAT's services are settled ([atrium-project#78](https://github.com/ufal/atrium-project/issues/78)), AMČR does not
+publish outputs made through them: the linguistic layer, the entities, the TEITOK file and the English metadata.
 
-Keyword extraction (KER, YAKE, KeyBERT) and the AMČR/TEATER vocabularies (CC0) are declared in
-[atrium-keyword-extract](https://github.com/ufal/atrium-keyword-extract)'s `para_config.txt` since v1.0.0-beta of
-this repository.
+Keyword extraction (KER, YAKE, KeyBERT) and the AMČR and TEATER vocabularies (CC0) are declared in
+[atrium-keyword-extract](https://github.com/ufal/atrium-keyword-extract)'s `para_config.txt`, where keywords are
+made.

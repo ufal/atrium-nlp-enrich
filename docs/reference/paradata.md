@@ -27,8 +27,8 @@ independent invocation, a complete four-step run creates four separate files, so
 in isolation. `run_pipeline.py` merges them into one record per run
 ([What the runner does](../usage.md#what-the-runner-does)).
 
-The paradata logs (samples in [data_samples/paradata](../../data_samples/paradata), which predate doc-schema-v2 and
-are paradata 2.0) capture key details about each
+The paradata logs (samples in [data_samples/paradata](../../data_samples/paradata), which are paradata 2.0 and still
+carry the calculated licence fields and relative paths paradata 3.0 dropped: read them as history) capture key details about each
 pipeline stage, including the program name, run ID, execution duration, configuration parameters, input and output
 statistics, and performance metrics. They also document skipped files with reasons and provide a breakdown of
 output types and processing rates for benchmarking. This structured metadata makes the pipeline's execution
@@ -54,15 +54,14 @@ intermediate state in a plain-text JSON file inside `<OUTPUT_DIR>/paradata/` (na
 This file is removed when the script completes. Because it is plain JSON it can be inspected with any text editor if
 a run is interrupted unexpectedly; `run_pipeline.py --clean-state` sweeps stale ones.
 
-**Paradata schema 3.0** ([atrium-project#84](https://github.com/ufal/atrium-project/issues/84); ARÚP's output
-contract of 12 November 2026). What a run read and wrote is named by AMČR distribution name and SHA-512, never by a
+**Paradata schema 3.0.** What a run read and wrote is named by AMČR distribution name and SHA-512, never by a
 path:
 
 - `api_4_stats.sh` records the record version read (`inputs`, `atrium/document-json`), the record written
   (`outputs`, with `record_fields`: the blocks and fields the run wrote) and the TEITOK written (`atr/teitok-xml`);
   the projection stage records the record it read and the TEITOK it rewrote. The record itself carries no run data.
 - `limits` holds sampling and splitting only: `api_2_udp.sh` notes `word_chunk_limit` `split` for a text sent to
-  UDPipe in chunks. A limit that would trim, skip or stop content fails the run (D13).
+  UDPipe in chunks. A limit that would trim, skip or stop content fails the run.
 - A failed document fails its stage: the stage's record says `action_status: failed` with the `error`, and the run
   stops, so nothing reaches AMČR.
 - The CoNLL-U, the CSV tables and the entity summary are development outputs: counted, never named as outputs.
@@ -73,15 +72,15 @@ or recorded: [licences.md](licences.md).
 
 ### The runtime log, `OUTPUT_DIR/processing.log`
 
-[api_common.sh](../../api_util/api_common.sh) exposes a `log()` helper that timestamps and `tee`-appends warnings
-and errors to this flat file. The four main pipeline scripts (`api_1_manifest.sh` … `api_4_stats.sh`) write to
-`processing.log` indirectly through the Python helpers, which print timestamped messages to stderr; any script that
-sources `api_common.sh` can also write here via the `log()` function directly.
+[api_common.sh](../../api_util/api_common.sh) exposes a `log()` helper that timestamps a message and `tee`-appends it
+to this flat file; any script that sources `api_common.sh` can write here. The LINDAT clients print their failures
+to stderr, and the first line names the service, for example:
 
 ```
-[2026-01-15 09:42:11] [WARN] UDPipe failed (HTTP 503). Retrying in 2s…
-[2026-01-15 09:42:14] [ERR]  UDPipe failed permanently after 5 attempts.
+LINDAT UDPipe did not answer after 5 retries: …
 ```
+
+The service puts that line first in the error's `detail`.
 
 This file accumulates across reruns; it is the first place to check when a document appears in
 `skipped_files_detail` but the reason is terse.
@@ -94,8 +93,8 @@ each stage's paradata record (and therefore the merged record). This ties a run 
 that produced it.
 
 ```bash
-ATRIUM_RUNNER_IMAGE="ghcr.io/ufal/atrium-nlp-enrich:1.3.4-beta" \
-ATRIUM_RUNNER_REF="v1.3.4-beta" \
+ATRIUM_RUNNER_IMAGE="ghcr.io/ufal/atrium-nlp-enrich:<version>" \
+ATRIUM_RUNNER_REF="v<version>" \
 python3 run_pipeline.py
 ```
 
@@ -112,9 +111,10 @@ written and the TEITOK as its `result` ([service/README.md, JSON envelope](../..
 ## Document record schema
 
 The per-document record this tool reads and writes, `<doc_id>.document.json`, the pair of the paradata above,
-follows [atrium_document.schema.json](../../atrium_document.schema.json), schema version **`1.0`**. That version is
-frozen as the hub tag [`doc-schema-v1`](https://github.com/ufal/atrium-project/releases/tag/doc-schema-v1)
-(ufal/atrium-project@`544298b`), and it is the baseline this tool implements:
+follows [atrium_document.schema.json](../../atrium_document.schema.json), record schema **2.0**. The tools write
+record schema 2.0. The published schema is `doc-schema-v1`, frozen as the hub tag
+[`doc-schema-v1`](https://github.com/ufal/atrium-project/releases/tag/doc-schema-v1) (ufal/atrium-project@`544298b`);
+2.0 is published as `doc-schema-v2` once the pilot has proven it:
 
 * [tests/test_schema_freeze.py](../../tests/test_schema_freeze.py) checks this repository's schema against the frozen
   copy beside it, [atrium_document.schema.doc-schema-v1.json](../../atrium_document.schema.doc-schema-v1.json): the
@@ -127,9 +127,8 @@ frozen as the hub tag [`doc-schema-v1`](https://github.com/ufal/atrium-project/r
 In the record, nlp-enrich owns the `entities` block: each entity points at its `<name>` in the TEITOK file
 (`teitok_ref`), and each page with a surface at its `<surface>` (`pages[].teitok_surface`, keyed by `page_index`).
 With the record as the layout it also writes `lines[].lemma`, `upos`, `feats` and `teitok_ref` (the `<s>` of the
-line's head token). Record schema **2.0** (doc-schema-v2, [atrium-project#84](https://github.com/ufal/atrium-project/issues/84))
-holds no run data: no stamps, no `derived_from`, no licence; this tool reads a 1.x record through the hub's migration.
-`doc-schema-v2` is not tagged yet, so the citation below stays `doc-schema-v1`. How the service accretes
+line's head token). Record schema 2.0 holds no run data: no stamps, no `derived_from`, no licence; this tool reads a
+1.x record through the hub's migration. Until `doc-schema-v2` is tagged, the citation below stays `doc-schema-v1`. How the service accretes
 onto a record it is sent: [service/README.md, The document_json accretion part](../../service/README.md#the-document_json-accretion-part).
 
 What may change after the freeze, and what a new major version takes, is in the hub's
