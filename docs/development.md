@@ -16,13 +16,13 @@ python atrium_openapi.py export --app service.api:app --out service/openapi.json
 The tests check the pipeline's behaviour, the formats and the contracts; they stand in for UDPipe and NameTag, so
 they say nothing about the quality of the annotation.
 
-| When you change                                               | Read                                                                                                                                                             |
-|---------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| the TEITOK writer (`api_util/teitok_alto.py`)                 | [schemas/teitok/README.md, Keeping this schema current](../schemas/teitok/README.md#keeping-this-schema-current): the XSD, the samples and fixtures move with it |
-| the TEITOK readers (`teitok_read.py`, `flexiconv_convert.py`) | [Pitfalls](reference/teitok.md#pitfalls), item 9: re-vendor them into atrium-keyword-extract and atrium-digital-convert                                          |
-| the service's API                                             | [service/README.md, OpenAPI](../service/README.md#openapi-the-typed-contract) and [Tests](../service/README.md#tests)                                            |
-| a key of `config_api.txt` or an output flag                   | [CONTRIBUTING.md, Output Format Flags](../CONTRIBUTING.md#output-format-flags) and [configuration](configuration.md)                                             |
-| the shared modules (`atrium_*.py`, the record schema)         | nothing here: they are vendored from the hub and never edited in this repository ([the record schema](reference/paradata.md#document-record-schema))             |
+| When you change                                                                | Read                                                                                                                                                                                              |
+|--------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| the TEITOK writer (`api_util/teitok_alto.py`)                                  | [schemas/teitok/README.md, Keeping this schema current](../schemas/teitok/README.md#keeping-this-schema-current): the XSD, the samples and fixtures move with it                                  |
+| the TEITOK readers (`teitok_read.py`, `bbox_scale.py`, `flexiconv_convert.py`) | [Pitfalls](reference/teitok.md#pitfalls), item 9: `teitok_read.py` and `bbox_scale.py` into atrium-keyword-extract and atrium-digital-convert, `flexiconv_convert.py` into atrium-digital-convert |
+| the service's API                                                              | [service/README.md, OpenAPI](../service/README.md#openapi-the-typed-contract) and [Tests](../service/README.md#tests)                                                                             |
+| a key of `config_api.txt` or an output flag                                    | [CONTRIBUTING.md, Output Format Flags](../CONTRIBUTING.md#output-format-flags) and [configuration](configuration.md)                                                                              |
+| the shared modules (`atrium_*.py`, the record schema)                          | nothing here: they are vendored from the hub and never edited in this repository ([the record schema](reference/paradata.md#document-record-schema))                                              |
 
 ## Working records
 
@@ -40,7 +40,7 @@ to it.
   was released as v1.0.0-beta and is a breaking change to the API. The image `atrium-nlp-enrich-llm` was published up
   to 0.23.0 only and is not built any more. What moved where, and what the API lost:
   [the decision record](decisions/2026-10-01-repository-split.md).
-- **The chain before this stage.** This stage follows
-  [atrium-ocr-postprocess](https://github.com/ufal/atrium-ocr-postprocess),
-  whose line tables carry the text of each ALTO line, ordered by LayoutReader, in a `text` column.
+- **The step before this one.** This step follows
+  [atrium-ocr-postprocess](https://github.com/ufal/atrium-ocr-postprocess), the record builder: in the AMČR pipeline
+  the record it builds from docproc is this step's input; its batch line tables are the input of research runs.
 - **Release history.** Every release is in [CONTRIBUTING.md](../CONTRIBUTING.md#release-history).

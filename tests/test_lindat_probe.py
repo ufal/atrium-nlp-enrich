@@ -202,17 +202,20 @@ def test_the_probe_checks_the_models_the_pipeline_uses():
     assert lindat_probe.DEFAULT_MODEL_NAMETAG == _config_value("MODEL_NAMETAG")
 
 
-def test_the_lane_runs_the_probe_daily_and_reports_failures():
+def test_the_lane_runs_the_probe_by_dispatch_only():
+    """The CI agreement allows no scheduled runs: the LINDAT check runs when someone dispatches it."""
     import yaml
 
     lane = yaml.safe_load(
         (_REPO / ".github" / "workflows" / "lindat-daily.yml").read_text(encoding="utf-8")
     )
-    assert lane[True]["schedule"], "the lane runs on a schedule"
+    triggers = lane[True]
+    assert set(triggers) == {"workflow_dispatch"}, f"the lane runs by dispatch only, not on {sorted(triggers)}"
     steps = lane["jobs"]["lindat"]["steps"]
     assert any(
         "eval.lindat_probe" in str(step.get("run", "")) and "--max-bad 0" in step["run"]
         for step in steps
     )
-    issue = [s for s in steps if "lane-failure-issue" in str(s.get("uses", ""))]
-    assert issue and "schedule" in issue[0]["if"]
+    assert not [s for s in steps if "lane-failure-issue" in str(s.get("uses", ""))], (
+        "a dispatched run reports to the person who ran it; the scheduled-failure issue step is gone"
+    )

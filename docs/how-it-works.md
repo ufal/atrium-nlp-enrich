@@ -101,12 +101,12 @@ lose something (multi-word tokens in flexiconv, dependency heads in flexipipe).
 Each document in the collection is serialised as a single `.teitok.xml` file that integrates four layers of
 information in a consistent, machine-readable structure:
 
-| Layer                 | Content                                                                                                                                                                                                                     |
-|-----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Layout**            | Page, text-block, and line boundaries with pixel bounding boxes from the source ALTO XML (page origin), scaled to the stored page images when those are available; without a layout, the pages and lines of the input table |
-| **Morphology/syntax** | Per-token lemma, UPOS/XPOS tags, morphological features, and dependency relations produced by UDPipe 2; multi-word tokens ("abych" = aby + bych) as one surface `<tok>` with `<dtok>` words                                 |
-| **Named entities**    | Entity spans with a coarse category (`PER`, `ORG`, `LOC`, `MISC`) and the raw NameTag label in `@onto` (OntoNotes, the default model), `@cnec` (CNEC 2.0) or `@archaeo` (reserved for #7's model, not trained yet)          |
-| **Facsimile links**   | `<surface>` elements in `<facsimile>` that tie each page to its companion image, enabling TEITOK's side-by-side text/image view                                                                                             |
+| Layer                 | Content                                                                                                                                                                                                                                                                                                                                                                       |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Layout**            | Page, text-block, and line boundaries with bounding boxes from the layout source: the document's record (line boxes from docproc, in its coordinate space), or, for research input, the source ALTO XML (pixels, page origin) or a converted TEITOK file; scaled to the stored page images when those are available; without a layout, the pages and lines of the input table |
+| **Morphology/syntax** | Per-token lemma, UPOS/XPOS tags, morphological features, and dependency relations produced by UDPipe 2; multi-word tokens ("abych" = aby + bych) as one surface `<tok>` with `<dtok>` words                                                                                                                                                                                   |
+| **Named entities**    | Entity spans with a coarse category (`PER`, `ORG`, `LOC`, `MISC`) and the raw NameTag label in `@onto` (OntoNotes, the default model), `@cnec` (CNEC 2.0) or `@archaeo` (reserved for an archaeological model, not trained yet)                                                                                                                                               |
+| **Facsimile links**   | `<surface>` elements in `<facsimile>` that tie each page to its companion image, enabling TEITOK's side-by-side text/image view                                                                                                                                                                                                                                               |
 
 The structure of a file, element by element: [TEITOK XML structure at a glance](reference/teitok.md#teitok-xml-structure-at-a-glance).
 
@@ -158,17 +158,17 @@ them:
 
 A word's box in the TEITOK file is only as precise as the layout it came from. The writer takes the layout of a
 document from the first of these it finds: its ALTO file, a TEITOK file that flexiconv converted, or the document's
-ATRIUM record. In the AMČR pipeline only the record is used: no ALTO is produced or stored (ARÚP's output contract of
-12 November 2026, D24; ALTO and flexiconv input stay for batch and research use). If none exists, there is no layout
+ATRIUM record. In the AMČR pipeline only the record is used: no ALTO is produced or stored, and ALTO and flexiconv
+input stay for batch and research use. If none exists, there is no layout
 (see [How a TEITOK document is composed](reference/teitok.md#how-a-teitok-document-is-composed)).
 
-| Layout                                                                    | Boxes in the TEITOK file                                                                                | How precise                                                                                      |
-|---------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
-| ALTO (`INPUT_ALTO_DIR`; the service's `alto` part)                        | every token aligned to an OCR string gets that string's box; lines, text blocks and figures keep theirs | measured: the OCR engine's word coordinates                                                      |
-| a flexiconv conversion of PAGE XML, hOCR or ALTO (`FLEXICONV_ANNOTATE`)   | word and line boxes from the source; punctuation that flexiconv did not box has none                    | measured, as in the source                                                                       |
-| the ATRIUM record (schema 2.0, the record builder's `lines[]`)            | line boxes from `lines[].bbox`; each word gets the share of its line box that its characters take       | estimated from line geometry, not measured; the TEITOK header says so; in the record's space     |
-| … a line with `bbox_precision: derived` (its block's box, ATR text)       | none for the line and its words; the box bounds the block                                               | the header counts such lines                                                                     |
-| a flexiconv conversion of PDF, DOCX or text; a table alone; a DOCX record | none: the pages and lines only, without a facsimile                                                     | —                                                                                                |
+| Layout                                                                                                              | Boxes in the TEITOK file                                                                                | How precise                                                                                  |
+|---------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
+| ALTO (`INPUT_ALTO_DIR`; the service's `alto` part)                                                                  | every token aligned to an OCR string gets that string's box; lines, text blocks and figures keep theirs | measured: the OCR engine's word coordinates                                                  |
+| a flexiconv conversion of PAGE XML, hOCR or ALTO (`FLEXICONV_ANNOTATE`)                                             | word and line boxes from the source; punctuation that flexiconv did not box has none                    | measured, as in the source                                                                   |
+| the ATRIUM record (schema 2.0, the record builder's `lines[]`)                                                      | line boxes from `lines[].bbox`; each word gets the share of its line box that its characters take       | estimated from line geometry, not measured; the TEITOK header says so; in the record's space |
+| … a line with `bbox_precision: derived` (its block's box, ATR text)                                                 | none for the line and its words; the box bounds the block                                               | the header counts such lines                                                                 |
+| a flexiconv conversion of PDF, DOCX or text; a table alone; a record without boxes (a spreadsheet's, a text file's) | none: the pages and lines only, without a facsimile                                                     | —                                                                                            |
 
 With the record as the layout, the record's own keys go back into it: `entities[].page` and `line` are the
 record's, and each line gets the lemma, UPOS and features of its head token (the first word whose syntactic head lies
@@ -269,8 +269,8 @@ the token ids. `@type` holds the coarse category (`PER`, `ORG`, `LOC`, or `MISC`
 [api_util/ner_types.py](../api_util/ner_types.py), the same map the document record's `entities[].type_teitok`
 uses). The raw NameTag label goes in the attribute of its tag set: `@onto` for the default multilingual
 OntoNotes model (`<name type="PER" onto="PERSON">`), `@cnec` for the Czech CNEC 2.0 model
-(`<name type="PER" cnec="pf">`), `@archaeo` for the archaeological model once
-[#7](https://github.com/ufal/atrium-nlp-enrich/issues/7) trains one (none is trained yet).
+(`<name type="PER" cnec="pf">`), `@archaeo` for an archaeological model once one is trained
+([atrium-nlp-enrich#7](https://github.com/ufal/atrium-nlp-enrich/issues/7)).
 
 ### How tokens are matched to OCR strings
 
