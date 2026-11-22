@@ -1,10 +1,10 @@
 """
 eval/lindat_probe.py – Do LINDAT's UDPipe and NameTag answer correctly, request after request?
 
-The daily check (atrium-project#78)
------------------------------------
-Every other test of this repository mocks LINDAT. ``.github/workflows/lindat-daily.yml`` runs this
-script every day: it sends the same short Czech sentence to UDPipe and the same CoNLL-U to NameTag,
+The LINDAT check (atrium-project#78)
+------------------------------------
+Every other test of this repository mocks LINDAT. ``.github/workflows/lindat-daily.yml``, shown as
+"LINDAT check (manual)", runs this script when someone dispatches it: it sends the same short Czech sentence to UDPipe and the same CoNLL-U to NameTag,
 *n* times each on a fresh connection (what the pipeline's scripts do) and *n* times over one
 keep-alive session, and fails when a reply is bad. Repeating the request is the point: in October
 one broken replica behind LINDAT's balancer answered every other translation request with garbage
@@ -24,14 +24,14 @@ The lemmas and the two entities are the models' answers today (``MODEL_UDPIPE``,
 as in ``config_api.txt``); a new model that answers differently fails the check on purpose, so the
 change is seen before the pipeline's output changes.
 
-With ``--max-bad`` the exit status is 1 when more replies than that are bad, and the lane's issue is
-opened or updated; without it the probe only reports. Its summary, with the good/bad pattern per
+With ``--max-bad`` the exit status is 1 when more replies than that are bad; without it the probe only
+reports. Its summary, with the good/bad pattern per
 service and mode and a sample bad reply, is printed last and goes to the run's summary page.
 
 Usage
 -----
     python -m eval.lindat_probe
-    python -m eval.lindat_probe --n 6 --pause 0.5 --max-bad 0      # the daily check
+    python -m eval.lindat_probe --n 6 --pause 0.5 --max-bad 0      # the LINDAT check
 """
 
 from __future__ import annotations

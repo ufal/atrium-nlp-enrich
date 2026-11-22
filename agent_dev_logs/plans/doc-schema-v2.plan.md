@@ -1,5 +1,6 @@
 # Strategy — [atrium-project#84](https://github.com/ufal/atrium-project/issues/84) (doc-schema-v2): nlp-enrich's part
 
+> _**Refreshed 2026-11-22**: #48 merged (atrium-project#79 and #40); the LINDAT check by dispatch; the pins at `fbffe25`._
 > _**Refreshed 2026-11-19**: "Status — 11-19": #46 and #47 merged; Ronald's answers; aiscr-docs-pipeline#4; D35._
 > _**Refreshed 2026-11-14 (afternoon)**: "Status — round 6 (11-14)": the hub merged, the pins moved, round 6._
 > _**Refreshed 2026-11-14**: "Status — PR (11-14)": the PR's checks and round 5's fixes._
@@ -12,6 +13,8 @@
 > contract digest.
 > This file is the repository's slice only. It replaces the 11-11 slice of the same
 > name; its points that still hold are carried here._
+
+**Status (2026-11-22)**: 🟢 **As on 11-19, now pinned to `fbffe25` since atrium-project#79's merge (11-22, #48 `11cad2a`). The LINDAT check runs by dispatch only ("LINDAT check (manual)"); on `master` its daily schedule runs until the release merge (atrium-project#77).**
 
 **Status (2026-11-19)**: 🟢 **This repository's part is on `test` (#45–#47), pinned to `02cbd01`: the layout comes
 from the record (and its docproc links), not ALTO, as motyc wrote on aiscr-docs-pipeline#4 (11-12). Ronald's answers
@@ -188,5 +191,5 @@ _(11-19: Kate's answer given (11-12); ocr-postprocess's slice and the hub tasks 
 
 - #7 (the domain NameTag model) and #18 (annotation tool): deferred past the pilot phase.
 - The LINDAT terms (atrium-project#78); the daily probe's schedule (atrium-project#81; since its close on 11-16,
-  atrium-project#40).
+  atrium-project#40): dropped on `test` with #48 (11-22), the check runs by dispatch.
 - Producing ALTO; an ALTO export (D24: only if a consumer needs it, from docproc).

@@ -1156,3 +1156,25 @@ Documentation only; no code, test or configuration change.
   and #42 (closed; nothing outside the logs cites them).
 * **Next:** the release batch (atrium-project#77); the CI-trigger PR (atrium-project#40).
 * Logs only; no code changed. Files delivered as full files.
+
+## 2026-11-22 — atrium-project#79: documentation and CI triggers, merged as #48
+
+* **Merged 11-22** as #48 (`11cad2a`), squash: this repository's documentation round for atrium-project#79 and the CI
+  trigger change of atrium-project#40. Its last commit re-pinned the hub reusables to `fbffe25` (`v1`, the merge of
+  atrium-project#93), so Workflow Policy Lint now refuses a branch push and a schedule outside `codeql` and
+  `security`.
+* **Checked after the merge:** the merged pull request's `docker.yml` run (its `closed` event) passed on the new
+  reusable. `docs_check.py` and `runbook_check.py` pass on `test`.
+* **Not yet in effect:** GitHub reads `schedule:` and `dependabot.yml` from the default branch, `master`, which still
+  has the old workflows: `scheduled-smoke.yml` and `lindat-daily.yml` keep their schedules there, and Dependabot its
+  version updates, until `test` is merged into it with the 2.0.0-beta release batch (atrium-project#77).
+* **Follow-ups the PR left:** the service reports a record not written with the `detail` of an empty run; the
+  `config_api.txt` comment says the filter also drops `Garbage` and `Inverted`; the committed samples carry CNEC
+  labels, while the default model gives OntoNotes ones; the sample paradata are 2.0, with licence fields; the record
+  reader's docstring calls a page without a canvas "a DOCX"; the service takes the record only, no docproc.
+* **Written here (not pushed):** the `eval/lindat_probe.py` docstring: the LINDAT check runs when someone dispatches
+  it ("LINDAT check (manual)") and opens no issue. Docstring only; `tests/test_lindat_probe.py` 21 passed, ruff clean.
+* **Detail:** hub [plan of #79](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/79.plan.md),
+  "Where it stands — 2026-11-22";
+  [plan of #40](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/40.plan.md).
+* **Not posted; not pushed.**
