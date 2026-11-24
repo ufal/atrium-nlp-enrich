@@ -376,6 +376,24 @@ def test_the_empty_run_is_still_a_502_without_a_reason():
     )
 
 
+def test_a_record_not_written_is_named_not_called_an_empty_run():
+    """run_pipeline.py exits 1 when a record was asked for and not written (D13); the service
+    says that, not "empty run"."""
+    import run_pipeline
+    from service import enrichment
+
+    assert enrichment._RECORD_NOT_WRITTEN == run_pipeline.DOC_JSON_NOT_WRITTEN_MARKER
+    with _run_with(
+        1, f"{run_pipeline.DOC_JSON_NOT_WRITTEN_MARKER} — --document-json-out x was requested\n"
+    ):
+        response = _enrich(TestClient(app))
+    assert response.status_code == 502
+    body = response.json()
+    assert body["reason"] is None and body["detail"].startswith(
+        "The record was asked for and not written"
+    )
+
+
 def test_a_cut_tail_still_names_the_cause():
     with _run_with(6, "…the client's line fell out of the last 4000 characters\n"):
         response = _enrich(TestClient(app))

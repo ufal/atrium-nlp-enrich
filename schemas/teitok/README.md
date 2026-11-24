@@ -226,7 +226,7 @@ from api_util.teitok_alto import write_teitok_merged
 for d in ("CTX000000001", "CTX000000002", "CTX000000003"):
     write_teitok_merged(f"data_samples/UDP_NE/{d}/{d}.conllu", f"data_samples/TEITOK/{d}.teitok.xml",
                         f"data_samples/ALTO/{d}.alto.xml", doc_id=d,
-                        model_nametag="nametag3-czech-cnec2.0-240830",  # as their paradata records
+                        model_nametag="nametag3-multilingual-onto-260521",  # the samples' NameTag model
                         rows=read_rows(f"data_samples/UDP/{d}.rows.tsv"))
 EOF
 ```

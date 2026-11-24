@@ -38,6 +38,10 @@ from api_util.line_inputs import sanitize_doc_id  # noqa: E402,F401
 from api_util.record_layout import record_has_geometry  # noqa: E402
 from atrium_document import FILE_SUFFIX, load_document  # noqa: E402
 
+#: run_pipeline.DOC_JSON_NOT_WRITTEN_MARKER, the stdout line of a run whose record was asked for
+#: and not written (its exit 1); kept equal by tests/test_lindat_failures.py.
+_RECORD_NOT_WRITTEN = "[document-json] NOT WRITTEN"
+
 logger = logging.getLogger(__name__)
 
 _CONFIG_TEMPLATE = _REPO_ROOT / "config_api.txt"
@@ -552,6 +556,15 @@ class PipelineManager:
                     f"{cause} A deployment or request defect (the model, the request), not the input: "
                     f"please report it.\n{tail}",
                     http_status=500,
+                    returncode=rc,
+                )
+            if rc == 1 and _RECORD_NOT_WRITTEN in tail:
+                # run_pipeline.py fails a run whose record was asked for and not written (D13);
+                # it said so on stdout. Not an empty run: the stages may have produced the rest.
+                raise PipelineError(
+                    "The record was asked for and not written (exit 1): the 'stats' stage "
+                    f"produced no document record.\n{tail}",
+                    http_status=502,
                     returncode=rc,
                 )
             if rc == 1:
