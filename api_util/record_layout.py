@@ -22,8 +22,7 @@ origin top-left and y down, in the page's canvas unit (``atrium_document.schema.
   stay in the record's one coordinate space (D28), so an entity's box is the record's; a page whose
   ``user_unit`` is not 1 carries it, so the writer's ``IMAGE_DPI`` scale counts ``1/72 inch x
   user_unit`` per unit (with a page image, the image's size gives the scale). A page without a
-  canvas (a DOCX)
-  gets no ``<surface>``. Pages are numbered by ``page_index``; ``meta["page_labels"]`` keeps a
+  canvas (a spreadsheet's or a text file's; an office document's pages have one) gets no ``<surface>``. Pages are numbered by ``page_index``; ``meta["page_labels"]`` keeps a
   label that is not the number (``i``, ``ii``) for ``<pb n>``, and ``meta["page_count"]`` the
   number of pages, so a page without text (a scanned plate) still gets its ``<pb>``.
 * **strings** -- the whitespace words of each line. A line with a ``measured`` box on a page with
@@ -31,7 +30,7 @@ origin top-left and y down, in the page's canvas unit (``atrium_document.schema.
   side (vertical text runs down). The record has no word boxes, so these are approximate, and the
   TEITOK header says so. A ``derived`` box is the line's block's, not the line's: it bounds the
   block, and the line and its words get no coordinates (the header counts such lines). A line
-  without a box (``absent``, a DOCX) gives words without coordinates: they still put their tokens
+  without a box (``absent``: a spreadsheet's or a text file's) gives words without coordinates: they still put their tokens
   on the right page and line.
 * **blocks** -- ``lines[].block``, the docproc block id (``p3-b7``), per page, with the union of
   its line boxes. Layout cues (a running head, a footnote) are docproc's since 2.0 (D26), so a
