@@ -232,11 +232,11 @@ def test_committed_data_samples_are_conformant():
         assert validate_document(_committed_sample(doc), profile="core") == [], doc
 
 
-#: The NameTag model the committed samples were produced with (CNEC 2.0 -- the samples predate the
-#: OntoNotes default of #11). Their api_3_nt paradata recorded it; those paradata 2.0 samples were
-#: removed before v2.0.0-beta, so a sample refresh updates this name. The UDPipe model needs no
-#: constant: the CoNLL-U carries it (``# udpipe_model``).
-SAMPLE_NAMETAG_MODEL = "nametag3-czech-cnec2.0-240830"
+#: The NameTag model the committed samples were produced with: the OntoNotes default of #11
+#: (MODEL_NAMETAG in config_api.txt), as their api_3_nt paradata in data_samples/paradata/ record.
+#: A sample refresh with another model updates this name. The UDPipe model needs no constant: the
+#: CoNLL-U carries it (``# udpipe_model``).
+SAMPLE_NAMETAG_MODEL = "nametag3-multilingual-onto-260521"
 
 
 def _sample_nametag_model():
