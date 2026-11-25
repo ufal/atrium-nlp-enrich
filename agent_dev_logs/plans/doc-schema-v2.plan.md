@@ -17,7 +17,7 @@
 
 **Status (2026-11-22)**: 🟢 **As on 11-19, now pinned to `fbffe25` since atrium-project#79's merge (11-22, #48 `11cad2a`). The LINDAT check runs by dispatch only ("LINDAT check (manual)"); on `master` its daily schedule runs until the release merge (atrium-project#77).**
 
-**Status (2026-11-25)**: 🟡 **v2.0.0-beta release prep in #49 (`v2-beta-prep` → `test`), CI green; the samples need one more cluster run (the 11-25 run read untracked documents and its summarize step failed). Tag 26 November after the rerun and the merge.**
+**Status (2026-11-25)**: 🟢 **v2.0.0-beta release prep in #49 (`v2-beta-prep` → `test`), CI green; the samples are made again from the three tracked documents (`e6f0788`, 5 paradata `completed`). Tag 26 November after the merge.**
 
 **Status (2026-11-19)**: 🟢 **This repository's part is on `test` (#45–#47), pinned to `02cbd01`: the layout comes
 from the record (and its docproc links), not ALTO, as motyc wrote on aiscr-docs-pipeline#4 (11-12). Ronald's answers

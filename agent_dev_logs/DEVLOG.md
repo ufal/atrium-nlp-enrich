@@ -1190,4 +1190,9 @@ Documentation only; no code, test or configuration change.
   lists 19. The rerun on the three tracked documents also removes the two `_onto` duplicates and makes the
   annotation imports and `CTX_projected` again.
 * **Open:** the service takes the record only, not docproc.
+* **Addendum (11-25, evening):** the rerun is in (`e6f0788`): the three tracked documents only, `manifest.tsv`
+  lists `CTX000000001`–`3`, and the five paradata are `completed` (runner `23b6315`, whose code is `6eb38ac`'s), every
+  SHA-512 resolving. The outputs (`UDP`, `NE`, `UDP_NE`, `TEITOK`) came out byte-identical to the committed ones, so
+  the annotation imports, `CTX_projected` and digital-convert's vendored TEITOK copy stand. The two `_onto`
+  duplicates go with a deletion list, as #49's text says.
 * Logs only; not pushed.
