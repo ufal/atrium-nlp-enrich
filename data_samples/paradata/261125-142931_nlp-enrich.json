@@ -3,16 +3,16 @@
   "program": "nlp-enrich",
   "tool_version": "v2.0.0-beta",
   "repository": "https://github.com/ufal/atrium-nlp-enrich",
-  "runner_ref": "129a588478621b3ed427de49884f809cf400e205",
+  "runner_ref": "6eb38ac2422ab8a261d06e37e80d979caae3b92b",
   "docker_image": "",
   "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
-  "run_id": "261125-094435",
-  "run_uuid": "urn:uuid:05481691-3555-4c34-87f7-56bb6acd5b16",
+  "run_id": "261125-142931",
+  "run_uuid": "urn:uuid:984fbfc6-71b8-4f8a-97c2-0d2627f37aa8",
   "run_agent": "",
   "action_status": "completed",
-  "start_time": "2026-11-25T09:44:35.783858+00:00",
-  "end_time": "2026-11-25T09:44:39.863073+00:00",
-  "duration_seconds": 4.079,
+  "start_time": "2026-11-25T14:29:31.895034+00:00",
+  "end_time": "2026-11-25T14:29:34.152297+00:00",
+  "duration_seconds": 2.257,
   "config": {
     "script": "api_3_nt",
     "model_nametag": "nametag3-multilingual-onto-260521",
@@ -45,89 +45,89 @@
       "tsv": 7
     },
     "performance_per_minute": {
-      "tsv": 102.961
+      "tsv": 186.066
     }
   },
   "skipped_files_detail": [
     {
       "file": "CTX196006127",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:35.946976+00:00"
+      "timestamp": "2026-11-25T14:29:31.984259+00:00"
     },
     {
       "file": "CTX199603106",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:36.094207+00:00"
+      "timestamp": "2026-11-25T14:29:32.058850+00:00"
     },
     {
       "file": "CTX201405311",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:36.239705+00:00"
+      "timestamp": "2026-11-25T14:29:32.132390+00:00"
     },
     {
       "file": "CTX195603828",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:36.384289+00:00"
+      "timestamp": "2026-11-25T14:29:32.205973+00:00"
     },
     {
       "file": "CTX195704328",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:36.528042+00:00"
+      "timestamp": "2026-11-25T14:29:32.280330+00:00"
     },
     {
       "file": "CTX193001369",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:36.671815+00:00"
+      "timestamp": "2026-11-25T14:29:32.353640+00:00"
     },
     {
       "file": "CTX198603218",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:37.443199+00:00"
+      "timestamp": "2026-11-25T14:29:32.743032+00:00"
     },
     {
       "file": "CTX199405706",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:37.583856+00:00"
+      "timestamp": "2026-11-25T14:29:32.818058+00:00"
     },
     {
       "file": "CTX197901442",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:38.380775+00:00"
+      "timestamp": "2026-11-25T14:29:33.224731+00:00"
     },
     {
       "file": "CTX201601688",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:39.050582+00:00"
+      "timestamp": "2026-11-25T14:29:33.641478+00:00"
     },
     {
       "file": "CTX197402444",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:39.162755+00:00"
+      "timestamp": "2026-11-25T14:29:33.715013+00:00"
     },
     {
       "file": "CTX196300443",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:39.275203+00:00"
+      "timestamp": "2026-11-25T14:29:33.788148+00:00"
     },
     {
       "file": "CTX200603179",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:39.386722+00:00"
+      "timestamp": "2026-11-25T14:29:33.860684+00:00"
     },
     {
       "file": "CTX198402945",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:39.498702+00:00"
+      "timestamp": "2026-11-25T14:29:33.934430+00:00"
     },
     {
       "file": "CTX192100040",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:39.609976+00:00"
+      "timestamp": "2026-11-25T14:29:34.007391+00:00"
     },
     {
       "file": "CTX192601143",
       "reason": "output already exists",
-      "timestamp": "2026-11-25T09:44:39.721530+00:00"
+      "timestamp": "2026-11-25T14:29:34.080426+00:00"
     }
   ],
   "limits": []
