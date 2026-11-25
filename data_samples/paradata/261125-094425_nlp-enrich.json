@@ -1,0 +1,51 @@
+{
+  "schema_version": "3.0",
+  "program": "nlp-enrich",
+  "tool_version": "v2.0.0-beta",
+  "repository": "https://github.com/ufal/atrium-nlp-enrich",
+  "runner_ref": "129a588478621b3ed427de49884f809cf400e205",
+  "docker_image": "",
+  "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
+  "run_id": "261125-094425",
+  "run_uuid": "urn:uuid:b8198ea6-60d7-47b9-878c-426d14b94de1",
+  "run_agent": "",
+  "action_status": "completed",
+  "start_time": "2026-11-25T09:44:25.797425+00:00",
+  "end_time": "2026-11-25T09:44:31.972630+00:00",
+  "duration_seconds": 6.175,
+  "config": {
+    "script": "api_1_manifest",
+    "input_dir": "./data_samples/DOC_LINE_CATEG",
+    "flexiconv_input_dir": "",
+    "skip_untrustworthy_lines": "false",
+    "output_manifest": "./data_samples/manifest.tsv"
+  },
+  "parameters": {},
+  "inputs": [],
+  "outputs": [],
+  "components": [
+    {
+      "name": "nametag3_models",
+      "license": "CC BY-NC-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+    },
+    {
+      "name": "udpipe2_models",
+      "license": "CC BY-NC-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+    }
+  ],
+  "statistics": {
+    "input_files_total": 19,
+    "successfully_processed": 19,
+    "skipped_files": 0,
+    "output_counts_by_type": {
+      "tsv": 19
+    },
+    "performance_per_minute": {
+      "tsv": 184.6093
+    }
+  },
+  "skipped_files_detail": [],
+  "limits": []
+}

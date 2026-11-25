@@ -1,0 +1,134 @@
+{
+  "schema_version": "3.0",
+  "program": "nlp-enrich",
+  "tool_version": "v2.0.0-beta",
+  "repository": "https://github.com/ufal/atrium-nlp-enrich",
+  "runner_ref": "129a588478621b3ed427de49884f809cf400e205",
+  "docker_image": "",
+  "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
+  "run_id": "261125-094435",
+  "run_uuid": "urn:uuid:05481691-3555-4c34-87f7-56bb6acd5b16",
+  "run_agent": "",
+  "action_status": "completed",
+  "start_time": "2026-11-25T09:44:35.783858+00:00",
+  "end_time": "2026-11-25T09:44:39.863073+00:00",
+  "duration_seconds": 4.079,
+  "config": {
+    "script": "api_3_nt",
+    "model_nametag": "nametag3-multilingual-onto-260521",
+    "nametag_url": "https://lindat.mff.cuni.cz/services/nametag/api/recognize",
+    "timeout": "60",
+    "max_retries": "5",
+    "conllu_input_dir": "./data_samples/UDP",
+    "output_dir": "./data_samples/NE"
+  },
+  "parameters": {},
+  "inputs": [],
+  "outputs": [],
+  "components": [
+    {
+      "name": "nametag3_models",
+      "license": "CC BY-NC-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+    },
+    {
+      "name": "udpipe2_models",
+      "license": "CC BY-NC-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+    }
+  ],
+  "statistics": {
+    "input_files_total": 19,
+    "successfully_processed": 7,
+    "skipped_files": 16,
+    "output_counts_by_type": {
+      "tsv": 7
+    },
+    "performance_per_minute": {
+      "tsv": 102.961
+    }
+  },
+  "skipped_files_detail": [
+    {
+      "file": "CTX196006127",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:35.946976+00:00"
+    },
+    {
+      "file": "CTX199603106",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:36.094207+00:00"
+    },
+    {
+      "file": "CTX201405311",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:36.239705+00:00"
+    },
+    {
+      "file": "CTX195603828",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:36.384289+00:00"
+    },
+    {
+      "file": "CTX195704328",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:36.528042+00:00"
+    },
+    {
+      "file": "CTX193001369",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:36.671815+00:00"
+    },
+    {
+      "file": "CTX198603218",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:37.443199+00:00"
+    },
+    {
+      "file": "CTX199405706",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:37.583856+00:00"
+    },
+    {
+      "file": "CTX197901442",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:38.380775+00:00"
+    },
+    {
+      "file": "CTX201601688",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:39.050582+00:00"
+    },
+    {
+      "file": "CTX197402444",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:39.162755+00:00"
+    },
+    {
+      "file": "CTX196300443",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:39.275203+00:00"
+    },
+    {
+      "file": "CTX200603179",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:39.386722+00:00"
+    },
+    {
+      "file": "CTX198402945",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:39.498702+00:00"
+    },
+    {
+      "file": "CTX192100040",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:39.609976+00:00"
+    },
+    {
+      "file": "CTX192601143",
+      "reason": "output already exists",
+      "timestamp": "2026-11-25T09:44:39.721530+00:00"
+    }
+  ],
+  "limits": []
+}
