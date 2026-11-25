@@ -84,11 +84,10 @@ Example output directories:
 * [TEITOK](../../data_samples/TEITOK): per-document TEITOK XML files combining UD linguistic annotations and NER
   spans with bounding boxes aligned from the source ALTO XML.
 * [manifest.tsv](../../data_samples/manifest.tsv), with **file**, **page** (count) and **path** columns, one row per
-  document. The sample comes from a larger run, without the header line a run writes, so most of its documents are
-  not in this repository.
+  document of the sample run.
 
-The committed `NE/` files carry OntoNotes labels, while `UDP_NE/` and `TEITOK/` were produced with the Czech CNEC
-model before the default changed; a sample refresh on LINDAT aligns them.
+All of them come from one run of the default configuration on LINDAT (UDPipe `czech-pdt-ud-2.15-241121`, NameTag
+`nametag3-multilingual-onto-260521`, so OntoNotes labels throughout); its paradata are in `data_samples/paradata/`.
 
 You can delete `UDP/` from `<OUTPUT_DIR>/` if you no longer need the raw CoNLL-U files: the final CoNLL-U files with
 NER features are in `<OUTPUT_DIR>/UDP_NE/`. Keep it, with its rows files, while a stage may still be re-run: stages

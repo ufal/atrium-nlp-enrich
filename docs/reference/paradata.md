@@ -27,8 +27,8 @@ independent invocation, a complete four-step run creates four separate files, so
 in isolation. `run_pipeline.py` merges them into one record per run
 ([What the runner does](../usage.md#what-the-runner-does)).
 
-The paradata logs (samples in [data_samples/paradata](../../data_samples/paradata), which are paradata 2.0 and still
-carry the calculated licence fields and relative paths paradata 3.0 dropped: read them as history) capture key details about each
+The paradata logs (the sample run's are committed in `data_samples/paradata/`; the paradata 2.0 samples, with the
+calculated licence fields paradata 3.0 dropped, are in git history up to `v1.3.4-beta`) capture key details about each
 pipeline stage, including the program name, run ID, execution duration, configuration parameters, input and output
 statistics, and performance metrics. They also document skipped files with reasons and provide a breakdown of
 output types and processing rates for benchmarking. This structured metadata makes the pipeline's execution

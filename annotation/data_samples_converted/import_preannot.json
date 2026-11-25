@@ -9,37 +9,11 @@
         "result": [
           {
             "value": {
-              "start": 20,
-              "end": 21,
-              "text": "1",
-              "labels": [
-                "n_"
-              ]
-            },
-            "from_name": "label",
-            "to_name": "text",
-            "type": "labels"
-          },
-          {
-            "value": {
-              "start": 24,
-              "end": 28,
-              "text": "2024",
-              "labels": [
-                "ty"
-              ]
-            },
-            "from_name": "label",
-            "to_name": "text",
-            "type": "labels"
-          },
-          {
-            "value": {
               "start": 31,
               "end": 52,
               "text": "Hradiště u Horní Mezí",
               "labels": [
-                "gu"
+                "GPE"
               ]
             },
             "from_name": "label",
@@ -52,33 +26,7 @@
               "end": 87,
               "text": "Jan Novotný",
               "labels": [
-                "P"
-              ]
-            },
-            "from_name": "label",
-            "to_name": "text",
-            "type": "labels"
-          },
-          {
-            "value": {
-              "start": 90,
-              "end": 101,
-              "text": "červnu 2024",
-              "labels": [
-                "T"
-              ]
-            },
-            "from_name": "label",
-            "to_name": "text",
-            "type": "labels"
-          },
-          {
-            "value": {
-              "start": 185,
-              "end": 189,
-              "text": "DEMO",
-              "labels": [
-                "ia"
+                "PERSON"
               ]
             },
             "from_name": "label",

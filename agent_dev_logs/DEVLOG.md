@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-11-19). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). **v1.2.0-beta** (2026-10-26, the CLI and the service read the same inputs) · **v1.3.0-beta** (2026-10-29, the two give the same results) · **Starting set of the pilot phase: v1.3.3-beta** (`b0e80ca`, 2026-11-04; immutable, with `images.json`; atrium-project#77) · **v1.3.4-beta** (11-06, the Galaxy entry point). `test` (= `master`, `c5c9525`) is 14 commits past it and declares the unreleased v2.0.0-beta (record 2.0; layout from the record). Hub workflows pinned to `02cbd01` (`v1`). Latest entry: 2026-11-19 (log round; this repository's part of atrium-project#84: `plans/doc-schema-v2.plan.md`). **v1.1.0-beta** (2026-10-18, `9c126a5`) was published mutable, and its tag name was used once before, on 10-09. Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-11-19). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). **v1.2.0-beta** (2026-10-26, the CLI and the service read the same inputs) · **v1.3.0-beta** (2026-10-29, the two give the same results) · **Starting set of the pilot phase: v1.3.3-beta** (`b0e80ca`, 2026-11-04; immutable, with `images.json`; atrium-project#77) · **v1.3.4-beta** (11-06, the Galaxy entry point). `test` (= `master`, `c5c9525`) is 14 commits past it and declares the unreleased v2.0.0-beta (record 2.0; layout from the record). Hub workflows pinned to `02cbd01` (`v1`). Latest entry: 2026-11-25 (v2.0.0-beta release prep). **v1.1.0-beta** (2026-10-18, `9c126a5`) was published mutable, and its tag name was used once before, on 10-09. Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). The #6 saga (April→September) is condensed below; its full record moved with the issue to atrium-keyword-extract (`agent_dev_logs/digests/2.digest.md`). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -1178,3 +1178,21 @@ Documentation only; no code, test or configuration change.
   "Where it stands — 2026-11-22";
   [plan of #40](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/40.plan.md).
 * **Not posted; not pushed.**
+
+## 2026-11-24 → 2026-11-25 — v2.0.0-beta release prep (#49), the samples
+
+* **PR #49** (`v2-beta-prep` → `test`, head `48c0e73`): `CITATION.cff` dated 2026-11-26; the 17 paradata 2.0
+  samples removed; a record asked for and not written fails the service call (502) instead of an empty run;
+  `tests/fixtures/teitok/CTX_projected.teitok.xml` projected again from the OntoNotes samples (CI green since
+  `6eb38ac`); `data_samples/processing.log` ignored.
+* **Samples, not done:** the cluster run of 11-25 (`48c0e73`) read 19 documents, 16 of them untracked in the cluster
+  clone, and its summarize step failed on `CTX196006127`: two of the five paradata say `failed`, and `manifest.tsv`
+  lists 19. The rerun on the three tracked documents also removes the two `_onto` duplicates and makes the
+  annotation imports and `CTX_projected` again.
+* **Open:** the service takes the record only, not docproc.
+* **Addendum (11-25, evening):** the rerun is in (`e6f0788`): the three tracked documents only, `manifest.tsv`
+  lists `CTX000000001`–`3`, and the five paradata are `completed` (runner `23b6315`, whose code is `6eb38ac`'s), every
+  SHA-512 resolving. The outputs (`UDP`, `NE`, `UDP_NE`, `TEITOK`) came out byte-identical to the committed ones, so
+  the annotation imports, `CTX_projected` and digital-convert's vendored TEITOK copy stand. The two `_onto`
+  duplicates go with a deletion list, as #49's text says.
+* Logs only; not pushed.

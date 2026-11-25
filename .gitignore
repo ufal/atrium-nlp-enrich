@@ -1,4 +1,7 @@
 /TEMP/
+# The batch pipeline's run log (config_api.txt LOG_FILE); a sample refresh writes it beside the
+# samples, where `git add -A data_samples` would otherwise commit it.
+/data_samples/processing.log
 .idea
 /.idea/
 /venv-nlp/

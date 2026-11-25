@@ -210,7 +210,9 @@ def test_the_lane_runs_the_probe_by_dispatch_only():
         (_REPO / ".github" / "workflows" / "lindat-daily.yml").read_text(encoding="utf-8")
     )
     triggers = lane[True]
-    assert set(triggers) == {"workflow_dispatch"}, f"the lane runs by dispatch only, not on {sorted(triggers)}"
+    assert set(triggers) == {"workflow_dispatch"}, (
+        f"the lane runs by dispatch only, not on {sorted(triggers)}"
+    )
     steps = lane["jobs"]["lindat"]["steps"]
     assert any(
         "eval.lindat_probe" in str(step.get("run", "")) and "--max-bad 0" in step["run"]

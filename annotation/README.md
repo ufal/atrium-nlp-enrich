@@ -19,7 +19,7 @@ The core campaign workflow consists of:
 | `ls_to_iob2.py`                     | Converts Label Studio JSON exports back into NameTag-compatible IOB2 format                                                                                                 |
 | `conllu_to_doccano.py`              | The same input as a doccano JSONL import file (`text` + `label` spans)                                                                                                      |
 | `doccano_to_iob2.py`                | Converts a doccano JSONL export back into NameTag-compatible IOB2 format                                                                                                    |
-| `data_samples_converted/`           | Label Studio import files made from `data_samples/` with the pipeline's own CNEC and OntoNotes labels (not the six archaeo types), to try an import                         |
+| `data_samples_converted/`           | Label Studio import files made from `data_samples/` with the pipeline's own OntoNotes labels (not the six archaeo types), to try an import                                  |
 
 The annotation tool is not chosen yet ([#18](https://github.com/ufal/atrium-nlp-enrich/issues/18)): Label Studio is the
 deployed one, the doccano pair is the lighter alternative, and both read and write the same IOB2.

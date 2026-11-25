@@ -2,4 +2,4 @@
 "1","Náčrt","náčrt","1","O","","Inan","Nom","Masc","","","Sing","",""
 "1","sondy","sonda","2","O","","","Gen","Fem","","","Sing","No",""
 "1",".",".","3","O","","","","","","","","","\n"
-"1","1998","1998","1","B-ty","Year","","","","Digit","Card","","No",""
+"1","1998","1998","1","B-DATE","Absolute or relative dates or periods","","","","Digit","Card","","No",""

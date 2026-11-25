@@ -5,16 +5,16 @@
 # newpar
 # sent_id = 1
 # text = HRADIŠTĚ U HORNÍ MEZÍ Lokalita: okr. Horní Mezi Sonda II odkryla část valového tělesa.
-1	HRADIŠTĚ	hradiště	PROPN	NNNS1-----A----	Case=Nom|Gender=Neut|Number=Sing	0	root	_	NER=B-gu
-2	U	u	ADP	RR--2----------	AdpType=Prep|Case=Gen	4	case	_	NER=I-gu
-3	HORNÍ	horní	ADJ	AAFS2----1A----	Case=Gen|Degree=Pos|Gender=Fem|Number=Sing|Polarity=Pos	4	amod	_	NER=I-gu
-4	MEZÍ	mez	NOUN	NNFP2-----A----	Case=Gen|Gender=Fem|Number=Plur	1	nmod	_	SpacesAfter=\n|NER=I-gu
+1	HRADIŠTĚ	hradiště	PROPN	NNNS1-----A----	Case=Nom|Gender=Neut|Number=Sing	0	root	_	NER=B-GPE
+2	U	u	ADP	RR--2----------	AdpType=Prep|Case=Gen	4	case	_	NER=I-GPE
+3	HORNÍ	horní	ADJ	AAFS2----1A----	Case=Gen|Degree=Pos|Gender=Fem|Number=Sing|Polarity=Pos	4	amod	_	NER=I-GPE
+4	MEZÍ	mez	NOUN	NNFP2-----A----	Case=Gen|Gender=Fem|Number=Plur	1	nmod	_	SpacesAfter=\n|NER=I-GPE
 5	Lokalita	lokalita	NOUN	NNFS1-----A----	Case=Nom|Gender=Fem|Number=Sing	1	dep	_	SpaceAfter=No|NER=O
 6	:	:	PUNCT	Z:-------------	_	13	punct	_	NER=O
 7	okr	okrázek	NOUN	NNIXX-----A---b	Abbr=Yes|Animacy=Inan|Gender=Masc	13	nsubj	_	SpaceAfter=No|NER=O
 8	.	.	PUNCT	Z:-------------	_	7	punct	_	NER=O
-9	Horní	horní	ADJ	AAFS1----1A----	Case=Nom|Degree=Pos|Gender=Fem|Number=Sing|Polarity=Pos	7	amod	_	NER=B-gr
-10	Mezi	mezi	ADP	RR--7----------	AdpType=Prep|Case=Ins	11	case	_	SpacesAfter=\n|NER=I-gr
+9	Horní	horní	ADJ	AAFS1----1A----	Case=Nom|Degree=Pos|Gender=Fem|Number=Sing|Polarity=Pos	7	amod	_	NER=B-GPE
+10	Mezi	mezi	ADP	RR--7----------	AdpType=Prep|Case=Ins	11	case	_	SpacesAfter=\n|NER=I-GPE
 11	Sonda	Sonda	PROPN	NNFS1-----A----	Case=Nom|Gender=Fem|NameType=Geo|Number=Sing	7	nmod	_	NER=O
 12	II	II	NUM	C}-------------	NumForm=Roman|NumType=Card	11	nummod	_	NER=O
 13	odkryla	odkrýt	VERB	VpQW----R-AAP--	Aspect=Perf|Gender=Fem,Neut|Number=Plur,Sing|Polarity=Pos|Tense=Past|VerbForm=Part|Voice=Act	1	conj	_	NER=O
@@ -25,16 +25,16 @@
 
 # sent_id = 2
 # text = Eva Procházková dokumentovala nálezy.
-1	Eva	Eva	PROPN	NNFS1-----A----	Case=Nom|Gender=Fem|NameType=Giv|Number=Sing	3	nsubj	_	NER=B-P|B-pf
-2	Procházková	Procházková	PROPN	NNFS1-----A----	Case=Nom|Gender=Fem|NameType=Giv|Number=Sing	1	flat	_	NER=I-P|B-ps
+1	Eva	Eva	PROPN	NNFS1-----A----	Case=Nom|Gender=Fem|NameType=Giv|Number=Sing	3	nsubj	_	NER=B-PERSON
+2	Procházková	Procházková	PROPN	NNFS1-----A----	Case=Nom|Gender=Fem|NameType=Giv|Number=Sing	1	flat	_	NER=I-PERSON
 3	dokumentovala	dokumentovat	VERB	VpQW----R-AAB--	Aspect=Imp,Perf|Gender=Fem,Neut|Number=Plur,Sing|Polarity=Pos|Tense=Past|VerbForm=Part|Voice=Act	0	root	_	NER=O
 4	nálezy	nález	NOUN	NNIP4-----A----	Animacy=Inan|Case=Acc|Gender=Masc|Number=Plur	3	obj	_	SpaceAfter=No|NER=O
 5	.	.	PUNCT	Z:-------------	_	3	punct	_	SpacesAfter=\n|NER=O
 
 # sent_id = 3
 # text = rnn1 ww0rd vv_~~
-1	rnn	rnn	NOUN	BNXXX-----A----	Abbr=Yes	0	root	_	SpaceAfter=No|NER=B-or
-2	1	1	NUM	C=-------------	NumForm=Digit|NumType=Card	1	nummod	_	NER=I-or
+1	rnn	rnn	NOUN	BNXXX-----A----	Abbr=Yes	0	root	_	SpaceAfter=No|NER=O
+2	1	1	NUM	C=-------------	NumForm=Digit|NumType=Card	1	nummod	_	NER=O
 3	ww	ww	NOUN	BNXXX-----A----	Abbr=Yes	1	dep	_	SpaceAfter=No|NER=O
 4	0	0	NUM	C=-------------	NumForm=Digit|NumType=Card	1	dep	_	SpaceAfter=No|NER=O
 5	rd	rd	NOUN	BNXXX-----A----	Abbr=Yes	1	dep	_	NER=O
@@ -49,8 +49,8 @@
 2	kulturní	kulturní	ADJ	AAFS2----1A----	Case=Gen|Degree=Pos|Gender=Fem|Number=Sing|Polarity=Pos	3	amod	_	NER=O
 3	vrstvy	vrstva	NOUN	NNFS2-----A----	Case=Gen|Gender=Fem|Number=Sing	1	nmod	_	NER=O
 4	činila	činit	VERB	VpQW----R-AAI--	Aspect=Imp|Gender=Fem,Neut|Number=Plur,Sing|Polarity=Pos|Tense=Past|VerbForm=Part|Voice=Act	0	root	_	NER=O
-5	40	40	NUM	C=-------------	NumForm=Digit|NumType=Card	4	obj	_	NER=B-nc
-6	cm	centimetr	NOUN	NNIXX-----A---b	Abbr=Yes|Animacy=Inan|Gender=Masc	5	nmod	_	SpaceAfter=No|NER=B-oe
+5	40	40	NUM	C=-------------	NumForm=Digit|NumType=Card	4	obj	_	NER=O
+6	cm	centimetr	NOUN	NNIXX-----A---b	Abbr=Yes|Animacy=Inan|Gender=Masc	5	nmod	_	SpaceAfter=No|NER=O
 7	.	.	PUNCT	Z:-------------	_	4	punct	_	SpacesAfter=\n|NER=O
 
 # sent_id = 5
@@ -69,6 +69,7 @@
 # sent_id = 6
 # text = A123/2024
 1	A	A	NOUN	Q3-------------	Abbr=Yes	0	root	_	SpaceAfter=No|NER=O
-2	123	123	NUM	C=-------------	NumForm=Digit|NumType=Card	1	nummod	_	SpaceAfter=No|NER=B-n_
+2	123	123	NUM	C=-------------	NumForm=Digit|NumType=Card	1	nummod	_	SpaceAfter=No|NER=O
 3	/	/	PUNCT	Z:-------------	_	4	punct	_	SpaceAfter=No|NER=O
-4	2024	2024	NUM	C=-------------	NumForm=Digit|NumType=Card	2	conj	_	SpaceAfter=No|NER=B-n_
+4	2024	2024	NUM	C=-------------	NumForm=Digit|NumType=Card	2	conj	_	SpaceAfter=No|NER=O
+

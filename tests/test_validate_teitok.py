@@ -232,18 +232,16 @@ def test_committed_data_samples_are_conformant():
         assert validate_document(_committed_sample(doc), profile="core") == [], doc
 
 
-def _sample_nametag_model():
-    """The NameTag model the committed samples were produced with, as their newest paradata
-    record states it (CNEC 2.0 today -- the samples predate the OntoNotes default of #11; a
-    sample refresh adds a newer api_3_nt record, which then wins). The UDPipe model needs no
-    lookup: the CoNLL-U carries it (``# udpipe_model``)."""
-    import json
+#: The NameTag model the committed samples were produced with: the OntoNotes default of #11
+#: (MODEL_NAMETAG in config_api.txt), as their api_3_nt paradata in data_samples/paradata/ record.
+#: A sample refresh with another model updates this name. The UDPipe model needs no constant: the
+#: CoNLL-U carries it (``# udpipe_model``).
+SAMPLE_NAMETAG_MODEL = "nametag3-multilingual-onto-260521"
 
-    for path in sorted((REPO_ROOT / "data_samples" / "paradata").glob("*.json"), reverse=True):
-        model = json.loads(path.read_text(encoding="utf-8")).get("config", {}).get("model_nametag")
-        if model:
-            return model
-    return None
+
+def _sample_nametag_model():
+    """The NameTag model the committed samples were produced with."""
+    return SAMPLE_NAMETAG_MODEL
 
 
 @pytest.mark.parametrize("doc", COMMITTED_SAMPLES)
