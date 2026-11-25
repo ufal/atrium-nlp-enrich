@@ -3,22 +3,25 @@
   "program": "nlp-enrich",
   "tool_version": "v2.0.0-beta",
   "repository": "https://github.com/ufal/atrium-nlp-enrich",
-  "runner_ref": "6eb38ac2422ab8a261d06e37e80d979caae3b92b",
+  "runner_ref": "23b63151c3a8af3ac664ac567a1f7a0f8f310936",
   "docker_image": "",
   "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
-  "run_id": "261125-142858",
-  "run_uuid": "urn:uuid:0efded8e-1e4a-436a-9f9f-3a62346ed646",
+  "run_id": "261125-164011",
+  "run_uuid": "urn:uuid:931ba383-f38d-493c-a05b-fd9353068c3e",
   "run_agent": "",
   "action_status": "completed",
-  "start_time": "2026-11-25T14:28:58.661644+00:00",
-  "end_time": "2026-11-25T14:29:02.079564+00:00",
-  "duration_seconds": 3.418,
+  "start_time": "2026-11-25T16:40:11.424196+00:00",
+  "end_time": "2026-11-25T16:40:13.457436+00:00",
+  "duration_seconds": 2.033,
   "config": {
-    "script": "api_1_manifest",
-    "input_dir": "./data_samples/DOC_LINE_CATEG",
-    "flexiconv_input_dir": "",
-    "skip_untrustworthy_lines": "false",
-    "output_manifest": "./data_samples/manifest.tsv"
+    "script": "api_2_udp",
+    "model_udpipe": "czech-pdt-ud-2.15-241121",
+    "udpipe_url": "https://lindat.mff.cuni.cz/services/udpipe/api/process",
+    "word_chunk_limit": "900",
+    "timeout": "60",
+    "max_retries": "5",
+    "manifest": "./data_samples/manifest.tsv",
+    "output_dir": "./data_samples/UDP"
   },
   "parameters": {},
   "inputs": [],
@@ -36,14 +39,14 @@
     }
   ],
   "statistics": {
-    "input_files_total": 19,
-    "successfully_processed": 19,
+    "input_files_total": 3,
+    "successfully_processed": 3,
     "skipped_files": 0,
     "output_counts_by_type": {
-      "tsv": 19
+      "conllu": 3
     },
     "performance_per_minute": {
-      "tsv": 333.5362
+      "conllu": 88.5287
     }
   },
   "skipped_files_detail": [],

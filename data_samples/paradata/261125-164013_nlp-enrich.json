@@ -3,25 +3,24 @@
   "program": "nlp-enrich",
   "tool_version": "v2.0.0-beta",
   "repository": "https://github.com/ufal/atrium-nlp-enrich",
-  "runner_ref": "6eb38ac2422ab8a261d06e37e80d979caae3b92b",
+  "runner_ref": "23b63151c3a8af3ac664ac567a1f7a0f8f310936",
   "docker_image": "",
   "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
-  "run_id": "261125-142902",
-  "run_uuid": "urn:uuid:0da630c1-130b-4c79-9331-fd6a02ada26d",
+  "run_id": "261125-164013",
+  "run_uuid": "urn:uuid:d25c338d-8726-4724-a559-b5e83948573a",
   "run_agent": "",
   "action_status": "completed",
-  "start_time": "2026-11-25T14:29:02.161322+00:00",
-  "end_time": "2026-11-25T14:29:31.812029+00:00",
-  "duration_seconds": 29.651,
+  "start_time": "2026-11-25T16:40:13.538746+00:00",
+  "end_time": "2026-11-25T16:40:14.779008+00:00",
+  "duration_seconds": 1.24,
   "config": {
-    "script": "api_2_udp",
-    "model_udpipe": "czech-pdt-ud-2.15-241121",
-    "udpipe_url": "https://lindat.mff.cuni.cz/services/udpipe/api/process",
-    "word_chunk_limit": "900",
+    "script": "api_3_nt",
+    "model_nametag": "nametag3-multilingual-onto-260521",
+    "nametag_url": "https://lindat.mff.cuni.cz/services/nametag/api/recognize",
     "timeout": "60",
     "max_retries": "5",
-    "manifest": "./data_samples/manifest.tsv",
-    "output_dir": "./data_samples/UDP"
+    "conllu_input_dir": "./data_samples/UDP",
+    "output_dir": "./data_samples/NE"
   },
   "parameters": {},
   "inputs": [],
@@ -39,24 +38,16 @@
     }
   ],
   "statistics": {
-    "input_files_total": 19,
-    "successfully_processed": 19,
+    "input_files_total": 3,
+    "successfully_processed": 7,
     "skipped_files": 0,
     "output_counts_by_type": {
-      "conllu": 19
+      "tsv": 7
     },
     "performance_per_minute": {
-      "conllu": 38.4476
+      "tsv": 338.6381
     }
   },
   "skipped_files_detail": [],
-  "limits": [
-    {
-      "limit": "word_chunk_limit",
-      "value": 900,
-      "effect": "split",
-      "count": 11,
-      "detail": "a text over the word limit was sent to UDPipe in chunks"
-    }
-  ]
+  "limits": []
 }
