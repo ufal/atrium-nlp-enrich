@@ -15,6 +15,7 @@ PARA_STATE=$(python3 atrium_paradata.py start \
         "word_chunk_limit=${WORD_CHUNK_LIMIT}" \
         "timeout=${TIMEOUT}" \
         "max_retries=${MAX_RETRIES}" \
+    --config-name \
         "manifest=${OUTPUT_DIR}/manifest.tsv" \
         "output_dir=${OUTPUT_DIR}/UDP")
 

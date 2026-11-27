@@ -34,19 +34,20 @@ PARA_STATE=$(python3 atrium_paradata.py start \
     --output-types $OUTPUT_TYPES \
     --config \
         "script=api_4_stats" \
-        "conllu_input_dir=${CONLLU_INPUT_DIR}" \
-        "tsv_input_dir=${TSV_INPUT_DIR}" \
-        "output_dir=${SUMMARY_OUTPUT_DIR}" \
         "save_conllu_ne=${SAVE_CONLLU_NE:-true}" \
         "save_csv=${SAVE_CSV:-true}" \
         "save_teitok=${SAVE_TEITOK:-true}" \
-        "alto_dir=${INPUT_ALTO_DIR:-}" \
-        "pages_dir=${INPUT_PAGES_DIR:-}" \
         "dpi=${IMAGE_DPI:-}" \
         "alto_dpi=${ALTO_DPI:-}" \
         "bbox_origin=${BBOX_ORIGIN:-page}" \
         "regenerate_teitok=${REGENERATE_TEITOK:-false}" \
-        "flexiconv_annotate=${FLEXICONV_ANNOTATE:-false}")
+        "flexiconv_annotate=${FLEXICONV_ANNOTATE:-false}" \
+    --config-name \
+        "conllu_input_dir=${CONLLU_INPUT_DIR}" \
+        "tsv_input_dir=${TSV_INPUT_DIR}" \
+        "output_dir=${SUMMARY_OUTPUT_DIR}" \
+        "alto_dir=${INPUT_ALTO_DIR:-}" \
+        "pages_dir=${INPUT_PAGES_DIR:-}")
 
 # FLEXICONV_ANNOTATE=true: a document without ALTO takes its page layout (bboxes, page
 # images, text blocks) from its flexiconv TEITOK file (api_flexiconv.sh).

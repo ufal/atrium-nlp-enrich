@@ -1196,3 +1196,12 @@ Documentation only; no code, test or configuration change.
   the annotation imports, `CTX_projected` and digital-convert's vendored TEITOK copy stand. The two `_onto`
   duplicates go with a deletion list, as #49's text says.
 * Logs only; not pushed.
+
+## 2026-11-27 — atrium-project#84: the non-A options prepared (ARÚP's answers pending)
+
+* **1b:** the path keys of `api_1_manifest.sh`, `api_2_udp.sh`, `api_3_nt.sh`, `api_4_stats.sh`, `api_flexiconv.sh` move to `start --config-name`; `api_util/teitok_project.py` names `teitok_dir` and `record_dir`. The service's per-stage records in its zip lose their workspace paths too. Two tests (a stage 4 run, the projection step).
+* **Checked:** 1093 passed (1090 at baseline); openapi regenerated; `bash -n` on the scripts (shellcheck not installed here).
+* **Shared:** the re-vendored `atrium_paradata.py` (`name_only`, `start --config-name`, `RENDERED_PDF_DISTRIBUTION`), `atrium_document.schema.json` (H3 descriptions: the forced pages and the pages showing graphics) and `atrium_rocrate.py` (a docstring), byte-identical to the hub's; the pin moves to the hub's squash commit before the PR opens.
+* **Not in the PR:** the committed samples, regenerated from the merged code before the tags.
+* The change is `atrium-nlp-enrich.decisions-84.zip`, these logs `atrium-nlp-enrich.agent_dev_logs.zip`.
+* Logs only; not pushed.

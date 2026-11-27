@@ -14,6 +14,7 @@ PARA_STATE=$(python3 atrium_paradata.py start \
         "nametag_url=${NAMETAG_URL}" \
         "timeout=${TIMEOUT}" \
         "max_retries=${MAX_RETRIES}" \
+    --config-name \
         "conllu_input_dir=${CONLLU_INPUT_DIR}" \
         "output_dir=${TSV_INPUT_DIR}")
 

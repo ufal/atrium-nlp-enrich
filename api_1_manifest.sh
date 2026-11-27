@@ -33,9 +33,10 @@ PARA_STATE=$(python3 atrium_paradata.py start \
     --output-types tsv \
     --config \
         "script=api_1_manifest" \
+        "skip_untrustworthy_lines=${SKIP_UNTRUSTWORTHY_LINES:-false}" \
+    --config-name \
         "input_dir=${INPUT_TABLES_DIR}" \
         "flexiconv_input_dir=${FLEXICONV_INPUT_DIR}" \
-        "skip_untrustworthy_lines=${SKIP_UNTRUSTWORTHY_LINES:-false}" \
         "output_manifest=${OUTPUT_DIR}/manifest.tsv")
 # ── end paradata start ────────────────────────────────────────────────────────
 

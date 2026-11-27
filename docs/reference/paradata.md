@@ -29,10 +29,10 @@ in isolation. `run_pipeline.py` merges them into one record per run
 
 The paradata logs (the sample run's are committed in `data_samples/paradata/`; the paradata 2.0 samples, with the
 calculated licence fields paradata 3.0 dropped, are in git history up to `v1.3.4-beta`) capture key details about each
-pipeline stage, including the program name, run ID, execution duration, configuration parameters, input and output
-statistics, and performance metrics. They also document skipped files with reasons and provide a breakdown of
-output types and processing rates for benchmarking. This structured metadata makes the pipeline's execution
-traceable and auditable.
+pipeline stage, including the program name, run ID, execution duration, configuration parameters (`config`, which
+names the files and folders a stage was given, never their paths), input and output statistics, and performance
+metrics. They also document skipped files with reasons and provide a breakdown of output types and processing rates
+for benchmarking. This structured metadata makes the pipeline's execution traceable and auditable.
 
 The declared output types per stage are:
 
@@ -57,6 +57,11 @@ a run is interrupted unexpectedly; `run_pipeline.py --clean-state` sweeps stale 
 **Paradata schema 3.0.** What a run read and wrote is named by AMČR distribution name and SHA-512, never by a
 path:
 
+- `config` names the files and folders a stage was given, never their paths (atrium-project#84 decision 1):
+  `alto_dir` is `ALTO`, not the path to it, and a folder that was not given stays `""`. The stage scripts pass them
+  to `atrium_paradata.py start --config-name`, the projection stage through `atrium_paradata.name_only`; a model
+  name or a URL is kept as given. So the per-stage records in the service's `format=zip` carry no path of its
+  temporary workspace in `config`.
 - `api_4_stats.sh` records the record version read (`inputs`, `atrium/document-json`), the record written
   (`outputs`, with `record_fields`: the blocks and fields the run wrote) and the TEITOK written (`atr/teitok-xml`);
   the projection stage records the record it read and the TEITOK it rewrote. The record itself carries no run data.

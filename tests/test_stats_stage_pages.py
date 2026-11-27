@@ -6,6 +6,7 @@ page 3. The stage now reads the rows file stage 2 keeps next to the CoNLL-U.
 """
 
 import csv
+import json
 import os
 import re
 import shutil
@@ -105,3 +106,23 @@ def test_stage_4_exits_5_when_the_output_contract_fails(tmp_path):
     assert run.returncode == 5, run.stdout + run.stderr
     assert "TEITOK output contract failed" in run.stderr
     assert "duplicate @id 'pb-2'" in run.stderr
+
+
+def test_stage_4_paradata_names_its_folders_not_their_paths(tmp_path, monkeypatch):
+    """The run's config names each folder it was given, never its path (atrium-project#84
+    decision 1, ``start --config-name``); a folder not given stays ``""``."""
+    monkeypatch.delenv("INPUT_PAGES_DIR", raising=False)
+    out, run = _stage4(tmp_path)
+    assert run.returncode == 0, run.stdout + run.stderr
+    records = [json.loads(p.read_text(encoding="utf-8")) for p in (out / "paradata").glob("*.json")]
+    (config,) = [r["config"] for r in records if r.get("config", {}).get("script") == "api_4_stats"]
+    named = {
+        "conllu_input_dir": "UDP",
+        "tsv_input_dir": "NE",
+        "output_dir": "UDP_NE",
+        "alto_dir": "ALTO",
+        "pages_dir": "",
+    }
+    assert {k: config[k] for k in named} == named
+    assert str(tmp_path) not in json.dumps(config) and str(SAMPLES) not in json.dumps(config)
+    assert config["save_teitok"] == "true"  # the other settings as given

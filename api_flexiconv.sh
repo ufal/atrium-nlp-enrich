@@ -33,10 +33,11 @@ PARA_STATE=$(python3 atrium_paradata.py start \
     --component flexiconv \
     --config \
         "script=api_flexiconv" \
-        "input_docs_dir=${INPUT_DOCS_DIR}" \
-        "teitok_flexiconv_dir=${FLEXICONV_DIR}" \
         "flexiconv_formats=${FLEXICONV_FORMATS}" \
-        "flexiconv_force=${FLEXICONV_FORCE:-false}")
+        "flexiconv_force=${FLEXICONV_FORCE:-false}" \
+    --config-name \
+        "input_docs_dir=${INPUT_DOCS_DIR}" \
+        "teitok_flexiconv_dir=${FLEXICONV_DIR}")
 
 # Allowed extensions as an exact-match alternation (extension compared case-insensitively).
 FORMAT_PATTERN=$(echo "$FLEXICONV_FORMATS" | tr ',' ' ' | xargs | tr ' ' '|')

@@ -836,14 +836,15 @@ def _run_directory(args: argparse.Namespace) -> int:
     )
     logger = None
     if args.paradata_dir:
-        from atrium_paradata import ParadataLogger  # noqa: PLC0415
+        from atrium_paradata import ParadataLogger, name_only  # noqa: PLC0415
 
         logger = ParadataLogger(
             program="nlp-enrich",
+            # The folders by name, never their paths (atrium-project#84 decision 1).
             config={
                 "script": "teitok_project",
-                "teitok_dir": str(teitok_dir),
-                "record_dir": str(args.record_dir or ""),
+                "teitok_dir": name_only(str(teitok_dir)),
+                "record_dir": name_only(str(args.record_dir or "")),
             },
             paradata_dir=str(args.paradata_dir),
             output_types=["teitok_xml"],
