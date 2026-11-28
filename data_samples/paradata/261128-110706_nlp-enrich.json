@@ -3,16 +3,16 @@
   "program": "nlp-enrich",
   "tool_version": "v2.0.0-beta",
   "repository": "https://github.com/ufal/atrium-nlp-enrich",
-  "runner_ref": "",
+  "runner_ref": "f6755d97fdd9bbb0c6ea60f7fd66de378eeb031a",
   "docker_image": "",
-  "python_version": "3.13.18 (main, Oct 26 2026, 14:08:19) [Clang 23.1.3 ]",
-  "run_id": "261128-090134",
-  "run_uuid": "urn:uuid:c10d4ea7-e53f-43e7-917f-bb4ceda38834",
+  "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
+  "run_id": "261128-110706",
+  "run_uuid": "urn:uuid:7cf9b783-2a5c-4a9e-8369-1f8d215d4ffd",
   "run_agent": "",
   "action_status": "completed",
-  "start_time": "2026-11-28T09:01:34.857046+00:00",
-  "end_time": "2026-11-28T09:01:38.678411+00:00",
-  "duration_seconds": 3.821,
+  "start_time": "2026-11-28T11:07:06.353682+00:00",
+  "end_time": "2026-11-28T11:07:08.225184+00:00",
+  "duration_seconds": 1.872,
   "config": {
     "script": "api_3_nt",
     "model_nametag": "nametag3-multilingual-onto-260521",
@@ -28,13 +28,13 @@
       "stored": false
     },
     {
-      "name": "CTX000000002.conllu",
-      "sha512": "a321e2f2acd09b2b3956e51fff9ce742df69a947cbebfdcf861b86f5e6337c08ad9ea8bac8467e9577427f4f879938f08c33a11f8fb3b3998a5dde91f7801d98",
+      "name": "CTX000000001.conllu",
+      "sha512": "a447a04607106949e202951b2a4a66d8715d327d0b3476b51ffc0f80bc12d531903dfedb0c2b2361fbfcdf332530bca855162aeeae9bfe2fab52b7b02557bc2a",
       "stored": false
     },
     {
-      "name": "CTX000000001.conllu",
-      "sha512": "a447a04607106949e202951b2a4a66d8715d327d0b3476b51ffc0f80bc12d531903dfedb0c2b2361fbfcdf332530bca855162aeeae9bfe2fab52b7b02557bc2a",
+      "name": "CTX000000002.conllu",
+      "sha512": "a321e2f2acd09b2b3956e51fff9ce742df69a947cbebfdcf861b86f5e6337c08ad9ea8bac8467e9577427f4f879938f08c33a11f8fb3b3998a5dde91f7801d98",
       "stored": false
     }
   ],
@@ -42,6 +42,16 @@
     {
       "name": "CTX000000003-1.tsv",
       "sha512": "f9292d207d69a01f529c9cb2507135147eaaa7e190e8f1d7736c4dfeb4c4f878061cf50b4ac41b01febae35b25b5b0881ff91266824486a28d7a42522b31e398",
+      "stored": false
+    },
+    {
+      "name": "CTX000000001-1.tsv",
+      "sha512": "d653b5e4cae22abdf9e09f670f110730dc4eed2778a9f8a38f9332f0e5ac57496de2c80e39e1cce1a6defb21166b70e7b1fdf107d234deb7defae43bdefd8e9a",
+      "stored": false
+    },
+    {
+      "name": "CTX000000001-2.tsv",
+      "sha512": "13b178a912d68e543d46713392cd4886db6f82bcf71dac4d9cadbd4f8fa25dbd79696ff2accf14c6052a6521613aace3f08fa93eaf023e4ed035600c5d2d81e3",
       "stored": false
     },
     {
@@ -62,16 +72,6 @@
     {
       "name": "CTX000000002-4.tsv",
       "sha512": "142e469e940b76eb17a757e6da4403b70b02c906c82605540c7efcdb72cc8f312cbb3ae5f035680a960f6775f5c51e33fee88e341b44f39540a60f2232471288",
-      "stored": false
-    },
-    {
-      "name": "CTX000000001-1.tsv",
-      "sha512": "d653b5e4cae22abdf9e09f670f110730dc4eed2778a9f8a38f9332f0e5ac57496de2c80e39e1cce1a6defb21166b70e7b1fdf107d234deb7defae43bdefd8e9a",
-      "stored": false
-    },
-    {
-      "name": "CTX000000001-2.tsv",
-      "sha512": "13b178a912d68e543d46713392cd4886db6f82bcf71dac4d9cadbd4f8fa25dbd79696ff2accf14c6052a6521613aace3f08fa93eaf023e4ed035600c5d2d81e3",
       "stored": false
     }
   ],
@@ -95,7 +95,7 @@
       "tsv": 7
     },
     "performance_per_minute": {
-      "tsv": 109.9084
+      "tsv": 224.4187
     }
   },
   "skipped_files_detail": [],

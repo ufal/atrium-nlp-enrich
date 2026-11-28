@@ -6,11 +6,11 @@
   "repository": "https://github.com/ufal/atrium-nlp-enrich",
   "tool_version": "v2.0.0-beta",
   "docker_image": "",
-  "runner_ref": "",
+  "runner_ref": "f6755d97fdd9bbb0c6ea60f7fd66de378eeb031a",
   "request_id": "",
-  "python_version": "3.13.18 (main, Oct 26 2026, 14:08:19) [Clang 23.1.3 ]",
-  "run_id": "261128-090140",
-  "run_uuid": "urn:uuid:8cbbc95c-f59b-4414-9b89-0f30c91a43cc",
+  "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
+  "run_id": "261128-110711",
+  "run_uuid": "urn:uuid:f788c777-fc5a-474a-9896-c9deb5313f7d",
   "run_agent": "",
   "action_status": "completed",
   "stage_count": 4,
@@ -20,8 +20,8 @@
       "program": "nlp-enrich",
       "script": "api_1_manifest",
       "method": null,
-      "run_id": "261128-090129",
-      "run_uuid": "urn:uuid:8f97eb8c-4205-42c2-9a01-9e9eb7a5b390",
+      "run_id": "261128-110701",
+      "run_uuid": "urn:uuid:e9b7682a-5190-457b-9b44-ebb6720fa94e",
       "action_status": "completed",
       "repository": "https://github.com/ufal/atrium-nlp-enrich",
       "tool_version": "v2.0.0-beta",
@@ -83,9 +83,9 @@
       "output_formats": {
         "tsv": 3
       },
-      "start_time": "2026-11-28T09:01:29.303937+00:00",
-      "end_time": "2026-11-28T09:01:30.095979+00:00",
-      "duration_seconds": 0.792,
+      "start_time": "2026-11-28T11:07:01.652487+00:00",
+      "end_time": "2026-11-28T11:07:02.830140+00:00",
+      "duration_seconds": 1.178,
       "input_files_total": 3,
       "successfully_processed": 3,
       "skipped_files": 0
@@ -95,8 +95,8 @@
       "program": "nlp-enrich",
       "script": "api_2_udp",
       "method": null,
-      "run_id": "261128-090130",
-      "run_uuid": "urn:uuid:3b34d23f-ea61-492a-8aa0-e046000ae78b",
+      "run_id": "261128-110702",
+      "run_uuid": "urn:uuid:e5e1649c-1450-4121-a282-0e5006ae5a5b",
       "action_status": "completed",
       "repository": "https://github.com/ufal/atrium-nlp-enrich",
       "tool_version": "v2.0.0-beta",
@@ -173,9 +173,9 @@
       "output_formats": {
         "conllu": 3
       },
-      "start_time": "2026-11-28T09:01:30.396718+00:00",
-      "end_time": "2026-11-28T09:01:34.785436+00:00",
-      "duration_seconds": 4.389,
+      "start_time": "2026-11-28T11:07:02.922548+00:00",
+      "end_time": "2026-11-28T11:07:06.270971+00:00",
+      "duration_seconds": 3.348,
       "input_files_total": 3,
       "successfully_processed": 3,
       "skipped_files": 0
@@ -185,8 +185,8 @@
       "program": "nlp-enrich",
       "script": "api_3_nt",
       "method": null,
-      "run_id": "261128-090134",
-      "run_uuid": "urn:uuid:c10d4ea7-e53f-43e7-917f-bb4ceda38834",
+      "run_id": "261128-110706",
+      "run_uuid": "urn:uuid:7cf9b783-2a5c-4a9e-8369-1f8d215d4ffd",
       "action_status": "completed",
       "repository": "https://github.com/ufal/atrium-nlp-enrich",
       "tool_version": "v2.0.0-beta",
@@ -198,13 +198,13 @@
           "stored": false
         },
         {
-          "name": "CTX000000002.conllu",
-          "sha512": "a321e2f2acd09b2b3956e51fff9ce742df69a947cbebfdcf861b86f5e6337c08ad9ea8bac8467e9577427f4f879938f08c33a11f8fb3b3998a5dde91f7801d98",
+          "name": "CTX000000001.conllu",
+          "sha512": "a447a04607106949e202951b2a4a66d8715d327d0b3476b51ffc0f80bc12d531903dfedb0c2b2361fbfcdf332530bca855162aeeae9bfe2fab52b7b02557bc2a",
           "stored": false
         },
         {
-          "name": "CTX000000001.conllu",
-          "sha512": "a447a04607106949e202951b2a4a66d8715d327d0b3476b51ffc0f80bc12d531903dfedb0c2b2361fbfcdf332530bca855162aeeae9bfe2fab52b7b02557bc2a",
+          "name": "CTX000000002.conllu",
+          "sha512": "a321e2f2acd09b2b3956e51fff9ce742df69a947cbebfdcf861b86f5e6337c08ad9ea8bac8467e9577427f4f879938f08c33a11f8fb3b3998a5dde91f7801d98",
           "stored": false
         }
       ],
@@ -212,6 +212,16 @@
         {
           "name": "CTX000000003-1.tsv",
           "sha512": "f9292d207d69a01f529c9cb2507135147eaaa7e190e8f1d7736c4dfeb4c4f878061cf50b4ac41b01febae35b25b5b0881ff91266824486a28d7a42522b31e398",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001-1.tsv",
+          "sha512": "d653b5e4cae22abdf9e09f670f110730dc4eed2778a9f8a38f9332f0e5ac57496de2c80e39e1cce1a6defb21166b70e7b1fdf107d234deb7defae43bdefd8e9a",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001-2.tsv",
+          "sha512": "13b178a912d68e543d46713392cd4886db6f82bcf71dac4d9cadbd4f8fa25dbd79696ff2accf14c6052a6521613aace3f08fa93eaf023e4ed035600c5d2d81e3",
           "stored": false
         },
         {
@@ -233,24 +243,14 @@
           "name": "CTX000000002-4.tsv",
           "sha512": "142e469e940b76eb17a757e6da4403b70b02c906c82605540c7efcdb72cc8f312cbb3ae5f035680a960f6775f5c51e33fee88e341b44f39540a60f2232471288",
           "stored": false
-        },
-        {
-          "name": "CTX000000001-1.tsv",
-          "sha512": "d653b5e4cae22abdf9e09f670f110730dc4eed2778a9f8a38f9332f0e5ac57496de2c80e39e1cce1a6defb21166b70e7b1fdf107d234deb7defae43bdefd8e9a",
-          "stored": false
-        },
-        {
-          "name": "CTX000000001-2.tsv",
-          "sha512": "13b178a912d68e543d46713392cd4886db6f82bcf71dac4d9cadbd4f8fa25dbd79696ff2accf14c6052a6521613aace3f08fa93eaf023e4ed035600c5d2d81e3",
-          "stored": false
         }
       ],
       "output_formats": {
         "tsv": 7
       },
-      "start_time": "2026-11-28T09:01:34.857046+00:00",
-      "end_time": "2026-11-28T09:01:38.678411+00:00",
-      "duration_seconds": 3.821,
+      "start_time": "2026-11-28T11:07:06.353682+00:00",
+      "end_time": "2026-11-28T11:07:08.225184+00:00",
+      "duration_seconds": 1.872,
       "input_files_total": 3,
       "successfully_processed": 7,
       "skipped_files": 0
@@ -260,8 +260,8 @@
       "program": "nlp-enrich",
       "script": "api_4_stats",
       "method": null,
-      "run_id": "261128-090138",
-      "run_uuid": "urn:uuid:f29c87ad-679e-4955-9e13-af99f953d3cb",
+      "run_id": "261128-110708",
+      "run_uuid": "urn:uuid:74e4cb92-976c-4c48-9c88-22b181b2ce96",
       "action_status": "completed",
       "repository": "https://github.com/ufal/atrium-nlp-enrich",
       "tool_version": "v2.0.0-beta",
@@ -285,6 +285,31 @@
         {
           "name": "CTX000000003.alto.xml",
           "sha512": "4e2560c56e94ac95f77ee6dff44e956e812a33665b9007fb64bcc6a75706012cf75f86a12098d1f6e6459dbd3797359c65a6e7c11b43264f81174aa46f1084fa",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001.conllu",
+          "sha512": "a447a04607106949e202951b2a4a66d8715d327d0b3476b51ffc0f80bc12d531903dfedb0c2b2361fbfcdf332530bca855162aeeae9bfe2fab52b7b02557bc2a",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001-1.tsv",
+          "sha512": "d653b5e4cae22abdf9e09f670f110730dc4eed2778a9f8a38f9332f0e5ac57496de2c80e39e1cce1a6defb21166b70e7b1fdf107d234deb7defae43bdefd8e9a",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001-2.tsv",
+          "sha512": "13b178a912d68e543d46713392cd4886db6f82bcf71dac4d9cadbd4f8fa25dbd79696ff2accf14c6052a6521613aace3f08fa93eaf023e4ed035600c5d2d81e3",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001.rows.tsv",
+          "sha512": "ff8e900675c9868333129f44c1962723b5baf350c76da5c46c45ec5e09fb6147b5c778093b975e6f3fbdf80b72c94b75372209e03a7b9aa1759bc9ce816f116f",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001.alto.xml",
+          "sha512": "bae39af8eb1c8d0d65c521a5ea580ce74de62b1290c32573ec1639aeac9fe73b81f5e70865c7f8d36c0732f18701c037a844db6d6d62ca032ed52ddf9a7df67d",
           "stored": false
         },
         {
@@ -321,31 +346,6 @@
           "name": "CTX000000002.alto.xml",
           "sha512": "5ca76cbce1e50a29dc9b01c8440b089cd9805e92537f8bd2d9590491618f0f8a19fc31ec8b67b84fa6242f33743da6a2be70c654c93be57110444a072716ae6c",
           "stored": false
-        },
-        {
-          "name": "CTX000000001.conllu",
-          "sha512": "a447a04607106949e202951b2a4a66d8715d327d0b3476b51ffc0f80bc12d531903dfedb0c2b2361fbfcdf332530bca855162aeeae9bfe2fab52b7b02557bc2a",
-          "stored": false
-        },
-        {
-          "name": "CTX000000001-1.tsv",
-          "sha512": "d653b5e4cae22abdf9e09f670f110730dc4eed2778a9f8a38f9332f0e5ac57496de2c80e39e1cce1a6defb21166b70e7b1fdf107d234deb7defae43bdefd8e9a",
-          "stored": false
-        },
-        {
-          "name": "CTX000000001-2.tsv",
-          "sha512": "13b178a912d68e543d46713392cd4886db6f82bcf71dac4d9cadbd4f8fa25dbd79696ff2accf14c6052a6521613aace3f08fa93eaf023e4ed035600c5d2d81e3",
-          "stored": false
-        },
-        {
-          "name": "CTX000000001.rows.tsv",
-          "sha512": "ff8e900675c9868333129f44c1962723b5baf350c76da5c46c45ec5e09fb6147b5c778093b975e6f3fbdf80b72c94b75372209e03a7b9aa1759bc9ce816f116f",
-          "stored": false
-        },
-        {
-          "name": "CTX000000001.alto.xml",
-          "sha512": "bae39af8eb1c8d0d65c521a5ea580ce74de62b1290c32573ec1639aeac9fe73b81f5e70865c7f8d36c0732f18701c037a844db6d6d62ca032ed52ddf9a7df67d",
-          "stored": false
         }
       ],
       "outputs": [
@@ -367,22 +367,6 @@
         },
         {
           "name": "atr/teitok-xml",
-          "sha512": "8b7028c77b87fc04dbd2f9f137a94580a3567c603e3db92181fb7dadf724d4e3cede32d5c1a16f617287754fff9667a7504f3dab4825b7459422d158a2f830c4",
-          "media_type": "application/xml",
-          "stored": true
-        },
-        {
-          "name": "CTX000000002.conllu",
-          "sha512": "54476e03f83f93ccec7f8694d08cbd5341b9a063149a7d8390f59cb9a969338517299ee718cb0ba822e6e81bc4365dd487123990d7e1be4463ebb282fa8852a3",
-          "stored": false
-        },
-        {
-          "name": "CTX000000002.csv",
-          "sha512": "04db9dc7e0261dec3b95fc394edac0f333a673d18605d35e6297779492698852c3dacc47cfceb901fbc411128ed38b32af28ec0f4b65797f0316e1da01419588",
-          "stored": false
-        },
-        {
-          "name": "atr/teitok-xml",
           "sha512": "cbd048ffc525e83246c93aceae1c6ba3dab3342f3aa2fe9da11854db85c888009dbb49b9cfffadee712dfcdd8cf71e69014009ccbe925027dca84ecf9eb91c66",
           "media_type": "application/xml",
           "stored": true
@@ -398,8 +382,24 @@
           "stored": false
         },
         {
+          "name": "atr/teitok-xml",
+          "sha512": "8b7028c77b87fc04dbd2f9f137a94580a3567c603e3db92181fb7dadf724d4e3cede32d5c1a16f617287754fff9667a7504f3dab4825b7459422d158a2f830c4",
+          "media_type": "application/xml",
+          "stored": true
+        },
+        {
+          "name": "CTX000000002.conllu",
+          "sha512": "54476e03f83f93ccec7f8694d08cbd5341b9a063149a7d8390f59cb9a969338517299ee718cb0ba822e6e81bc4365dd487123990d7e1be4463ebb282fa8852a3",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.csv",
+          "sha512": "04db9dc7e0261dec3b95fc394edac0f333a673d18605d35e6297779492698852c3dacc47cfceb901fbc411128ed38b32af28ec0f4b65797f0316e1da01419588",
+          "stored": false
+        },
+        {
           "name": "summary_ne_counts.csv",
-          "sha512": "0913e0573708ad254e22794db7fa42177a10dc035a5e8a832d05677185e3e542f75233ad1289d1b8023d4cfd4ecf7d373b51cd8c749083345edd85753d99d2b7",
+          "sha512": "56194bb1d9ec3fa06c3e39dc9080de4910bd4c998b89987afdea7c1ec545981ea9bb38ab183146e10f8971e116f256ece1df5c02aff9cd725f14ab5977f0fcdb",
           "stored": false
         }
       ],
@@ -408,9 +408,9 @@
         "conllu": 3,
         "xml": 3
       },
-      "start_time": "2026-11-28T09:01:38.749065+00:00",
-      "end_time": "2026-11-28T09:01:40.627618+00:00",
-      "duration_seconds": 1.879,
+      "start_time": "2026-11-28T11:07:08.317121+00:00",
+      "end_time": "2026-11-28T11:07:11.628506+00:00",
+      "duration_seconds": 3.311,
       "input_files_total": 3,
       "successfully_processed": 3,
       "skipped_files": 0
@@ -434,9 +434,9 @@
       "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/"
     }
   ],
-  "start_time": "2026-11-28T09:01:29.303937+00:00",
-  "end_time": "2026-11-28T09:01:40.627618+00:00",
-  "total_duration_seconds": 10.881,
+  "start_time": "2026-11-28T11:07:01.652487+00:00",
+  "end_time": "2026-11-28T11:07:11.628506+00:00",
+  "total_duration_seconds": 9.709,
   "statistics": {
     "stages_total": 4,
     "input_files_total": 3,
@@ -446,5 +446,5 @@
   "skipped_files_detail": [],
   "limits": [],
   "skipped_stages": [],
-  "merged_at": "2026-11-28T09:01:40.639333+00:00"
+  "merged_at": "2026-11-28T11:07:11.647054+00:00"
 }
