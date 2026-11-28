@@ -1,0 +1,450 @@
+{
+  "schema_version": "3.0",
+  "record_type": "pipeline-run-merged",
+  "pipeline": "nlp-enrich",
+  "method": "",
+  "repository": "https://github.com/ufal/atrium-nlp-enrich",
+  "tool_version": "v2.0.0-beta",
+  "docker_image": "",
+  "runner_ref": "",
+  "request_id": "",
+  "python_version": "3.13.18 (main, Oct 26 2026, 14:08:19) [Clang 23.1.3 ]",
+  "run_id": "261128-090140",
+  "run_uuid": "urn:uuid:8cbbc95c-f59b-4414-9b89-0f30c91a43cc",
+  "run_agent": "",
+  "action_status": "completed",
+  "stage_count": 4,
+  "pipeline_stages": [
+    {
+      "order": 1,
+      "program": "nlp-enrich",
+      "script": "api_1_manifest",
+      "method": null,
+      "run_id": "261128-090129",
+      "run_uuid": "urn:uuid:8f97eb8c-4205-42c2-9a01-9e9eb7a5b390",
+      "action_status": "completed",
+      "repository": "https://github.com/ufal/atrium-nlp-enrich",
+      "tool_version": "v2.0.0-beta",
+      "docker_image": "",
+      "inputs": [
+        {
+          "name": "CTX000000001.csv",
+          "sha512": "835b754ac710ff6ccae716923dd8b12e9e200c681fbab7d64ba8684e1f2076b9cf1d4eec6bdb221ff8f0f673cf1dd42d6f9398fb4a9053214d36ff279ea00d41",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.csv",
+          "sha512": "29d74efbe8153a7f81d51056ae5d4bd5503b1eb8c38383d38819b95effa6dbd4a2e10a18d4880bbb4fcaf7e7a80d903518c2913633c08867ceec1332d7501aa1",
+          "stored": false
+        },
+        {
+          "name": "CTX000000003.csv",
+          "sha512": "4f44f5dcd9d814719e136fee17a8e05d1dc8b1caa99a79f3e033236f16edb9cb1c91e11a06d79587408e85d0407fe5aae2736fb3b912fa5e01901bbab7cd2558",
+          "stored": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CTX000000001.txt",
+          "sha512": "71e57e4996dcf43171d00c502a25c14e77cabcaeb07a797b6ecb9bc07eef33b77be923f99e3c87c969332ba54a7474a346e0bd5b1e17204867df8e23b228a7a6",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001.rows.tsv",
+          "sha512": "ff8e900675c9868333129f44c1962723b5baf350c76da5c46c45ec5e09fb6147b5c778093b975e6f3fbdf80b72c94b75372209e03a7b9aa1759bc9ce816f116f",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.txt",
+          "sha512": "979e1d852e9bc174d949994079372d956f593706258c936133cc06c47a583fa7f911605c5fa8dd3405b21fef96f83f2f65c1ec2ea83e8796155738073c9e254b",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.rows.tsv",
+          "sha512": "395b0096c7a1362a52eedccc32964a5e5eb748249ae5d7ed02cab4024e1210d325843a6bb70dd21b5616bb21d3dc10923fd35e007f6f305814a5703f00098c28",
+          "stored": false
+        },
+        {
+          "name": "CTX000000003.txt",
+          "sha512": "e54c4dae2903299a1510be4d5e8982bf258214e9c88a7955bbffff7b10c0fbad3bf48f1155fd495114eed8298a45780b2a6fb04df9ea1fdbd18b1af262eba45d",
+          "stored": false
+        },
+        {
+          "name": "CTX000000003.rows.tsv",
+          "sha512": "af19da50574708fa80b26ed82406e1b4aba541e0c7f90d58ff40bf1187c74a9c28616f6a4204e9be17e6e65c18951ceb6fec663ec49d872fe839db4ed645a202",
+          "stored": false
+        },
+        {
+          "name": "manifest.tsv",
+          "sha512": "b45e0584df01ba955ab8d751fae92e1b63fa6ac51fdf143d98bc98b5b6681d3a9debc13f8f486b0786d8b5e1ff6f942811be25e3f6fd6d7e69efd82138797e0b",
+          "stored": false
+        }
+      ],
+      "output_formats": {
+        "tsv": 3
+      },
+      "start_time": "2026-11-28T09:01:29.303937+00:00",
+      "end_time": "2026-11-28T09:01:30.095979+00:00",
+      "duration_seconds": 0.792,
+      "input_files_total": 3,
+      "successfully_processed": 3,
+      "skipped_files": 0
+    },
+    {
+      "order": 2,
+      "program": "nlp-enrich",
+      "script": "api_2_udp",
+      "method": null,
+      "run_id": "261128-090130",
+      "run_uuid": "urn:uuid:3b34d23f-ea61-492a-8aa0-e046000ae78b",
+      "action_status": "completed",
+      "repository": "https://github.com/ufal/atrium-nlp-enrich",
+      "tool_version": "v2.0.0-beta",
+      "docker_image": "",
+      "inputs": [
+        {
+          "name": "manifest.tsv",
+          "sha512": "b45e0584df01ba955ab8d751fae92e1b63fa6ac51fdf143d98bc98b5b6681d3a9debc13f8f486b0786d8b5e1ff6f942811be25e3f6fd6d7e69efd82138797e0b",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001.txt",
+          "sha512": "71e57e4996dcf43171d00c502a25c14e77cabcaeb07a797b6ecb9bc07eef33b77be923f99e3c87c969332ba54a7474a346e0bd5b1e17204867df8e23b228a7a6",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001.rows.tsv",
+          "sha512": "ff8e900675c9868333129f44c1962723b5baf350c76da5c46c45ec5e09fb6147b5c778093b975e6f3fbdf80b72c94b75372209e03a7b9aa1759bc9ce816f116f",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.txt",
+          "sha512": "979e1d852e9bc174d949994079372d956f593706258c936133cc06c47a583fa7f911605c5fa8dd3405b21fef96f83f2f65c1ec2ea83e8796155738073c9e254b",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.rows.tsv",
+          "sha512": "395b0096c7a1362a52eedccc32964a5e5eb748249ae5d7ed02cab4024e1210d325843a6bb70dd21b5616bb21d3dc10923fd35e007f6f305814a5703f00098c28",
+          "stored": false
+        },
+        {
+          "name": "CTX000000003.txt",
+          "sha512": "e54c4dae2903299a1510be4d5e8982bf258214e9c88a7955bbffff7b10c0fbad3bf48f1155fd495114eed8298a45780b2a6fb04df9ea1fdbd18b1af262eba45d",
+          "stored": false
+        },
+        {
+          "name": "CTX000000003.rows.tsv",
+          "sha512": "af19da50574708fa80b26ed82406e1b4aba541e0c7f90d58ff40bf1187c74a9c28616f6a4204e9be17e6e65c18951ceb6fec663ec49d872fe839db4ed645a202",
+          "stored": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CTX000000001.conllu",
+          "sha512": "a447a04607106949e202951b2a4a66d8715d327d0b3476b51ffc0f80bc12d531903dfedb0c2b2361fbfcdf332530bca855162aeeae9bfe2fab52b7b02557bc2a",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001.rows.tsv",
+          "sha512": "ff8e900675c9868333129f44c1962723b5baf350c76da5c46c45ec5e09fb6147b5c778093b975e6f3fbdf80b72c94b75372209e03a7b9aa1759bc9ce816f116f",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.conllu",
+          "sha512": "a321e2f2acd09b2b3956e51fff9ce742df69a947cbebfdcf861b86f5e6337c08ad9ea8bac8467e9577427f4f879938f08c33a11f8fb3b3998a5dde91f7801d98",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.rows.tsv",
+          "sha512": "395b0096c7a1362a52eedccc32964a5e5eb748249ae5d7ed02cab4024e1210d325843a6bb70dd21b5616bb21d3dc10923fd35e007f6f305814a5703f00098c28",
+          "stored": false
+        },
+        {
+          "name": "CTX000000003.conllu",
+          "sha512": "cf53880405d27817a38a6d51da512431bd8fd747635fc2bef62b1e8e005ff9389cd5e075da9329f3a2ce0d7384e64656a6405d624ffadf5a5d2f5d3d34c5a3b2",
+          "stored": false
+        },
+        {
+          "name": "CTX000000003.rows.tsv",
+          "sha512": "af19da50574708fa80b26ed82406e1b4aba541e0c7f90d58ff40bf1187c74a9c28616f6a4204e9be17e6e65c18951ceb6fec663ec49d872fe839db4ed645a202",
+          "stored": false
+        }
+      ],
+      "output_formats": {
+        "conllu": 3
+      },
+      "start_time": "2026-11-28T09:01:30.396718+00:00",
+      "end_time": "2026-11-28T09:01:34.785436+00:00",
+      "duration_seconds": 4.389,
+      "input_files_total": 3,
+      "successfully_processed": 3,
+      "skipped_files": 0
+    },
+    {
+      "order": 3,
+      "program": "nlp-enrich",
+      "script": "api_3_nt",
+      "method": null,
+      "run_id": "261128-090134",
+      "run_uuid": "urn:uuid:c10d4ea7-e53f-43e7-917f-bb4ceda38834",
+      "action_status": "completed",
+      "repository": "https://github.com/ufal/atrium-nlp-enrich",
+      "tool_version": "v2.0.0-beta",
+      "docker_image": "",
+      "inputs": [
+        {
+          "name": "CTX000000003.conllu",
+          "sha512": "cf53880405d27817a38a6d51da512431bd8fd747635fc2bef62b1e8e005ff9389cd5e075da9329f3a2ce0d7384e64656a6405d624ffadf5a5d2f5d3d34c5a3b2",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.conllu",
+          "sha512": "a321e2f2acd09b2b3956e51fff9ce742df69a947cbebfdcf861b86f5e6337c08ad9ea8bac8467e9577427f4f879938f08c33a11f8fb3b3998a5dde91f7801d98",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001.conllu",
+          "sha512": "a447a04607106949e202951b2a4a66d8715d327d0b3476b51ffc0f80bc12d531903dfedb0c2b2361fbfcdf332530bca855162aeeae9bfe2fab52b7b02557bc2a",
+          "stored": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CTX000000003-1.tsv",
+          "sha512": "f9292d207d69a01f529c9cb2507135147eaaa7e190e8f1d7736c4dfeb4c4f878061cf50b4ac41b01febae35b25b5b0881ff91266824486a28d7a42522b31e398",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002-1.tsv",
+          "sha512": "c91b37bb764bb001a51a9807225739b491935660e15c3d6b97a23ec23f424258d9dbc91fb45ca61adc8471752fa7176a274336ea8eb410a27991fa33933a3065",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002-2.tsv",
+          "sha512": "37157ba6981143947d6bb911f2165bc8e005dd9186578be78ca3e9b58aa9b0397b2c6053d8bba4bfad7dece2e3d3e95881f3c085bba40a0a22594078330fc1d9",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002-3.tsv",
+          "sha512": "0283f842bfb945879cc87477f2390a24769fb3412eedeb39359789fddf89e66729129d5eb042705d9b2de00059d49df35e409c367552fac6b5929b62f39a6db7",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002-4.tsv",
+          "sha512": "142e469e940b76eb17a757e6da4403b70b02c906c82605540c7efcdb72cc8f312cbb3ae5f035680a960f6775f5c51e33fee88e341b44f39540a60f2232471288",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001-1.tsv",
+          "sha512": "d653b5e4cae22abdf9e09f670f110730dc4eed2778a9f8a38f9332f0e5ac57496de2c80e39e1cce1a6defb21166b70e7b1fdf107d234deb7defae43bdefd8e9a",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001-2.tsv",
+          "sha512": "13b178a912d68e543d46713392cd4886db6f82bcf71dac4d9cadbd4f8fa25dbd79696ff2accf14c6052a6521613aace3f08fa93eaf023e4ed035600c5d2d81e3",
+          "stored": false
+        }
+      ],
+      "output_formats": {
+        "tsv": 7
+      },
+      "start_time": "2026-11-28T09:01:34.857046+00:00",
+      "end_time": "2026-11-28T09:01:38.678411+00:00",
+      "duration_seconds": 3.821,
+      "input_files_total": 3,
+      "successfully_processed": 7,
+      "skipped_files": 0
+    },
+    {
+      "order": 4,
+      "program": "nlp-enrich",
+      "script": "api_4_stats",
+      "method": null,
+      "run_id": "261128-090138",
+      "run_uuid": "urn:uuid:f29c87ad-679e-4955-9e13-af99f953d3cb",
+      "action_status": "completed",
+      "repository": "https://github.com/ufal/atrium-nlp-enrich",
+      "tool_version": "v2.0.0-beta",
+      "docker_image": "",
+      "inputs": [
+        {
+          "name": "CTX000000003.conllu",
+          "sha512": "cf53880405d27817a38a6d51da512431bd8fd747635fc2bef62b1e8e005ff9389cd5e075da9329f3a2ce0d7384e64656a6405d624ffadf5a5d2f5d3d34c5a3b2",
+          "stored": false
+        },
+        {
+          "name": "CTX000000003-1.tsv",
+          "sha512": "f9292d207d69a01f529c9cb2507135147eaaa7e190e8f1d7736c4dfeb4c4f878061cf50b4ac41b01febae35b25b5b0881ff91266824486a28d7a42522b31e398",
+          "stored": false
+        },
+        {
+          "name": "CTX000000003.rows.tsv",
+          "sha512": "af19da50574708fa80b26ed82406e1b4aba541e0c7f90d58ff40bf1187c74a9c28616f6a4204e9be17e6e65c18951ceb6fec663ec49d872fe839db4ed645a202",
+          "stored": false
+        },
+        {
+          "name": "CTX000000003.alto.xml",
+          "sha512": "4e2560c56e94ac95f77ee6dff44e956e812a33665b9007fb64bcc6a75706012cf75f86a12098d1f6e6459dbd3797359c65a6e7c11b43264f81174aa46f1084fa",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.conllu",
+          "sha512": "a321e2f2acd09b2b3956e51fff9ce742df69a947cbebfdcf861b86f5e6337c08ad9ea8bac8467e9577427f4f879938f08c33a11f8fb3b3998a5dde91f7801d98",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002-1.tsv",
+          "sha512": "c91b37bb764bb001a51a9807225739b491935660e15c3d6b97a23ec23f424258d9dbc91fb45ca61adc8471752fa7176a274336ea8eb410a27991fa33933a3065",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002-2.tsv",
+          "sha512": "37157ba6981143947d6bb911f2165bc8e005dd9186578be78ca3e9b58aa9b0397b2c6053d8bba4bfad7dece2e3d3e95881f3c085bba40a0a22594078330fc1d9",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002-3.tsv",
+          "sha512": "0283f842bfb945879cc87477f2390a24769fb3412eedeb39359789fddf89e66729129d5eb042705d9b2de00059d49df35e409c367552fac6b5929b62f39a6db7",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002-4.tsv",
+          "sha512": "142e469e940b76eb17a757e6da4403b70b02c906c82605540c7efcdb72cc8f312cbb3ae5f035680a960f6775f5c51e33fee88e341b44f39540a60f2232471288",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.rows.tsv",
+          "sha512": "395b0096c7a1362a52eedccc32964a5e5eb748249ae5d7ed02cab4024e1210d325843a6bb70dd21b5616bb21d3dc10923fd35e007f6f305814a5703f00098c28",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.alto.xml",
+          "sha512": "5ca76cbce1e50a29dc9b01c8440b089cd9805e92537f8bd2d9590491618f0f8a19fc31ec8b67b84fa6242f33743da6a2be70c654c93be57110444a072716ae6c",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001.conllu",
+          "sha512": "a447a04607106949e202951b2a4a66d8715d327d0b3476b51ffc0f80bc12d531903dfedb0c2b2361fbfcdf332530bca855162aeeae9bfe2fab52b7b02557bc2a",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001-1.tsv",
+          "sha512": "d653b5e4cae22abdf9e09f670f110730dc4eed2778a9f8a38f9332f0e5ac57496de2c80e39e1cce1a6defb21166b70e7b1fdf107d234deb7defae43bdefd8e9a",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001-2.tsv",
+          "sha512": "13b178a912d68e543d46713392cd4886db6f82bcf71dac4d9cadbd4f8fa25dbd79696ff2accf14c6052a6521613aace3f08fa93eaf023e4ed035600c5d2d81e3",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001.rows.tsv",
+          "sha512": "ff8e900675c9868333129f44c1962723b5baf350c76da5c46c45ec5e09fb6147b5c778093b975e6f3fbdf80b72c94b75372209e03a7b9aa1759bc9ce816f116f",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001.alto.xml",
+          "sha512": "bae39af8eb1c8d0d65c521a5ea580ce74de62b1290c32573ec1639aeac9fe73b81f5e70865c7f8d36c0732f18701c037a844db6d6d62ca032ed52ddf9a7df67d",
+          "stored": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "atr/teitok-xml",
+          "sha512": "038530f69a257537faa701a36a70c60bf226cb945f79f63f5757ccb275614a6bc9f7c82731a23a6c077aee2de45b220519a840cca10394590e4b0706e1f6d156",
+          "media_type": "application/xml",
+          "stored": true
+        },
+        {
+          "name": "CTX000000003.conllu",
+          "sha512": "5bd1320415c0a73a7c8ae3d10e2b21ebf05c862c37a1711194ecc9233b38f60ee5399aece5a87c73ff4107d6624831ce6b03e888e6205b955046d31d67fb27d0",
+          "stored": false
+        },
+        {
+          "name": "CTX000000003.csv",
+          "sha512": "41c2955cf7e188d5838f63e80abc990f6492242f19e5824ede10cca0819d1a80fc9abf6699ef6989dc1a434d7d563dae775cc79999f5740f732da82cdb3ecc78",
+          "stored": false
+        },
+        {
+          "name": "atr/teitok-xml",
+          "sha512": "8b7028c77b87fc04dbd2f9f137a94580a3567c603e3db92181fb7dadf724d4e3cede32d5c1a16f617287754fff9667a7504f3dab4825b7459422d158a2f830c4",
+          "media_type": "application/xml",
+          "stored": true
+        },
+        {
+          "name": "CTX000000002.conllu",
+          "sha512": "54476e03f83f93ccec7f8694d08cbd5341b9a063149a7d8390f59cb9a969338517299ee718cb0ba822e6e81bc4365dd487123990d7e1be4463ebb282fa8852a3",
+          "stored": false
+        },
+        {
+          "name": "CTX000000002.csv",
+          "sha512": "04db9dc7e0261dec3b95fc394edac0f333a673d18605d35e6297779492698852c3dacc47cfceb901fbc411128ed38b32af28ec0f4b65797f0316e1da01419588",
+          "stored": false
+        },
+        {
+          "name": "atr/teitok-xml",
+          "sha512": "cbd048ffc525e83246c93aceae1c6ba3dab3342f3aa2fe9da11854db85c888009dbb49b9cfffadee712dfcdd8cf71e69014009ccbe925027dca84ecf9eb91c66",
+          "media_type": "application/xml",
+          "stored": true
+        },
+        {
+          "name": "CTX000000001.conllu",
+          "sha512": "127fcb8c0c784516276da6ec9264f8a1a169fde9eef321ac106501dec858a8e976143ef615a922e81cfb15e1549c2c0c2707e4cef1581a045f400909d6d284b2",
+          "stored": false
+        },
+        {
+          "name": "CTX000000001.csv",
+          "sha512": "445ec334b3911f960d0056aebacc56e251fef924cabcd5ec78f622188d833885f892aff7f3667623ad2118dba8538713ae281de5366096d5fe4abf1573381f18",
+          "stored": false
+        },
+        {
+          "name": "summary_ne_counts.csv",
+          "sha512": "0913e0573708ad254e22794db7fa42177a10dc035a5e8a832d05677185e3e542f75233ad1289d1b8023d4cfd4ecf7d373b51cd8c749083345edd85753d99d2b7",
+          "stored": false
+        }
+      ],
+      "output_formats": {
+        "csv": 3,
+        "conllu": 3,
+        "xml": 3
+      },
+      "start_time": "2026-11-28T09:01:38.749065+00:00",
+      "end_time": "2026-11-28T09:01:40.627618+00:00",
+      "duration_seconds": 1.879,
+      "input_files_total": 3,
+      "successfully_processed": 3,
+      "skipped_files": 0
+    }
+  ],
+  "intermediate_formats": {
+    "tsv": 10,
+    "conllu": 6,
+    "csv": 3,
+    "xml": 3
+  },
+  "components": [
+    {
+      "name": "nametag3_models",
+      "license": "CC BY-NC-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+    },
+    {
+      "name": "udpipe2_models",
+      "license": "CC BY-NC-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+    }
+  ],
+  "start_time": "2026-11-28T09:01:29.303937+00:00",
+  "end_time": "2026-11-28T09:01:40.627618+00:00",
+  "total_duration_seconds": 10.881,
+  "statistics": {
+    "stages_total": 4,
+    "input_files_total": 3,
+    "successfully_processed": 3,
+    "skipped_files": 0
+  },
+  "skipped_files_detail": [],
+  "limits": [],
+  "skipped_stages": [],
+  "merged_at": "2026-11-28T09:01:40.639333+00:00"
+}

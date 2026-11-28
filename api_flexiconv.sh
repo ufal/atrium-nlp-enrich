@@ -34,10 +34,30 @@ PARA_STATE=$(python3 atrium_paradata.py start \
     --config \
         "script=api_flexiconv" \
         "flexiconv_formats=${FLEXICONV_FORMATS}" \
-        "flexiconv_force=${FLEXICONV_FORCE:-false}" \
-    --config-name \
-        "input_docs_dir=${INPUT_DOCS_DIR}" \
-        "teitok_flexiconv_dir=${FLEXICONV_DIR}")
+        "flexiconv_force=${FLEXICONV_FORCE:-false}")
+
+# The files this stage reads and writes, named in its paradata by file name and SHA-512, never by
+# path (atrium-project#84 decision 1): one `input` and one `output` call before the run finishes.
+READ_FILES=()
+WRITTEN_FILES=()
+name_files() {
+    local verb f
+    local -a found
+    for verb in input output; do
+        found=()
+        if [ "$verb" = input ]; then
+            set -- ${READ_FILES[@]+"${READ_FILES[@]}"}
+        else
+            set -- ${WRITTEN_FILES[@]+"${WRITTEN_FILES[@]}"}
+        fi
+        for f in "$@"; do
+            if [ -e "$f" ]; then found+=("$f"); fi
+        done
+        if [ "${#found[@]}" -gt 0 ]; then
+            python3 atrium_paradata.py "$verb" --state "$PARA_STATE" --file "${found[@]}"
+        fi
+    done
+}
 
 # Allowed extensions as an exact-match alternation (extension compared case-insensitively).
 FORMAT_PATTERN=$(echo "$FLEXICONV_FORMATS" | tr ',' ' ' | xargs | tr ' ' '|')
@@ -61,6 +81,7 @@ if [ "$total" -gt 0 ] && ! python3 api_util/flexiconv_convert.py --check; then
         --state "$PARA_STATE" \
         --file  "$INPUT_DOCS_DIR" \
         --reason "flexiconv is not installed (pip install -r requirements_flexiconv.txt)"
+    name_files
     python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$total"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [CRITICAL ERROR] flexiconv is not installed; ${total} document(s) not converted. Halting." \
         | tee -a "${LOG_FILE:-/dev/null}" >&2
@@ -72,8 +93,14 @@ failed=0
 for f in ${candidates[@]+"${candidates[@]}"}; do
     filename=$(basename -- "$f")
     # shellcheck disable=SC2086  # FORCE_FLAG is empty or a single flag
-    if python3 api_util/flexiconv_convert.py "$f" --out-dir "$FLEXICONV_DIR" \
-            --formats "$FLEXICONV_FORMATS" $FORCE_FLAG; then
+    if converted=$(python3 api_util/flexiconv_convert.py "$f" --out-dir "$FLEXICONV_DIR" \
+            --formats "$FLEXICONV_FORMATS" $FORCE_FLAG); then
+        echo "$converted"
+        # "[OK] <name> -> <out>": converted by this run (a kept "[SKIP]" output is not this run's).
+        if [ "${converted#\[OK\]}" != "$converted" ]; then
+            READ_FILES+=("$f")
+            WRITTEN_FILES+=("${converted##* -> }")
+        fi
         python3 atrium_paradata.py success --state "$PARA_STATE" --type xml
     else
         # One line from the adapter already says why. Paradata has no "failed" record (the
@@ -96,12 +123,14 @@ if ! python3 api_util/validate_teitok_xml.py "$FLEXICONV_DIR" --allow-empty --pr
         --state "$PARA_STATE" \
         --file  "$FLEXICONV_DIR" \
         --reason "flexiconv TEITOK output failed the TEITOK-core check"
+    name_files
     python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$total"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [CRITICAL ERROR] flexiconv TEITOK output failed the TEITOK-core check. Halting." \
         | tee -a "${LOG_FILE:-/dev/null}" >&2
     exit 1
 fi
 
+name_files
 python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$total"
 echo "flexiconv: ${total} candidate document(s), $((total - failed)) converted or kept, ${failed} failed -> ${FLEXICONV_DIR}"
 if [ "$failed" -gt 0 ]; then

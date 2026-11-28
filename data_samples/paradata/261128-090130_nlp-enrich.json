@@ -1,0 +1,119 @@
+{
+  "schema_version": "3.0",
+  "program": "nlp-enrich",
+  "tool_version": "v2.0.0-beta",
+  "repository": "https://github.com/ufal/atrium-nlp-enrich",
+  "runner_ref": "",
+  "docker_image": "",
+  "python_version": "3.13.18 (main, Oct 26 2026, 14:08:19) [Clang 23.1.3 ]",
+  "run_id": "261128-090130",
+  "run_uuid": "urn:uuid:3b34d23f-ea61-492a-8aa0-e046000ae78b",
+  "run_agent": "",
+  "action_status": "completed",
+  "start_time": "2026-11-28T09:01:30.396718+00:00",
+  "end_time": "2026-11-28T09:01:34.785436+00:00",
+  "duration_seconds": 4.389,
+  "config": {
+    "script": "api_2_udp",
+    "model_udpipe": "czech-pdt-ud-2.15-241121",
+    "udpipe_url": "https://lindat.mff.cuni.cz/services/udpipe/api/process",
+    "word_chunk_limit": "900",
+    "timeout": "60",
+    "max_retries": "5"
+  },
+  "parameters": {},
+  "inputs": [
+    {
+      "name": "manifest.tsv",
+      "sha512": "b45e0584df01ba955ab8d751fae92e1b63fa6ac51fdf143d98bc98b5b6681d3a9debc13f8f486b0786d8b5e1ff6f942811be25e3f6fd6d7e69efd82138797e0b",
+      "stored": false
+    },
+    {
+      "name": "CTX000000001.txt",
+      "sha512": "71e57e4996dcf43171d00c502a25c14e77cabcaeb07a797b6ecb9bc07eef33b77be923f99e3c87c969332ba54a7474a346e0bd5b1e17204867df8e23b228a7a6",
+      "stored": false
+    },
+    {
+      "name": "CTX000000001.rows.tsv",
+      "sha512": "ff8e900675c9868333129f44c1962723b5baf350c76da5c46c45ec5e09fb6147b5c778093b975e6f3fbdf80b72c94b75372209e03a7b9aa1759bc9ce816f116f",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002.txt",
+      "sha512": "979e1d852e9bc174d949994079372d956f593706258c936133cc06c47a583fa7f911605c5fa8dd3405b21fef96f83f2f65c1ec2ea83e8796155738073c9e254b",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002.rows.tsv",
+      "sha512": "395b0096c7a1362a52eedccc32964a5e5eb748249ae5d7ed02cab4024e1210d325843a6bb70dd21b5616bb21d3dc10923fd35e007f6f305814a5703f00098c28",
+      "stored": false
+    },
+    {
+      "name": "CTX000000003.txt",
+      "sha512": "e54c4dae2903299a1510be4d5e8982bf258214e9c88a7955bbffff7b10c0fbad3bf48f1155fd495114eed8298a45780b2a6fb04df9ea1fdbd18b1af262eba45d",
+      "stored": false
+    },
+    {
+      "name": "CTX000000003.rows.tsv",
+      "sha512": "af19da50574708fa80b26ed82406e1b4aba541e0c7f90d58ff40bf1187c74a9c28616f6a4204e9be17e6e65c18951ceb6fec663ec49d872fe839db4ed645a202",
+      "stored": false
+    }
+  ],
+  "outputs": [
+    {
+      "name": "CTX000000001.conllu",
+      "sha512": "a447a04607106949e202951b2a4a66d8715d327d0b3476b51ffc0f80bc12d531903dfedb0c2b2361fbfcdf332530bca855162aeeae9bfe2fab52b7b02557bc2a",
+      "stored": false
+    },
+    {
+      "name": "CTX000000001.rows.tsv",
+      "sha512": "ff8e900675c9868333129f44c1962723b5baf350c76da5c46c45ec5e09fb6147b5c778093b975e6f3fbdf80b72c94b75372209e03a7b9aa1759bc9ce816f116f",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002.conllu",
+      "sha512": "a321e2f2acd09b2b3956e51fff9ce742df69a947cbebfdcf861b86f5e6337c08ad9ea8bac8467e9577427f4f879938f08c33a11f8fb3b3998a5dde91f7801d98",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002.rows.tsv",
+      "sha512": "395b0096c7a1362a52eedccc32964a5e5eb748249ae5d7ed02cab4024e1210d325843a6bb70dd21b5616bb21d3dc10923fd35e007f6f305814a5703f00098c28",
+      "stored": false
+    },
+    {
+      "name": "CTX000000003.conllu",
+      "sha512": "cf53880405d27817a38a6d51da512431bd8fd747635fc2bef62b1e8e005ff9389cd5e075da9329f3a2ce0d7384e64656a6405d624ffadf5a5d2f5d3d34c5a3b2",
+      "stored": false
+    },
+    {
+      "name": "CTX000000003.rows.tsv",
+      "sha512": "af19da50574708fa80b26ed82406e1b4aba541e0c7f90d58ff40bf1187c74a9c28616f6a4204e9be17e6e65c18951ceb6fec663ec49d872fe839db4ed645a202",
+      "stored": false
+    }
+  ],
+  "components": [
+    {
+      "name": "nametag3_models",
+      "license": "CC BY-NC-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+    },
+    {
+      "name": "udpipe2_models",
+      "license": "CC BY-NC-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+    }
+  ],
+  "statistics": {
+    "input_files_total": 3,
+    "successfully_processed": 3,
+    "skipped_files": 0,
+    "output_counts_by_type": {
+      "conllu": 3
+    },
+    "performance_per_minute": {
+      "conllu": 41.0143
+    }
+  },
+  "skipped_files_detail": [],
+  "limits": []
+}

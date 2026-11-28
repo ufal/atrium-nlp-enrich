@@ -561,21 +561,29 @@ def test_cli_directory_mode_accepts_a_seed_paired_by_name(tmp_path):
 
 
 @pytest.mark.parametrize("with_records", [True, False])
-def test_cli_directory_mode_paradata_names_its_folders_not_their_paths(tmp_path, with_records):
-    """The run's config names the folders it was given, never their paths (atrium-project#84
-    decision 1); no record folder stays ``""``."""
+def test_cli_directory_mode_paradata_hold_settings_and_name_what_it_read(tmp_path, with_records):
+    """atrium-project#84 decision 1(c): the run's config holds its settings, never a folder; the TEITOK
+    read (hashed before it is rewritten in place) and written, and the record read, are entries."""
+    import hashlib
+
     teitok_dir, records, paradata = tmp_path / "TEITOK", tmp_path / "records", tmp_path / "pd"
     teitok_dir.mkdir()
     records.mkdir()
     shutil.copy(SAMPLES / "CTX000000001.teitok.xml", teitok_dir)
+    before = hashlib.sha512((teitok_dir / "CTX000000001.teitok.xml").read_bytes()).hexdigest()
     (records / "CTX000000001.document.json").write_text(json.dumps(RECORD_1), encoding="utf-8")
     argv = ["--teitok-dir", str(teitok_dir), "--in-place", "--paradata-dir", str(paradata)]
     assert tp.main(argv + (["--record-dir", str(records)] if with_records else [])) == 0
     (written,) = paradata.glob("*.json")
-    config = json.loads(written.read_text(encoding="utf-8"))["config"]
-    assert config["teitok_dir"] == "TEITOK"
-    assert config["record_dir"] == ("records" if with_records else "")
-    assert str(tmp_path) not in json.dumps(config)
+    data = json.loads(written.read_text(encoding="utf-8"))
+    assert data["config"] == {"script": "teitok_project", "force": False}
+    names = [e["name"] for e in data["inputs"]]
+    assert names == (
+        ["atrium/document-json", "atr/teitok-xml"] if with_records else ["atr/teitok-xml"]
+    )
+    assert data["inputs"][-1]["sha512"] == before
+    assert [e["name"] for e in data["outputs"]] == ["atr/teitok-xml"]
+    assert str(tmp_path) not in json.dumps(data)
 
 
 class TestPipelineStage:

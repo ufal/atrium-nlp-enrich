@@ -108,21 +108,25 @@ def test_stage_4_exits_5_when_the_output_contract_fails(tmp_path):
     assert "duplicate @id 'pb-2'" in run.stderr
 
 
-def test_stage_4_paradata_names_its_folders_not_their_paths(tmp_path, monkeypatch):
-    """The run's config names each folder it was given, never its path (atrium-project#84
-    decision 1, ``start --config-name``); a folder not given stays ``""``."""
+def test_stage_4_paradata_name_files_as_entries_never_paths(tmp_path, monkeypatch):
+    """atrium-project#84 decision 1(c): the run's config holds its settings only; the CoNLL-U, NameTag
+    TSVs and layout read and the CSVs written are `inputs`/`outputs` entries by file name and
+    SHA-512, `stored: false`; the TEITOK and the record by their distribution names."""
     monkeypatch.delenv("INPUT_PAGES_DIR", raising=False)
     out, run = _stage4(tmp_path)
     assert run.returncode == 0, run.stdout + run.stderr
     records = [json.loads(p.read_text(encoding="utf-8")) for p in (out / "paradata").glob("*.json")]
-    (config,) = [r["config"] for r in records if r.get("config", {}).get("script") == "api_4_stats"]
-    named = {
-        "conllu_input_dir": "UDP",
-        "tsv_input_dir": "NE",
-        "output_dir": "UDP_NE",
-        "alto_dir": "ALTO",
-        "pages_dir": "",
-    }
-    assert {k: config[k] for k in named} == named
-    assert str(tmp_path) not in json.dumps(config) and str(SAMPLES) not in json.dumps(config)
+    (record,) = [r for r in records if r.get("config", {}).get("script") == "api_4_stats"]
+    config = record["config"]
+    assert not {"conllu_input_dir", "tsv_input_dir", "output_dir", "alto_dir", "pages_dir"} & set(
+        config
+    )
     assert config["save_teitok"] == "true"  # the other settings as given
+    files_in = [e["name"] for e in record["inputs"] if e["stored"] is False]
+    files_out = [e["name"] for e in record["outputs"] if e["stored"] is False]
+    assert any(name.endswith(".conllu") for name in files_in) and any(
+        name.endswith(".tsv") for name in files_in
+    )
+    assert any(name.endswith(".csv") for name in files_out)
+    assert all(len(e["sha512"]) == 128 for e in record["inputs"] + record["outputs"])
+    assert str(tmp_path) not in json.dumps(record) and str(SAMPLES) not in json.dumps(record)

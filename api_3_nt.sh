@@ -13,10 +13,30 @@ PARA_STATE=$(python3 atrium_paradata.py start \
         "model_nametag=${MODEL_NAMETAG}" \
         "nametag_url=${NAMETAG_URL}" \
         "timeout=${TIMEOUT}" \
-        "max_retries=${MAX_RETRIES}" \
-    --config-name \
-        "conllu_input_dir=${CONLLU_INPUT_DIR}" \
-        "output_dir=${TSV_INPUT_DIR}")
+        "max_retries=${MAX_RETRIES}")
+
+# The files this stage reads and writes, named in its paradata by file name and SHA-512, never by
+# path (atrium-project#84 decision 1): one `input` and one `output` call before the run finishes.
+READ_FILES=()
+WRITTEN_FILES=()
+name_files() {
+    local verb f
+    local -a found
+    for verb in input output; do
+        found=()
+        if [ "$verb" = input ]; then
+            set -- ${READ_FILES[@]+"${READ_FILES[@]}"}
+        else
+            set -- ${WRITTEN_FILES[@]+"${WRITTEN_FILES[@]}"}
+        fi
+        for f in "$@"; do
+            if [ -e "$f" ]; then found+=("$f"); fi
+        done
+        if [ "${#found[@]}" -gt 0 ]; then
+            python3 atrium_paradata.py "$verb" --state "$PARA_STATE" --file "${found[@]}"
+        fi
+    done
+}
 
 TOTAL=$(find "${OUTPUT_DIR}/UDP" -name '*.conllu' -type f | wc -l)
 mkdir -p "${OUTPUT_DIR}/NE"
@@ -48,6 +68,8 @@ while IFS= read -r -d '' conllu; do
         --retries    "$MAX_RETRIES" || rc=$?
     if [ "$rc" -eq 0 ]; then
         n_pages=$(find "$out_dir" -maxdepth 1 -name '*.tsv' 2>/dev/null | wc -l)
+        READ_FILES+=("$conllu")
+        WRITTEN_FILES+=("$out_dir")
         python3 atrium_paradata.py success \
             --state "$PARA_STATE" --type tsv --count "$n_pages"
     else
@@ -61,6 +83,7 @@ while IFS= read -r -d '' conllu; do
         esac
         # D13 (atrium-project#84): the run is recorded as failed.
         python3 atrium_paradata.py fail --state "$PARA_STATE" --error "$(basename "$doc"): ${reason}"
+        name_files
         python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"
         # An empty output directory would make a resumed run skip the document as done.
         rmdir "$out_dir" 2>/dev/null || true
@@ -70,4 +93,5 @@ while IFS= read -r -d '' conllu; do
     fi
 done < <(find "${CONLLU_INPUT_DIR}" -name '*.conllu' -type f -print0)
 
+name_files
 python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"

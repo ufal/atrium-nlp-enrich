@@ -14,10 +14,31 @@ PARA_STATE=$(python3 atrium_paradata.py start \
         "udpipe_url=${UDPIPE_URL}" \
         "word_chunk_limit=${WORD_CHUNK_LIMIT}" \
         "timeout=${TIMEOUT}" \
-        "max_retries=${MAX_RETRIES}" \
-    --config-name \
-        "manifest=${OUTPUT_DIR}/manifest.tsv" \
-        "output_dir=${OUTPUT_DIR}/UDP")
+        "max_retries=${MAX_RETRIES}")
+
+# The files this stage reads and writes, named in its paradata by file name and SHA-512, never by
+# path (atrium-project#84 decision 1): one `input` and one `output` call before the run finishes.
+READ_FILES=()
+WRITTEN_FILES=()
+name_files() {
+    local verb f
+    local -a found
+    for verb in input output; do
+        found=()
+        if [ "$verb" = input ]; then
+            set -- ${READ_FILES[@]+"${READ_FILES[@]}"}
+        else
+            set -- ${WRITTEN_FILES[@]+"${WRITTEN_FILES[@]}"}
+        fi
+        for f in "$@"; do
+            if [ -e "$f" ]; then found+=("$f"); fi
+        done
+        if [ "${#found[@]}" -gt 0 ]; then
+            python3 atrium_paradata.py "$verb" --state "$PARA_STATE" --file "${found[@]}"
+        fi
+    done
+}
+READ_FILES+=("${OUTPUT_DIR}/manifest.tsv")
 
 TOTAL=$(tail -n +2 "${OUTPUT_DIR}/manifest.tsv" | wc -l)
 mkdir -p "${OUTPUT_DIR}/UDP"
@@ -37,6 +58,7 @@ while IFS=$'\t' read -r file _ path; do
         python3 atrium_paradata.py fail \
             --state "$PARA_STATE" \
             --error "the text of ${file} could not be split into UDPipe chunks"
+        name_files
         python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"
         echo "[CRITICAL ERROR] Chunking failed for ${file}. Halting pipeline." >&2
         exit 1
@@ -70,6 +92,8 @@ while IFS=$'\t' read -r file _ path; do
         # TEMP is rewritten by every stage-1 run and is not kept by a container, while a
         # resumed run skips documents whose CoNLL-U exists (issue #38, A).
         rows_file="${path%.txt}.rows.tsv"
+        READ_FILES+=("$path" "$rows_file")
+        WRITTEN_FILES+=("$out" "${OUTPUT_DIR}/UDP/${file}.rows.tsv")
         if [ -f "$rows_file" ]; then
             cp "$rows_file" "${OUTPUT_DIR}/UDP/${file}.rows.tsv"
         else
@@ -86,6 +110,7 @@ while IFS=$'\t' read -r file _ path; do
             *) reason="UDPipe produced nothing for the document"; rc=1 ;;
         esac
         python3 atrium_paradata.py fail --state "$PARA_STATE" --error "${file}: ${reason}"
+        name_files
         python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"
 
         echo "[CRITICAL ERROR] UDPipe processing failed for ${file} (exit ${rc}). Halting pipeline." >&2
@@ -93,4 +118,5 @@ while IFS=$'\t' read -r file _ path; do
     fi
 done < "${OUTPUT_DIR}/manifest.tsv"
 
+name_files
 python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"
