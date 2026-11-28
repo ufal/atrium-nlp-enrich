@@ -1,5 +1,5 @@
 # 📓 atrium-nlp-enrich — agent_dev_logs/DEVLOG.md (timeline index)
-> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-11-19). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). **v1.2.0-beta** (2026-10-26, the CLI and the service read the same inputs) · **v1.3.0-beta** (2026-10-29, the two give the same results) · **Starting set of the pilot phase: v1.3.3-beta** (`b0e80ca`, 2026-11-04; immutable, with `images.json`; atrium-project#77) · **v1.3.4-beta** (11-06, the Galaxy entry point). `test` (= `master`, `c5c9525`) is 14 commits past it and declares the unreleased v2.0.0-beta (record 2.0; layout from the record). Hub workflows pinned to `02cbd01` (`v1`). Latest entry: 2026-11-25 (v2.0.0-beta release prep). **v1.1.0-beta** (2026-10-18, `9c126a5`) was published mutable, and its tag name was used once before, on 10-09. Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
+> _NLP enrichment of OCR text lines: UDPipe, NameTag, statistical keywords, TEITOK. 2 open issues: #7 and #18 (deferred past the pilot, atrium-project#67). #42 (TEITOK layout from a born-digital record) closed 2026-10-21 after `v1.1.0-beta`–`v1.1.2-beta`; #41 closed 2026-10-13 (both pairs removed 2026-11-19). The LLM and vocabulary half left for atrium-keyword-extract on 2026-10-01 (#6 is now keyword-extract#2). **v1.2.0-beta** (2026-10-26, the CLI and the service read the same inputs) · **v1.3.0-beta** (2026-10-29, the two give the same results) · **Starting set of the pilot phase: v1.3.3-beta** (`b0e80ca`, 2026-11-04; immutable, with `images.json`; atrium-project#77) · **v1.3.4-beta** (11-06, the Galaxy entry point) · **v2.0.0-beta** (2026-11-28, `328da74`: record 2.0, layout from the record, atrium-project#84's decision 1; immutable, with `images.json`). `test` = `master` = the tag. Hub workflows pinned to `ff0a8ea` (`v1`). Latest entry: 2026-11-28 (v2.0.0-beta released). **v1.1.0-beta** (2026-10-18, `9c126a5`) was published mutable, and its tag name was used once before, on 10-09. Immutable releases are on since 2026-10-19 (atrium-project#72): `v1.1.1-beta` is the first. TEITOK work is coordinated in [`plans/teitok_conformance_plan.md`](plans/teitok_conformance_plan.md)._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). The #6 saga (April→September) is condensed below; its full record moved with the issue to atrium-keyword-extract (`agent_dev_logs/digests/2.digest.md`). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-04-17
@@ -1219,3 +1219,20 @@ Documentation only; no code, test or configuration change.
   and is named in the paradata like the stages' TEMP texts.
 * **Verified:** 1094 passed, 17 skipped; ShellCheck on the five scripts.
 * Not pushed.
+
+## 2026-11-28 — atrium-project#84: merged, v2.0.0-beta released
+
+* **Merged:** #49 (release prep, `3efdb90`, 11-25) and #50 (`d20502d`, 11-28: ARÚP's answers, decision 1), squash.
+  Before the merge #50 was re-pinned to the hub's `ff0a8ea` (`v1`, atrium-project#95's merge; 10 references) and got
+  its samples.
+* **Released:** `v2.0.0-beta` on `328da74` (#50 plus `CITATION.cff` `date-released: 2026-11-28`), published 11:44 UTC,
+  immutable, "Record Schema 2.0 update of `atrium_document`", the curated notes above the generated part. Release run
+  46140962382 green: tests, smoke, build and push with Trivy, the CVE gate and the promotion to the scanned digest,
+  the OpenAPI checks, the assets (`images.json`, `openapi.json`). `master` = `test` = the tag; `CITATION.cff`,
+  `service/openapi.json` and `para_config.txt` say 2.0.0-beta.
+* **Samples:** the four stages and the run summary made again on the cluster (LINDAT UDPipe and NameTag); runner
+  `f6755d9`, #50's head before the sample commit, whose code is the tag's.
+* **Not yet, in the hub:** both E2E lanes on the `2.0.0-beta` images; the chain sample (`fixtures/chain/CTX000000003`)
+  re-run at this tag, since its paradata name #84's PR heads; `doc-schema-v2`'s tag, asked of motyc on
+  atrium-project#84.
+* Logs only; not pushed.

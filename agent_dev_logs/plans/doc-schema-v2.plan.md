@@ -1,5 +1,6 @@
 # Strategy — [atrium-project#84](https://github.com/ufal/atrium-project/issues/84) (doc-schema-v2): nlp-enrich's part
 
+> _**Refreshed 2026-11-28**: Status — 11-28 (merged and released as `v2.0.0-beta`; the hub's lanes, the chain sample at the tags and `doc-schema-v2` next)._
 > _**Refreshed 2026-11-27 (evening)**: Status — 11-27 (evening) (ARÚP's answers on atrium-project#84, comment 7; the PR adjusted)._
 > _**Refreshed 2026-11-27**: Status — 11-27 (the non-A options of atrium-project#84 prepared, not pushed)._
 > _**Refreshed 2026-11-25**: Status — 11-25 (the v2.0.0-beta release prep)._
@@ -17,18 +18,20 @@
 > This file is the repository's slice only. It replaces the 11-11 slice of the same
 > name; its points that still hold are carried here._
 
-**Status (2026-11-27, evening)**: 🟡 **ARÚP answered atrium-project#84 (comment 7). #50 is adjusted: the stage scripts and the TEITOK step keep settings and models in `config` and name every file they read or write as an entry by name and SHA-512, `stored: false` (decision 1); `--config-name` goes. See the DEVLOG entry of 11-27 (evening).**
+**Status (2026-11-28)**: 🟢 **Released as `v2.0.0-beta` (`328da74`, 11-28): #50 squash-merged (`d20502d`, atrium-project#84's decision 1) after the re-pin to the hub's `ff0a8ea` (`v1`), with the stage paradata from the cluster (runner `f6755d9`, the tag's code); the release run is green and the images are certified. Next, in the hub: the chain sample re-run at this tag, both E2E lanes on the `2.0.0-beta` images, and `doc-schema-v2`'s tag (motyc is asked on atrium-project#84). See the DEVLOG entry of 11-28.**
 
-**Status (2026-11-27)**: 🟡 **The non-A options of atrium-project#84 prepared (not pushed; ARÚP has not answered): the stage scripts and the TEITOK step record folders by name, never their paths (decision 1). One PR, after the hub's. See the DEVLOG entry of 11-27.**
+**Status (2026-11-27, evening)**: 🟡 **ARÚP answered atrium-project#84 (comment 7). #50 is adjusted: the stage scripts and the TEITOK step keep settings and models in `config` and name every file they read or write as an entry by name and SHA-512, `stored: false` (decision 1); `--config-name` goes. See the DEVLOG entry of 11-27 (evening).** _(superseded 11-28: merged and released)_
 
-**Status (2026-11-22)**: 🟢 **As on 11-19, now pinned to `fbffe25` since atrium-project#79's merge (11-22, #48 `11cad2a`). The LINDAT check runs by dispatch only ("LINDAT check (manual)"); on `master` its daily schedule runs until the release merge (atrium-project#77).**
+**Status (2026-11-27)**: 🟡 **The non-A options of atrium-project#84 prepared (not pushed; ARÚP has not answered): the stage scripts and the TEITOK step record folders by name, never their paths (decision 1). One PR, after the hub's. See the DEVLOG entry of 11-27.** _(superseded 11-27 evening: ARÚP answered)_
 
-**Status (2026-11-25)**: 🟢 **v2.0.0-beta release prep in #49 (`v2-beta-prep` → `test`), CI green; the samples are made again from the three tracked documents (`e6f0788`, 5 paradata `completed`). Tag 26 November after the merge.**
+**Status (2026-11-22)**: 🟢 **As on 11-19, now pinned to `fbffe25` since atrium-project#79's merge (11-22, #48 `11cad2a`). The LINDAT check runs by dispatch only ("LINDAT check (manual)"); on `master` its daily schedule runs until the release merge (atrium-project#77).** _(superseded 11-25: the release prep)_
+
+**Status (2026-11-25)**: 🟢 **v2.0.0-beta release prep in #49 (`v2-beta-prep` → `test`), CI green; the samples are made again from the three tracked documents (`e6f0788`, 5 paradata `completed`). Tag 26 November after the merge.** _(superseded 11-28: tagged `v2.0.0-beta` on 11-28, after ARÚP's answers)_
 
 **Status (2026-11-19)**: 🟢 **This repository's part is on `test` (#45–#47), pinned to `02cbd01`: the layout comes
 from the record (and its docproc links), not ALTO, as motyc wrote on aiscr-docs-pipeline#4 (11-12). Ronald's answers
 (11-17) change nothing here. Left: the release (`v2.0.0-beta`) with the batch (atrium-project#77); D35 for
-publication (atrium-project#78).**
+publication (atrium-project#78).** _(superseded 11-25: the release prep)_
 
 **Status (2026-11-14, afternoon)**: 🟡 **The hub's PR is merged and this repository is pinned to it: drift is green.
 Round 6 completes this repository's part where no answer is pending; see "Status — round 6". The release (v2.0.0-beta)
