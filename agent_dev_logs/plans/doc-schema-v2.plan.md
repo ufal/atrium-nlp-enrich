@@ -1,5 +1,7 @@
 # Strategy — [atrium-project#84](https://github.com/ufal/atrium-project/issues/84) (doc-schema-v2): nlp-enrich's part
 
+> _**Refreshed 2026-11-27 (evening)**: Status — 11-27 (evening) (ARÚP's answers on atrium-project#84, comment 7; the PR adjusted)._
+> _**Refreshed 2026-11-27**: Status — 11-27 (the non-A options of atrium-project#84 prepared, not pushed)._
 > _**Refreshed 2026-11-25**: Status — 11-25 (the v2.0.0-beta release prep)._
 > _**Refreshed 2026-11-22**: #48 merged (atrium-project#79 and #40); the LINDAT check by dispatch; the pins at `fbffe25`._
 > _**Refreshed 2026-11-19**: "Status — 11-19": #46 and #47 merged; Ronald's answers; aiscr-docs-pipeline#4; D35._
@@ -14,6 +16,10 @@
 > contract digest.
 > This file is the repository's slice only. It replaces the 11-11 slice of the same
 > name; its points that still hold are carried here._
+
+**Status (2026-11-27, evening)**: 🟡 **ARÚP answered atrium-project#84 (comment 7). #50 is adjusted: the stage scripts and the TEITOK step keep settings and models in `config` and name every file they read or write as an entry by name and SHA-512, `stored: false` (decision 1); `--config-name` goes. See the DEVLOG entry of 11-27 (evening).**
+
+**Status (2026-11-27)**: 🟡 **The non-A options of atrium-project#84 prepared (not pushed; ARÚP has not answered): the stage scripts and the TEITOK step record folders by name, never their paths (decision 1). One PR, after the hub's. See the DEVLOG entry of 11-27.**
 
 **Status (2026-11-22)**: 🟢 **As on 11-19, now pinned to `fbffe25` since atrium-project#79's merge (11-22, #48 `11cad2a`). The LINDAT check runs by dispatch only ("LINDAT check (manual)"); on `master` its daily schedule runs until the release merge (atrium-project#77).**
 

@@ -29,10 +29,11 @@ in isolation. `run_pipeline.py` merges them into one record per run
 
 The paradata logs (the sample run's are committed in `data_samples/paradata/`; the paradata 2.0 samples, with the
 calculated licence fields paradata 3.0 dropped, are in git history up to `v1.3.4-beta`) capture key details about each
-pipeline stage, including the program name, run ID, execution duration, configuration parameters, input and output
-statistics, and performance metrics. They also document skipped files with reasons and provide a breakdown of
-output types and processing rates for benchmarking. This structured metadata makes the pipeline's execution
-traceable and auditable.
+pipeline stage, including the program name, run ID, execution duration, configuration parameters (`config`: the
+settings only, never a path or a file name), the files read and written (by file name and SHA-512), input and output
+statistics, and performance
+metrics. They also document skipped files with reasons and provide a breakdown of output types and processing rates
+for benchmarking. This structured metadata makes the pipeline's execution traceable and auditable.
 
 The declared output types per stage are:
 
@@ -57,9 +58,19 @@ a run is interrupted unexpectedly; `run_pipeline.py --clean-state` sweeps stale 
 **Paradata schema 3.0.** What a run read and wrote is named by AMČR distribution name and SHA-512, never by a
 path:
 
+- `config` holds only what shaped the output (atrium-project#84 decision 1): the stage, its models (by name), the
+  service URLs and the settings; never a folder or a file. So the per-stage records in the service's `format=zip`
+  carry no path of its temporary workspace.
+- Every file a stage reads or writes that is not a distribution is an `inputs`/`outputs` entry by file name and
+  SHA-512, `stored: false` (the shared CLI's `input`/`output` without `--name`, one call per stage): stage 1 the
+  tables and texts read, the extracted texts and the manifest written; stage 2 the manifest and texts read, the
+  CoNLL-U written; stage 3 the CoNLL-U read, the NameTag TSVs written; stage 4 the CoNLL-U, the TSVs, the layout and
+  the page images read, the CSVs and merged CoNLL-U written; the flexiconv step the documents read and the TEITOK
+  written.
 - `api_4_stats.sh` records the record version read (`inputs`, `atrium/document-json`), the record written
   (`outputs`, with `record_fields`: the blocks and fields the run wrote) and the TEITOK written (`atr/teitok-xml`);
-  the projection stage records the record it read and the TEITOK it rewrote. The record itself carries no run data.
+  the projection stage records the TEITOK and the record it read (hashed before the in-place rewrite) and the
+  TEITOK it rewrote. The record itself carries no run data.
 - `limits` holds sampling and splitting only: `api_2_udp.sh` notes `word_chunk_limit` `split` for a text sent to
   UDPipe in chunks. A limit that would trim, skip or stop content fails the run.
 - A failed document fails its stage: the stage's record says `action_status: failed` with the `error`, and the run

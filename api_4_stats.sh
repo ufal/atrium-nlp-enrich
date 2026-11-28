@@ -34,19 +34,37 @@ PARA_STATE=$(python3 atrium_paradata.py start \
     --output-types $OUTPUT_TYPES \
     --config \
         "script=api_4_stats" \
-        "conllu_input_dir=${CONLLU_INPUT_DIR}" \
-        "tsv_input_dir=${TSV_INPUT_DIR}" \
-        "output_dir=${SUMMARY_OUTPUT_DIR}" \
         "save_conllu_ne=${SAVE_CONLLU_NE:-true}" \
         "save_csv=${SAVE_CSV:-true}" \
         "save_teitok=${SAVE_TEITOK:-true}" \
-        "alto_dir=${INPUT_ALTO_DIR:-}" \
-        "pages_dir=${INPUT_PAGES_DIR:-}" \
         "dpi=${IMAGE_DPI:-}" \
         "alto_dpi=${ALTO_DPI:-}" \
         "bbox_origin=${BBOX_ORIGIN:-page}" \
         "regenerate_teitok=${REGENERATE_TEITOK:-false}" \
         "flexiconv_annotate=${FLEXICONV_ANNOTATE:-false}")
+
+# The files this stage reads and writes, named in its paradata by file name and SHA-512, never by
+# path (atrium-project#84 decision 1): one `input` and one `output` call before the run finishes.
+READ_FILES=()
+WRITTEN_FILES=()
+name_files() {
+    local verb f
+    local -a found
+    for verb in input output; do
+        found=()
+        if [ "$verb" = input ]; then
+            set -- ${READ_FILES[@]+"${READ_FILES[@]}"}
+        else
+            set -- ${WRITTEN_FILES[@]+"${WRITTEN_FILES[@]}"}
+        fi
+        for f in "$@"; do
+            if [ -e "$f" ]; then found+=("$f"); fi
+        done
+        if [ "${#found[@]}" -gt 0 ]; then
+            python3 atrium_paradata.py "$verb" --state "$PARA_STATE" --file "${found[@]}"
+        fi
+    done
+}
 
 # FLEXICONV_ANNOTATE=true: a document without ALTO takes its page layout (bboxes, page
 # images, text blocks) from its flexiconv TEITOK file (api_flexiconv.sh).
@@ -135,6 +153,7 @@ while IFS= read -r -d '' conllu; do
         python3 atrium_paradata.py fail \
             --state "$PARA_STATE" \
             --error "summarize_nt_udp failed for $(basename "$doc")"
+        name_files
         python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"
 
         echo "[CRITICAL ERROR] summarize_nt_udp aggregation failed for ${doc}. Halting pipeline." >&2
@@ -177,6 +196,7 @@ if [ "${SAVE_TEITOK:-true}" = "true" ]; then
         python3 atrium_paradata.py fail \
             --state "$PARA_STATE" \
             --error "TEITOK output contract failed"
+        name_files
         python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"
 
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] [CRITICAL ERROR] TEITOK output contract failed (see the [FAIL] lines above). Halting pipeline before packaging." \
@@ -185,4 +205,6 @@ if [ "${SAVE_TEITOK:-true}" = "true" ]; then
     fi
 fi
 
+WRITTEN_FILES+=("${OUTPUT_DIR}/summary_ne_counts.csv")
+name_files
 python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"

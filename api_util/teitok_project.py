@@ -840,11 +840,9 @@ def _run_directory(args: argparse.Namespace) -> int:
 
         logger = ParadataLogger(
             program="nlp-enrich",
-            config={
-                "script": "teitok_project",
-                "teitok_dir": str(teitok_dir),
-                "record_dir": str(args.record_dir or ""),
-            },
+            # Settings only (atrium-project#84 decision 1): the TEITOK files and records read and
+            # written are inputs and outputs, by distribution name and SHA-512.
+            config={"script": "teitok_project", "force": bool(args.force)},
             paradata_dir=str(args.paradata_dir),
             output_types=["teitok_xml"],
             # para_config.txt at the repository root, wherever the script is started from: read from
@@ -868,6 +866,9 @@ def _run_directory(args: argparse.Namespace) -> int:
                 logger.add_input(
                     RECORD_DISTRIBUTION, path=str(record), media_type="application/json"
                 )
+            if logger:
+                # The TEITOK version read, by SHA-512, before it is rewritten in place.
+                logger.add_input(TEITOK_DISTRIBUTION, path=str(path), media_type="application/xml")
             try:
                 report = project_file(path, record, path, force=args.force, paired_as=doc_id)
             except ProjectionError as exc:

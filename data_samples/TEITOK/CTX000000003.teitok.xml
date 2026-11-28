@@ -17,10 +17,10 @@
     </encodingDesc>
     <profileDesc><langUsage><language ident="cs"/></langUsage></profileDesc>
     <revisionDesc>
-      <change when="2026-11-25" who="altoconvert" type="converted">Converted from ALTO file CTX000000003.alto.xml</change>
+      <change when="2026-11-28" who="altoconvert" type="converted">Converted from ALTO file CTX000000003.alto.xml</change>
       <change when="2024-06-03" who="DemoScanner Pro">OCR processing</change>
-      <change when="2026-11-25" who="udpipe" type="tagged" subtype="parsed">tokenized, lemmatized and dependency parsed with UDPipe model czech-pdt-ud-2.15-241121 (UDPipe 2, https://lindat.mff.cuni.cz/services/udpipe)</change>
-      <change when="2026-11-25" who="nametag" type="ner">named entity recognition with NameTag model nametag3-multilingual-onto-260521</change>
+      <change when="2026-11-28" who="udpipe" type="tagged" subtype="parsed">tokenized, lemmatized and dependency parsed with UDPipe model czech-pdt-ud-2.15-241121 (UDPipe 2, https://lindat.mff.cuni.cz/services/udpipe)</change>
+      <change when="2026-11-28" who="nametag" type="ner">named entity recognition with NameTag model nametag3-multilingual-onto-260521</change>
     </revisionDesc>
   </teiHeader>
   <facsimile>

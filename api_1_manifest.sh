@@ -33,10 +33,30 @@ PARA_STATE=$(python3 atrium_paradata.py start \
     --output-types tsv \
     --config \
         "script=api_1_manifest" \
-        "input_dir=${INPUT_TABLES_DIR}" \
-        "flexiconv_input_dir=${FLEXICONV_INPUT_DIR}" \
-        "skip_untrustworthy_lines=${SKIP_UNTRUSTWORTHY_LINES:-false}" \
-        "output_manifest=${OUTPUT_DIR}/manifest.tsv")
+        "skip_untrustworthy_lines=${SKIP_UNTRUSTWORTHY_LINES:-false}")
+
+# The files this stage reads and writes, named in its paradata by file name and SHA-512, never by
+# path (atrium-project#84 decision 1): one `input` and one `output` call before the run finishes.
+READ_FILES=()
+WRITTEN_FILES=()
+name_files() {
+    local verb f
+    local -a found
+    for verb in input output; do
+        found=()
+        if [ "$verb" = input ]; then
+            set -- ${READ_FILES[@]+"${READ_FILES[@]}"}
+        else
+            set -- ${WRITTEN_FILES[@]+"${WRITTEN_FILES[@]}"}
+        fi
+        for f in "$@"; do
+            if [ -e "$f" ]; then found+=("$f"); fi
+        done
+        if [ "${#found[@]}" -gt 0 ]; then
+            python3 atrium_paradata.py "$verb" --state "$PARA_STATE" --file "${found[@]}"
+        fi
+    done
+}
 # ── end paradata start ────────────────────────────────────────────────────────
 
 mkdir -p "${OUTPUT_DIR}"
@@ -90,6 +110,9 @@ for csv_file in "${INPUT_TABLES_DIR}"/*.csv "${INPUT_TABLES_DIR}"/*.xlsx "${INPU
 
         drop_manifest_row "$DOC_ID"
         echo "$NEW_ROW" >> "${OUTPUT_DIR}/manifest.tsv"
+        TXT_FILE=$(printf '%s' "$NEW_ROW" | cut -f3)
+        READ_FILES+=("$csv_file")
+        WRITTEN_FILES+=("$TXT_FILE" "${TXT_FILE%.txt}.rows.tsv")
         python3 atrium_paradata.py success --state "$PARA_STATE" --type tsv
     else
         # P1 FIX: Log the failure and exit immediately to halt the pipeline
@@ -134,6 +157,9 @@ if [[ -n "$FLEXICONV_INPUT_DIR" ]]; then
         if NEW_ROW=$(python3 api_util/build_manifest_row.py "$teitok_file" --text-dir "${TEMP_TXT_DIR:-./TEMP/TXT_EXTRACT}"); then
             drop_manifest_row "$DOC_ID"
             echo "$NEW_ROW" >> "${OUTPUT_DIR}/manifest.tsv"
+            TXT_FILE=$(printf '%s' "$NEW_ROW" | cut -f3)
+            READ_FILES+=("$teitok_file")
+            WRITTEN_FILES+=("$TXT_FILE" "${TXT_FILE%.txt}.rows.tsv")
             python3 atrium_paradata.py success --state "$PARA_STATE" --type tsv
         else
             # an empty conversion (no text) costs only that document
@@ -146,5 +172,7 @@ if [[ -n "$FLEXICONV_INPUT_DIR" ]]; then
     done
 fi
 
+WRITTEN_FILES+=("${OUTPUT_DIR}/manifest.tsv")
+name_files
 python3 atrium_paradata.py finish --state "$PARA_STATE" --input-total "$TOTAL"
 echo "[manifest] done: $TOTAL total, 0 errors"

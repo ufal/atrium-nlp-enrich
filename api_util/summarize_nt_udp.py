@@ -495,6 +495,30 @@ RECORD_DISTRIBUTION = "atrium/document-json"
 TEITOK_DISTRIBUTION = "atr/teitok-xml"
 
 
+def record_files(para_state, verb, paths):
+    """Name the files the stage read (`verb` ``input``) or wrote (``output``) in its paradata state
+    file, each by its file name and SHA-512, never by its path (atrium-project#84 decision 1): the
+    shared CLI's ``input``/``output`` without ``--name``, one call for all of them. A path that is
+    not a file (a page that was not there) is left out."""
+    files = [str(p) for p in dict.fromkeys(paths) if p and Path(p).is_file()]
+    if not para_state or not files:
+        return
+    import subprocess
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(_project_root / "atrium_paradata.py"),
+            verb,
+            "--state",
+            str(para_state),
+            "--file",
+            *files,
+        ],
+        check=True,
+    )
+
+
 def record_io(para_state, verb, name, path, media_type, record_fields=None):
     """Record an input or output of the stage's run in its paradata state file (the
     ``atrium_paradata.py start`` state), by distribution name and the SHA-512 of ``path``
@@ -589,6 +613,8 @@ def process_single_document(
 
     # Merge NER tags into CoNLL-U if not already done
     merged_conllu_ready = doc_out_conllu.exists()
+    read_files = [conllu_path]
+    written_files = []
     if not merged_conllu_ready:
         ne_dir_path = Path(ne_dir)
         if not ne_dir_path.exists():
@@ -602,11 +628,14 @@ def process_single_document(
         if not merged_conllu_ready:
             print(f"  [Error] Failed to create merged CoNLL-U for {doc_name}", file=sys.stderr)
             return False
+        read_files.extend(sorted(ne_dir_path.glob("*.tsv")))
+        written_files.append(doc_out_conllu)
 
     # The lines the text came from, with their pages (stage 1's rows file, frozen next to the
     # CoNLL-U by stage 2; issue #38, A).
     rows_path = _page_rows.find_rows(conllu_path, text_dir)
     rows = _page_rows.read_rows(rows_path) if rows_path else None
+    read_files.append(rows_path)
     if not rows:
         print(
             f"  [pages] {doc_name}: no rows file next to {conllu_path.name}; page numbers of "
@@ -621,6 +650,7 @@ def process_single_document(
         csv_rows, entities_by_page = _collect_merged_rows(doc_out_conllu, rows, doc_name)
         if need_csv:
             write_document_csv(csv_rows, doc_out_csv)
+            written_files.append(doc_out_csv)
         if need_summary:
             _write_summary_rows_from_data(doc_name, entities_by_page, summary_csv)
 
@@ -645,6 +675,12 @@ def process_single_document(
 
     if teitok_written and teitok_out_path.exists():
         record_io(para_state, "output", TEITOK_DISTRIBUTION, teitok_out_path, "application/xml")
+        # What the TEITOK's layout was read from: the layout file (a record is named by its
+        # distribution below) and the document's page images.
+        if layout and not str(layout).endswith(".document.json"):
+            read_files.append(layout)
+        if pages_dir and Path(pages_dir).is_dir():
+            read_files.extend(sorted(Path(pages_dir).glob(f"{doc_name}-*")))
 
     if document_json_dir:
         from api_util.document_hook import run_document_hook
@@ -681,6 +717,13 @@ def process_single_document(
             "application/json",
             record_fields=written,
         )
+
+    # The files read and written, by file name and SHA-512 (decision 1); the merged CoNLL-U only
+    # while it is kept (`save_conllu`).
+    record_files(para_state, "input", read_files)
+    record_files(
+        para_state, "output", [p for p in written_files if save_conllu or p != doc_out_conllu]
+    )
 
     if not save_conllu:
         csv_done = not save_csv or doc_out_csv.exists()
