@@ -1205,3 +1205,17 @@ Documentation only; no code, test or configuration change.
 * **Not in the PR:** the committed samples, regenerated from the merged code before the tags.
 * The change is `atrium-nlp-enrich.decisions-84.zip`, these logs `atrium-nlp-enrich.agent_dev_logs.zip`.
 * Logs only; not pushed.
+
+## 2026-11-27 (evening) — atrium-project#84: ARÚP's answers, #50 adjusted
+
+* **ARÚP (comment 7, motyc 16:25):** 1(c): `config` holds only what shaped the output; inputs and outputs by name and
+  SHA-512. 2(b): SHA-512 everywhere.
+* **Decision 1:** `api_1_manifest.sh` … `api_4_stats.sh` and `api_flexiconv.sh` drop their folder and file keys
+  (no `--config-name`, removed from the shared helper) and name their files with the shared CLI's `input`/`output`
+  (several files or a folder per call); `teitok_project.py` likewise. The service's per-stage records follow.
+* **Samples** regenerated on LINDAT with the pinned models: the annotations are the same; the TEITOK `<change when>`
+  dates and the CSVs' line ends (CRLF, as the writer writes them) differ. The five paradata files of 11-25 give way to
+  this run's five; the projected TEITOK fixture follows the sample. `summary_ne_counts.csv` stays out (removed 02-25)
+  and is named in the paradata like the stages' TEMP texts.
+* **Verified:** 1094 passed, 17 skipped; ShellCheck on the five scripts.
+* Not pushed.
